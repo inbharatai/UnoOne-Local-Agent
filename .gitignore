@@ -1,0 +1,65 @@
+# ============================================
+# UnoOne Agent — .gitignore
+# ============================================
+
+# --- IDE ---
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# --- Android Build ---
+build/
+*/build/
+**/build/
+.gradle/
+**/.gradle/
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# --- Android Studio ---
+.navigation/
+captures/
+*.hprof
+
+# --- Kotlin ---
+*.kt.swp
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# --- Models (large binaries — push via ADB, never commit) ---
+models/*/
+!models/.gitkeep
+
+# --- Logs ---
+*.log
+
+# --- Keystores & Secrets ---
+*.jks
+*.keystore
+keystore.properties
+.env
+credentials.json
+secrets.properties
+
+# --- Gradle ---
+.gradle-wrapper.jar
+
+# --- Misc ---
+*.bak
+*.tmp

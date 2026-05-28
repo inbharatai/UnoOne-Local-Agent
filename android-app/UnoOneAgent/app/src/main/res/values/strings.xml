@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">UnoOne</string>
+    <string name="tagline">One private AI agent for every phone action.</string>
+    <string name="offline_badge">Offline Local</string>
+    <string name="mic_permission_rationale">UnoOne needs microphone access to listen to your voice commands. Audio is processed entirely on your phone and never uploaded.</string>
+    <string name="storage_permission_rationale">UnoOne needs storage access to load AI model files. These files stay on your device.</string>
+    <string name="camera_permission_rationale">UnoOne can open your camera when you ask. The app does not take photos without your command.</string>
+    <string name="calendar_permission_rationale">UnoOne can help you create calendar events. It only opens the calendar screen with pre-filled details.</string>
+</resources>
