@@ -2,67 +2,96 @@ package com.unoone.agent.voice.stt
 
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
-// import com.k2fsa.sherpa.onnx.KeywordSpotter
-// import com.k2fsa.sherpa.onnx.KeywordSpotterConfig
-// import com.k2fsa.sherpa.onnx.OfflineModelConfig
-// import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
-// import com.k2fsa.sherpa.onnx.Wave
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+/**
+ * World-class offline Keyword Spotter using Sherpa-ONNX.
+ * Uses reflection/safe-loading to ensure the app compiles and runs perfectly 
+ * on any Android device even if the native .so libraries are missing.
+ */
 class KeywordSpotterEngine(private val modelDir: String) {
 
-    // private var spotter: KeywordSpotter? = null
+    private var spotter: Any? = null
     private var initialized = false
 
     fun initialize(keywords: List<String>): Result<Unit> {
         return try {
-            // val keywordFile = createKeywordFile(keywords)
-            // val config = KeywordSpotterConfig(
-            //     modelConfig = OfflineModelConfig(
-            //         transducer = OfflineTransducerModelConfig(
-            //             encoder = "$modelDir/encoder.onnx",
-            //             decoder = "$modelDir/decoder.onnx",
-            //             joiner = "$modelDir/joiner.onnx"
-            //         ),
-            //         tokens = "$modelDir/tokens.txt",
-            //         numThreads = 2,
-            //         provider = "cpu"
-            //     ),
-            //     keywordFile = keywordFile
-            // )
-            // spotter = KeywordSpotter(config)
+            Logger.i("KeywordSpotterEngine: Checking model files in $modelDir")
+            val encoderFile = java.io.File("$modelDir/encoder.onnx")
+            val decoderFile = java.io.File("$modelDir/decoder.onnx")
+            val joinerFile = java.io.File("$modelDir/joiner.onnx")
+            val tokensFile = java.io.File("$modelDir/tokens.txt")
+
+            if (!encoderFile.exists() || !decoderFile.exists() || !joinerFile.exists() || !tokensFile.exists()) {
+                return Result.Error("Sherpa KWS model files missing. Please download models to: $modelDir")
+            }
+
+            // Create temporary keyword file
+            val keywordFile = createKeywordFile(keywords)
+
+            // Attempt to load Sherpa-ONNX classes dynamically
+            val configClass = Class.forName("com.k2fsa.sherpa.onnx.KeywordSpotterConfig")
+            val modelConfigClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineModelConfig")
+            val transducerConfigClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig")
+            val spotterClass = Class.forName("com.k2fsa.sherpa.onnx.KeywordSpotter")
+
+            // Build configs using reflection
+            val transducerConfig = transducerConfigClass.getConstructor(
+                String::class.java, String::class.java, String::class.java
+            ).newInstance(encoderFile.absolutePath, decoderFile.absolutePath, joinerFile.absolutePath)
+
+            val modelConfig = modelConfigClass.getDeclaredConstructor().newInstance()
+            modelConfigClass.getMethod("setTransducer", transducerConfigClass).invoke(modelConfig, transducerConfig)
+            modelConfigClass.getMethod("setTokens", String::class.java).invoke(modelConfig, tokensFile.absolutePath)
+            modelConfigClass.getMethod("setNumThreads", Int::class.javaPrimitiveType).invoke(modelConfig, 2)
+
+            val config = configClass.getDeclaredConstructor().newInstance()
+            configClass.getMethod("setModelConfig", modelConfigClass).invoke(config, modelConfig)
+            configClass.getMethod("setKeywordFile", String::class.java).invoke(config, keywordFile)
+
+            spotter = spotterClass.getConstructor(configClass).newInstance(config)
             initialized = true
-            Logger.i("KeywordSpotter initialized with keywords: $keywords (STUBBED)")
+            Logger.i("KeywordSpotterEngine: Offline KWS successfully initialized for: $keywords")
             Result.Success(Unit)
+        } catch (e: ClassNotFoundException) {
+            Logger.w("KeywordSpotterEngine: Sherpa-ONNX classes not found in classpath. Fallback mode.")
+            Result.Error("Sherpa library not available")
         } catch (e: Exception) {
-            Logger.e("KeywordSpotter init failed: ${e.message}", e)
+            Logger.e("KeywordSpotterEngine: Initialization failed", e)
             Result.Error("KWS init failed: ${e.message}")
         }
     }
 
     fun processChunk(pcmBytes: ByteArray): String? {
-        if (!initialized) return null
-        // val kws = spotter ?: return null
+        if (!initialized || spotter == null) return null
 
         return try {
-            // val samples = FloatArray(pcmBytes.size / 2)
-            // val buffer = ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN)
-            // for (i in samples.indices) {
-            //     samples[i] = buffer.short.toFloat() / 32768f
-            // }
+            val samples = FloatArray(pcmBytes.size / 2)
+            val buffer = ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN)
+            for (i in samples.indices) {
+                samples[i] = buffer.short.toFloat() / 32768f
+            }
 
-            // val wave = Wave(samples = samples, sampleRate = 16000f)
-            // val keyword = kws.decode(wave)
-            // if (keyword.isNotBlank()) {
-            //     Logger.i("Wake word detected: $keyword")
-            //     keyword
-            // } else {
-            //     null
-            // }
-            null
+            val waveClass = Class.forName("com.k2fsa.sherpa.onnx.Wave")
+            val wave = waveClass.getConstructor(FloatArray::class.java, Float::class.javaPrimitiveType)
+                .newInstance(samples, 16000f)
+
+            val spotterClass = Class.forName("com.k2fsa.sherpa.onnx.KeywordSpotter")
+            val decodeMethod = spotterClass.getMethod("decode", waveClass)
+            val resultClass = Class.forName("com.k2fsa.sherpa.onnx.KeywordSpotterResult")
+
+            val resultObj = decodeMethod.invoke(spotter, wave)
+            val keyword = resultClass.getMethod("getKeyword").invoke(resultObj) as String
+
+            if (keyword.isNotBlank()) {
+                Logger.i("KeywordSpotterEngine: Wake word detected: $keyword")
+                keyword.trim()
+            } else {
+                null
+            }
         } catch (e: Exception) {
-            Logger.e("KWS process error", e)
+            Logger.e("KeywordSpotterEngine: Error processing chunk", e)
             null
         }
     }
@@ -75,13 +104,15 @@ class KeywordSpotterEngine(private val modelDir: String) {
     }
 
     fun release() {
-        // try {
-        //     spotter?.close()
-        // } catch (e: Exception) {
-        //     Logger.e("Error releasing KeywordSpotter", e)
-        // }
-        // spotter = null
+        try {
+            if (spotter != null) {
+                val spotterClass = Class.forName("com.k2fsa.sherpa.onnx.KeywordSpotter")
+                spotterClass.getMethod("close").invoke(spotter)
+            }
+        } catch (e: Exception) {
+            Logger.e("KeywordSpotterEngine: Error closing spotter", e)
+        }
+        spotter = null
         initialized = false
-        Logger.i("KeywordSpotter released")
     }
 }

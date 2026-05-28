@@ -4,6 +4,10 @@ import com.unoone.agent.core.model.ToolCall
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+/**
+ * Fallback rule-based parser for commands when the local LLM is not loaded.
+ * Handles 30+ command patterns including gestures, navigation, skills, and compound commands.
+ */
 object RuleBasedParser {
 
     fun parse(command: String): ToolCall? {
@@ -27,7 +31,7 @@ object RuleBasedParser {
             lowered.contains("email") || lowered.contains("mail") -> {
                 val to = Regex("to ([\\w.]+@[\\w.]+)").find(lowered)?.groupValues?.get(1) ?: ""
                 val subject = Regex("subject (.*?) (body|text|$)").find(lowered)?.groupValues?.get(1) ?: "Expert Update"
-                val body = lowered.substringAfter("body", "").substringAfter("text", "").trim()
+                val body = lowered.substringAfter("body", "").ifEmpty { lowered.substringAfter("text", "") }.trim()
                 ToolCall(
                     "draft_email",
                     JsonObject(mapOf(
@@ -65,6 +69,12 @@ object RuleBasedParser {
                         "end_time" to JsonPrimitive("")
                     )))
                 } else null
+            }
+
+            // Offline Object & Obstacle Detection (Vision)
+            lowered.contains("detect objects") || lowered.contains("what's in front of me") ||
+            lowered.contains("barriers") || lowered.contains("obstacles") || lowered.contains("detect barrier") -> {
+                ToolCall("detect_objects", JsonObject(emptyMap()))
             }
 
             // Screen Intelligence
@@ -135,7 +145,9 @@ object RuleBasedParser {
                 ToolCall(
                     "create_note",
                     JsonObject(mapOf(
-                        "content" to JsonPrimitive(content)
+                        "title" to JsonPrimitive(content.take(40)),
+                        "content" to JsonPrimitive(content),
+                        "tags" to JsonPrimitive("expert")
                     ))
                 )
             }
@@ -165,7 +177,6 @@ object RuleBasedParser {
             lowered.contains(" and ") -> {
                 val parts = lowered.split(" and ", limit = 2)
                 val first = parse(parts[0].trim())
-                // For compound commands, we return the first action and let skills handle multi-step
                 first
             }
 

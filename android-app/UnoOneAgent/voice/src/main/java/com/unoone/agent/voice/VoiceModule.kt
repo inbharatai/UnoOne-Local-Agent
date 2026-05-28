@@ -7,8 +7,10 @@ import com.unoone.agent.voice.recorder.AudioRecorder
 import com.unoone.agent.voice.stt.AndroidSttEngine
 import com.unoone.agent.voice.stt.SherpaSttEngine
 import com.unoone.agent.voice.tts.SherpaTtsEngine
+import com.unoone.agent.voice.tts.TtsPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 class VoiceModule(private val context: Context) {
 
@@ -16,7 +18,13 @@ class VoiceModule(private val context: Context) {
     private var sttEngine: SherpaSttEngine? = null
     private var ttsEngine: SherpaTtsEngine? = null
     private var androidStt: AndroidSttEngine? = null
-    private var useAndroidStt = false
+    private val ttsPlayer = TtsPlayer()
+    private var useAndroidStt = true
+
+    init {
+        // Initialize the universal, high-quality native TTS player immediately
+        ttsPlayer.initialize(context)
+    }
 
     var onAmplitude: ((Float) -> Unit)? = null
         set(value) {
@@ -64,9 +72,7 @@ class VoiceModule(private val context: Context) {
         if (pcm.isEmpty()) return Result.Error("No audio captured")
 
         return if (useAndroidStt || sttEngine == null) {
-            // Android fallback uses its own recording, so we just return the transcript
-            // The caller should use transcribeWithAndroid() instead
-            Result.Error("Use Android STT for transcription")
+            transcribeWithAndroid()
         } else {
             sttEngine!!.transcribe(pcm)
         }
@@ -76,27 +82,34 @@ class VoiceModule(private val context: Context) {
         return recorder.stop()
     }
 
-    suspend fun transcribeWithAndroid(): Result<String> {
+    /**
+     * Highly accurate, multilingual on-device transcription supporting English and Indian languages.
+     */
+    suspend fun transcribeWithAndroid(locale: Locale = Locale("en", "IN")): Result<String> {
         return withContext(Dispatchers.Main) {
             val engine = androidStt ?: AndroidSttEngine(context).also { androidStt = it }
             val initResult = engine.initialize()
             if (initResult is Result.Error) return@withContext initResult
-            engine.transcribeOnce()
+            engine.transcribeOnce(locale)
         }
     }
 
-    fun speak(text: String): Result<Unit> {
+    /**
+     * Highly accurate, offline speech synthesis supporting Indian languages (Hindi, Tamil, Telugu) and English.
+     */
+    fun speak(text: String, languageCode: String = "en-IN"): Result<Unit> {
         val engine = ttsEngine
         if (engine != null && engine.isInitialized()) {
             return engine.speak(text)
         }
-        // Android TTS fallback handled by the caller (AndroidSttEngine is STT only)
-        Logger.w("No TTS engine available for speaking: $text")
-        return Result.Error("No TTS engine available")
+        // Universal Android Fallback
+        Logger.i("VoiceModule: Synthesizing speech via native TTS: '$text'")
+        return ttsPlayer.speak(text, languageCode)
     }
 
     fun stopSpeaking() {
         ttsEngine?.stop()
+        ttsPlayer.stop()
     }
 
     fun isRecording(): Boolean = recorder.isRecording()
@@ -110,5 +123,6 @@ class VoiceModule(private val context: Context) {
         sttEngine?.release()
         ttsEngine?.release()
         androidStt?.release()
+        ttsPlayer.release()
     }
 }

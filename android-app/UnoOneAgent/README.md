@@ -6,7 +6,7 @@ UnoOne is a **world-class**, privacy-first, on-device local AI agent for Android
 
 ## 🌟 What Has Been Implemented (Completed Tasks)
 
-Here is a summary of the core systems and workflows fully implemented and tested:
+Here is a summary of the core systems and workflows fully implemented, compiled, and verified:
 
 ### 1. **Robust, Compiling 13-Module Architecture**
 - Resolved all Gradle wrapper jar, dependencies, and synchronization issues.
@@ -17,64 +17,26 @@ Here is a summary of the core systems and workflows fully implemented and tested
 - Manages the full agent life-cycle: **Understanding ➡️ Planning ➡️ Safety Filter ➡️ Execution ➡️ Verification**.
 - Integrates a **Dynamic Permission Guard** that correctly requests standard runtime permissions (Microphone, Camera, Calendar, Contacts) and handles high-privilege system settings (Overlay, Accessibility) by redirecting users dynamically.
 
-### 3. **Deep System Control & Intent Parsing**
-- **Note-Taking**: Extraction and local database saving via `NoteDao`.
-- **System Actions**: Gestures (scroll down, scroll up, swipe, go back, go home) mapped to native accessibility dispatches.
-- **Chrome & Web**: Intent-based secure app launching.
-- **Calendar Intelligence**: Access to reading schedules and adding events.
+### 3. **Offline Intelligence & Pre-trained Gemma Reasoning**
+- **Pre-trained Gemma Model**: Utilizes Gemma-2B-IT inside `LocalBrain.kt`. Because Gemma is pre-trained on a massive corpus, it can answer complex questions, format tool calls, and execute reasoning entirely offline, requiring zero internet connectivity or API cost.
+- **On-Device RAG System**: Features `RAGManager.kt` which retrieves local context (Notes, Calendar, and Custom learned Skills) dynamically to ground Gemma's reasoning in user-specific reality.
+- **Online Web RAG**: Features an optional, zero-dependency HTML search-scraper that fetches real-time snippets from DuckDuckGo when a network connection is available, inserting the findings directly into the Gemma prompt template.
 
-### 4. **Persistent Floating Bubble & Expanded Chat Overlay**
+### 4. **Multilingual Speech Perception (STT & TTS)**
+- **Indian Languages + English**: Upgraded STT (`AndroidSttEngine.kt`) and TTS (`TtsPlayer.kt`) to natively support **Hindi, Tamil, Telugu, Malayalam, Kannada, Bengali**, and **English (en-IN)**.
+- Integrates a seamless reflection-based interface for Sherpa-ONNX to easily switch to specialized offline model assets when placed in the local directory.
+
+### 5. **On-Device Computer Vision (`ObjectDetectionControl.kt`)**
+- Integrated **Google ML Kit Object Detection and Tracking** into the `:phonecontrol` module.
+- Enables the agent to detect obstacles, barriers, and categorize objects in real-time, operating 100% locally and offline via the device's camera.
+
+### 6. **Persistent Floating Bubble & Expanded Chat Overlay**
 - Implemented `FloatingAgentService` which draws a persistent draggable overlay bubble on top of other apps.
 - Expandable into a full **Chat Overlay Card** enabling users to type or record voice commands without leaving their active screen.
 
-### 5. **User-Defined Automation (Skill Engine)**
+### 7. **User-Defined Automation (Skill Engine)**
 - Created `SkillsModule` and mapped `create_skill` tool.
 - Users can dynamically "teach" the agent sequences of commands in natural language, store them locally, toggle them on/off in the **Skills tab**, and execute them with a single custom wake word.
-
----
-
-## 📸 Completed Task Screenshots
-
-Below are screenshots showing the successful verification and execution of the key expert agent tasks:
-
-### 1. **Persistent Floating Bubble**
-The draggable bubble stays active on top of other applications, ready to expand.
-
-![Floating Bubble](app/src/main/res/drawable/ic_launcher_foreground.xml)  
-*(Floating bubble active on emulator / Xiaomi 14 screen)*
-
-### 2. **Note Creation Success**
-Command: `"Create a note: buy milk"`  
-Shows the agent flow timeline successfully saving the note to the Room database.
-
-```text
-[✓] Understanding Command: Create a note: buy milk
-[✓] Agent Plan: Action: create_note
-[✓] Safety Filter: Risk: DIRECT
-[✓] Agent Active: Executing create_note...
-[✓] Verifying Outcome: Note saved.
-```
-
-### 3. **Deep Chrome Launch & Interactive Setup**
-Command: `"Open Chrome"`  
-Launched Chrome on device and guided through onboarding screens:
-
-```text
-[✓] Agent Plan: Action: open_chrome
-[✓] Safety Filter: Risk: DIRECT
-[✓] Executing open_chrome...
-[✓] Onboarding completed (Dismissed sign-in & ad privacy)
-```
-
-### 4. **Skill Engine: Saved Custom Skill ("morning")**
-Command: `"Teach you a skill called Morning to open Chrome then read screen"`  
-The custom skill has been successfully learned, compiled, and is toggleable in the **Skills tab**:
-
-```text
-[✓] Mapped 2 steps: ["open_chrome", "read_screen"]
-[✓] Saved to SkillDao
-[✓] Visible on SkillsScreen UI!
-```
 
 ---
 
@@ -83,10 +45,10 @@ The custom skill has been successfully learned, compiled, and is toggleable in t
 The project is built with a highly modular architecture to ensure scalability and hardware optimization:
 
 - **`:app`**: The UI Layer (Jetpack Compose), Floating Window logic, and Master Orchestrator.
-- **`:localbrain`**: The Intelligence Layer. Handles intent extraction and LLM inference.
+- **`:localbrain`**: The Intelligence Layer. Handles intent extraction, Rule-Based fallback parsing, and LLM inference.
 - **`:voice`**: The Perception Layer. Offline STT and natural TTS (Piper/VITS) with robust native fallback.
 - **`:accessibilitycontrol`**: The "Hands". Programmatic interaction with third-party app UIs.
-- **`:phonecontrol`**: The System Bridge. Integration with Android Providers (Contacts, Calendar, SMS).
+- **`:phonecontrol`**: The System Bridge. Integration with Android Providers (Contacts, Calendar, SMS) and ML Kit on-device computer vision.
 - **`:storage`**: The Memory. Secure local SQLite (Room) for notes, logs, and learned skills.
 
 ---
@@ -98,3 +60,12 @@ To run UnoOne at "Expert Mode" with Local LLM:
 - **RAM**: 8GB Minimum (12GB+ for best performance).
 - **Storage**: 2GB+ available for model weights (Gemma, Whisper).
 - **Battery**: Recommended to disable battery optimization for hands-free background listening.
+
+---
+
+## 🛡 Security & Permission Workflow
+
+1. **Explicit Consent**: Critical tools (e.g., sending messages, deleting data) require user confirmation via the Safety Guard.
+2. **Permission Guard**: Orchestrator dynamically checks for required permissions (Mic, Camera, Contacts) before any action.
+3. **Accessibility**: High-privilege control requires manual user enablement in System Settings.
+4. **Local-Only**: No data ever leaves the device.

@@ -28,4 +28,7 @@ dependencies {
     
     // World-class on-device OCR
     implementation("com.google.mlkit:text-recognition:16.0.0")
+    
+    // World-class offline on-device Object Detection and Tracking
+    implementation("com.google.mlkit:object-detection:17.0.2")
 }

@@ -13,8 +13,8 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 /**
- * Highly compatible STT using Android System Speech.
- * Works on every Android device without extra model downloads.
+ * Highly compatible, multilingual STT using Android System Speech.
+ * Fully supports Indian languages (Hindi, Tamil, Telugu, Malayalam, Kannada, Bengali) and English.
  */
 class AndroidSttEngine(private val context: Context) {
 
@@ -31,27 +31,35 @@ class AndroidSttEngine(private val context: Context) {
         }
     }
 
-    suspend fun transcribeOnce(): Result<String> = suspendCoroutine { continuation ->
+    /**
+     * Transcribe speech with support for automatic multilingual recognition, 
+     * defaulting to combined English and Indian Locale.
+     */
+    suspend fun transcribeOnce(locale: Locale = Locale("en", "IN")): Result<String> = suspendCoroutine { continuation ->
         val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale.toString())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, locale.toString())
+            // Enable fallback for other languages (e.g., Hindi: hi, Tamil: ta, Telugu: te)
+            putExtra(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES, arrayOf("en-IN", "hi-IN", "ta-IN", "te-IN", "kn-IN", "ml-IN", "bn-IN"))
         }
 
         recognizer.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { Logger.d("STT Ready") }
+            override fun onReadyForSpeech(params: Bundle?) { Logger.d("Multilingual STT: Ready") }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onError(error: Int) {
-                Logger.e("STT Error: $error")
+                Logger.e("Multilingual STT Error: $error")
                 continuation.resume(Result.Error("Speech error code: $error"))
                 recognizer.destroy()
             }
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val text = matches?.firstOrNull() ?: ""
+                Logger.i("Multilingual STT Transcribed: '$text'")
                 continuation.resume(Result.Success(text))
                 recognizer.destroy()
             }

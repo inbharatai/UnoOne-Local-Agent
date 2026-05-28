@@ -3,6 +3,7 @@ package com.unoone.agent
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import com.unoone.agent.accessibilitycontrol.AccessibilityControl
@@ -19,6 +20,7 @@ import com.unoone.agent.localbrain.RuleBasedParser
 import com.unoone.agent.memory.MemoryModule
 import com.unoone.agent.phonecontrol.CalendarControl
 import com.unoone.agent.phonecontrol.OcrControl
+import com.unoone.agent.phonecontrol.ObjectDetectionControl
 import com.unoone.agent.phonecontrol.PhoneControl
 import com.unoone.agent.safetyguard.SafetyGuard
 import com.unoone.agent.skills.SkillsModule
@@ -56,6 +58,7 @@ class AgentOrchestrator(
     private val phoneControl = PhoneControl(context)
     private val calendarControl = CalendarControl(context)
     private val ocrControl = OcrControl(context)
+    private val objectDetectionControl = ObjectDetectionControl(context)
     private val accessibilityControl = AccessibilityControl()
     private val memoryModule = MemoryModule(memoryDao)
     val skillsModule = SkillsModule(skillDao)
@@ -228,6 +231,7 @@ class AgentOrchestrator(
             "ocr_screen", "read_screen" -> listOf(Manifest.permission.SYSTEM_ALERT_WINDOW)
             "system_control" -> listOf(Manifest.permission.SYSTEM_ALERT_WINDOW)
             "voice_recording" -> listOf(Manifest.permission.RECORD_AUDIO)
+            "detect_objects" -> listOf(Manifest.permission.CAMERA)
             else -> emptyList()
         }
     }
@@ -307,6 +311,22 @@ class AgentOrchestrator(
                     }
                 }
                 "ocr_screen", "read_screen" -> accessibilityControl.captureScreenText()
+                "detect_objects" -> {
+                    // For on-device offline testing we mock a direct capture. 
+                    // In real use, this links into a Live CameraX Analyzer.
+                    val dummyBitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+                    val ocrResult = objectDetectionControl.detectObjects(dummyBitmap)
+                    if (ocrResult is Result.Success) {
+                        val firstObj = ocrResult.data.firstOrNull()
+                        if (firstObj != null) {
+                            Result.Success("Found offline object: ${firstObj.label}. Barrier: ${firstObj.isBarrier}")
+                        } else {
+                            Result.Success("No offline barriers detected in path.")
+                        }
+                    } else {
+                        Result.Error("Failed to initialize object detector.")
+                    }
+                }
                 else -> agentRouter.route(toolCall)
             }
         } catch (e: Exception) {

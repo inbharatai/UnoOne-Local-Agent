@@ -2,52 +2,80 @@ package com.unoone.agent.voice.tts
 
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
-// import com.k2fsa.sherpa.onnx.OfflineTts
-// import com.k2fsa.sherpa.onnx.OfflineTtsConfig
-// import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
-// import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 
+/**
+ * World-class offline TTS using Sherpa-ONNX.
+ * Uses reflection/safe-loading to ensure the app compiles and runs perfectly 
+ * on any Android device even if the native .so libraries are missing.
+ */
 class SherpaTtsEngine(private val modelDir: String) {
 
-    // private var tts: OfflineTts? = null
+    private var tts: Any? = null
     private val ttsPlayer = TtsPlayer()
     private var initialized = false
 
     fun initialize(): Result<Unit> {
         return try {
-            // val config = OfflineTtsConfig(
-            //     modelConfig = OfflineTtsModelConfig(
-            //         vits = OfflineTtsVitsModelConfig(
-            //             model = "$modelDir/model.onnx",
-            //             tokens = "$modelDir/tokens.txt",
-            //             dataDir = "$modelDir/espeak-ng-data"
-            //         ),
-            //         numThreads = 2,
-            //         debug = false
-            //     )
-            // )
-            // tts = OfflineTts(config)
+            Logger.i("SherpaTtsEngine: Checking model files in $modelDir")
+            val modelFile = java.io.File("$modelDir/model.onnx")
+            val tokensFile = java.io.File("$modelDir/tokens.txt")
+            val espeakDataDir = java.io.File("$modelDir/espeak-ng-data")
+
+            if (!modelFile.exists() || !tokensFile.exists() || !espeakDataDir.exists()) {
+                return Result.Error("Sherpa TTS model files missing. Please download models to: $modelDir")
+            }
+
+            // Attempt to load Sherpa-ONNX classes dynamically
+            val configClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineTtsConfig")
+            val modelConfigClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineTtsModelConfig")
+            val vitsConfigClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig")
+            val ttsClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineTts")
+
+            // Build configs using reflection
+            val vitsConfig = vitsConfigClass.getConstructor(
+                String::class.java, String::class.java, String::class.java
+            ).newInstance(modelFile.absolutePath, tokensFile.absolutePath, espeakDataDir.absolutePath)
+
+            val modelConfig = modelConfigClass.getDeclaredConstructor().newInstance()
+            modelConfigClass.getMethod("setVits", vitsConfigClass).invoke(modelConfig, vitsConfig)
+            modelConfigClass.getMethod("setNumThreads", Int::class.javaPrimitiveType).invoke(modelConfig, 2)
+
+            val config = configClass.getDeclaredConstructor().newInstance()
+            configClass.getMethod("setModelConfig", modelConfigClass).invoke(config, modelConfig)
+
+            tts = ttsClass.getConstructor(configClass).newInstance(config)
             initialized = true
-            Logger.i("SherpaTtsEngine initialized successfully (STUBBED)")
+            Logger.i("SherpaTtsEngine: Offline TTS successfully initialized with high-quality models")
             Result.Success(Unit)
+        } catch (e: ClassNotFoundException) {
+            Logger.w("SherpaTtsEngine: Sherpa-ONNX classes not found in classpath. Falling back to System TTS.")
+            Result.Error("Sherpa library not available")
         } catch (e: Exception) {
-            Logger.e("SherpaTtsEngine init failed: ${e.message}", e)
-            Result.Error("TTS init failed: ${e.message}")
+            Logger.e("SherpaTtsEngine: Initialization failed", e)
+            Result.Error("Sherpa TTS failed: ${e.message}")
         }
     }
 
     fun speak(text: String): Result<Unit> {
-        if (!initialized) return Result.Error("TTS engine not initialized")
-        // val engine = tts ?: return Result.Error("TTS engine is null")
+        if (!initialized || tts == null) {
+            return Result.Error("SherpaTtsEngine not initialized")
+        }
 
         return try {
-            // val audio = engine.generate(text, sid = 0, speed = 1.0f)
-            // ttsPlayer.playPcm(audio.samples, sampleRate = audio.sampleRate)
-            Logger.i("TTS spoke: '$text' (STUBBED)")
+            val ttsClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineTts")
+            val generateMethod = ttsClass.getMethod("generate", String::class.java, Int::class.javaPrimitiveType, Float::class.javaPrimitiveType)
+            val audioClass = Class.forName("com.k2fsa.sherpa.onnx.GeneratedAudio")
+
+            val audioObj = generateMethod.invoke(tts, text, 0, 1.0f)
+            val samples = audioClass.getMethod("getSamples").invoke(audioObj) as FloatArray
+            val sampleRate = audioClass.getMethod("getSampleRate").invoke(audioObj) as Float
+
+            ttsPlayer.playPcm(samples, sampleRate.toInt())
+            Logger.i("SherpaTtsEngine: Speech generated successfully")
             Result.Success(Unit)
         } catch (e: Exception) {
-            Logger.e("TTS speak failed", e)
-            Result.Error("TTS failed: ${e.message}")
+            Logger.e("SherpaTtsEngine: Speech generation failed", e)
+            Result.Error("TTS synthesis failed: ${e.message}")
         }
     }
 
@@ -59,13 +87,15 @@ class SherpaTtsEngine(private val modelDir: String) {
 
     fun release() {
         stop()
-        // try {
-        //     tts?.close()
-        // } catch (e: Exception) {
-        //     Logger.e("Error releasing TTS engine", e)
-        // }
-        // tts = null
+        try {
+            if (tts != null) {
+                val ttsClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineTts")
+                ttsClass.getMethod("close").invoke(tts)
+            }
+        } catch (e: Exception) {
+            Logger.e("SherpaTtsEngine: Error closing TTS", e)
+        }
+        tts = null
         initialized = false
-        Logger.i("TTS engine released")
     }
 }
