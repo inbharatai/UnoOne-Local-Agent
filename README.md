@@ -30,6 +30,7 @@
 
 ## 📚 Quick Navigation
 
+- [Executive Summary (Founder/Investor View)](#-executive-summary-founderinvestor-view)
 - [What UnoOne Does](#-what-unoone-does)
 - [Expert Architectural Audit](#-expert-architectural-audit-post-stabilization)
 - [Mapped Multilingual Indian Language Support](#-mapped-multilingual-indian-language-support)
@@ -38,6 +39,21 @@
 - [Getting Started](#-getting-started)
 - [Voice Commands](#-voice-commands)
 - [Module Deep Dive](#-module-deep-dive)
+
+## 🧭 Executive Summary (Founder/Investor View)
+
+> UnoOne Agent is a privacy-first, fully offline Android AI agent that converts natural language into safe, verifiable phone actions. It is engineered for high-trust environments where cloud dependence, data leakage, and latency are unacceptable.
+
+| Strategic Lens | Executive Summary |
+|:---------------|:------------------|
+| Problem | Mobile assistants are either cloud-dependent, weak at deep app control, or unsafe for sensitive workflows. |
+| Solution | UnoOne combines wake-word voice interaction, on-device reasoning, accessibility-powered control, and safety-gated execution in one offline stack. |
+| Differentiation | 100% on-device operation, structured 8-step orchestration pipeline, and 4-tier action safety model tuned for real-world automation. |
+| Technical Moat | Modular architecture across voice, routing, memory, safety, and control layers enables fast iteration without destabilizing the full system. |
+| Market Relevance | Built for India-first multilingual usage, low-connectivity environments, and privacy-critical users in consumer and enterprise contexts. |
+| Revenue Pathways | Premium assistant subscriptions, enterprise/offline deployments, vertical skill packs, and OEM/device-level partnerships. |
+| Current Status | Stabilized codebase, expert architectural audit completed, and validated support for 11 Indian languages for STT/TTS workflows. |
+| Near-Term Focus | OEM latency tuning, deeper dialect adaptation, reliability benchmarking at scale, and enterprise-grade policy controls. |
 
 ## ✨ What UnoOne Does
 
