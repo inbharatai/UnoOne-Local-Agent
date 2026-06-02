@@ -1,531 +1,156 @@
-<div align="center">
+# UnoOne Local Agent
 
-# 🤖 UnoOne Agent
+UnoOne Local Agent is an Android-first, on-device assistant built for private automation, screen interaction, and sensory navigation workflows.
 
-### **Your Phone. Your Intelligence. Your Privacy.**
+This repository contains two major documentation layers:
 
-> A fully offline Android AI companion that lives on your device —  
-> understanding voice, reading screens, controlling apps, and automating tasks.  
-> **Zero cloud. Zero accounts. Zero data leaves your phone.**
+- Root overview (this file): product and architecture summary for the full workspace.
+- Android implementation details: `android-app/UnoOneAgent/README.md`.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Platform-Android-green?style=for-the-badge&logo=android" alt="Android">
-  <img src="https://img.shields.io/badge/Language-Kotlin-purple?style=for-the-badge&logo=kotlin" alt="Kotlin">
-  <img src="https://img.shields.io/badge/UI-Compose%20%2B%20Material%203-blue?style=for-the-badge&logo=jetpackcompose" alt="Compose">
-  <img src="https://img.shields.io/badge/Privacy-100%25%20Offline-critical?style=for-the-badge&logo=privacyguides" alt="Offline">
-  <img src="https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge" alt="License">
-</p>
+## Current Reality Snapshot
 
-<p align="center">
-  <img src="https://img.shields.io/badge/API-28%2B%20(Android%209)-success?style=flat-square" alt="API 28+">
-  <img src="https://img.shields.io/badge/Modules-13-9cf?style=flat-square" alt="13 Modules">
-  <img src="https://img.shields.io/badge/Architecture-MVVM-informational?style=flat-square" alt="MVVM">
-  <img src="https://img.shields.io/badge/Safety-4%20Tier%20Classifier-orange?style=flat-square" alt="Safety">
-  <img src="https://img.shields.io/badge/Voice-Sherpa--ONNX-blueviolet?style=flat-square" alt="Sherpa-ONNX">
-</p>
+The codebase currently delivers:
 
----
+- 13 Gradle modules in a modular Android architecture.
+- On-device screen interaction through AccessibilityService.
+- Blind Aid camera mode with continuous CameraX + ML Kit object detection feedback.
+- Voice input with unified start/stop transcription APIs.
+- Rule-based command parsing and safety classification before execution.
+- Room-backed persistence for notes, skills, memory, logs, and model metadata.
 
-</div>
+Important runtime note:
 
-## 📚 Quick Navigation
+- In-app mic interactions currently default to Android SpeechRecognizer unless explicit Sherpa model initialization is wired for the `VoiceModule` path.
+- `VoiceService` contains keyword spotting and Sherpa loading logic, but command callback wiring to orchestrator is still incomplete.
 
-- [Executive Summary (Founder/Investor View)](#-executive-summary-founderinvestor-view)
-- [What UnoOne Does](#-what-unoone-does)
-- [Expert Architectural Audit](#-expert-architectural-audit-post-stabilization)
-- [Mapped Multilingual Indian Language Support](#-mapped-multilingual-indian-language-support)
-- [Capabilities](#-capabilities)
-- [Architecture](#-architecture)
-- [Getting Started](#-getting-started)
-- [Voice Commands](#-voice-commands)
-- [Module Deep Dive](#-module-deep-dive)
+## Architecture
 
-## 🧭 Executive Summary (Founder/Investor View)
+### Module Map (13 modules)
 
-> UnoOne Agent is a privacy-first, fully offline Android AI agent that converts natural language into safe, verifiable phone actions. It is engineered for high-trust environments where cloud dependence, data leakage, and latency are unacceptable.
+| Module | Role | Key points |
+|---|---|---|
+| `:app` | UI and orchestration | Compose screens, overlay service, orchestrator, permission flow |
+| `:core` | Shared primitives | `Result`, `ToolCall`, timeline models, logger |
+| `:storage` | Persistence | Room DB, DAOs, entity models |
+| `:modelmanager` | Model asset management | Folder detection, checksum verification, storage usage |
+| `:localbrain` | Intent and inference layer | Rule parser, ONNX wrapper, prompt builder, RAG utilities |
+| `:voice` | Speech stack | Recorder, Android STT, Sherpa wrappers, TTS players, foreground voice service |
+| `:agentrouter` | Tool dispatch | Registry/handler routing for supported tools |
+| `:safetyguard` | Policy enforcement | `DIRECT`, `CONFIRM`, `STRONG_CONFIRM`, `BLOCK` classifier |
+| `:phonecontrol` | Device integrations | Calendar, app launch, OCR, object detection, Blind Aid manager |
+| `:memory` | User memory | Preference/correction/pattern retrieval and storage |
+| `:skills` | User automation | Skill CRUD, trigger matching, step execution |
+| `:observability` | Diagnostics | Local metric recording helpers |
+| `:accessibilitycontrol` | Screen control | Gestures, click/type/fill, text capture, context tracking |
 
-| Strategic Lens | Executive Summary |
-|:---------------|:------------------|
-| Problem | Mobile assistants are either cloud-dependent, weak at deep app control, or unsafe for sensitive workflows. |
-| Solution | UnoOne combines wake-word voice interaction, on-device reasoning, accessibility-powered control, and safety-gated execution in one offline stack. |
-| Differentiation | 100% on-device operation, structured 8-step orchestration pipeline, and 4-tier action safety model tuned for real-world automation. |
-| Technical Moat | Modular architecture across voice, routing, memory, safety, and control layers enables fast iteration without destabilizing the full system. |
-| Market Relevance | Built for India-first multilingual usage, low-connectivity environments, and privacy-critical users in consumer and enterprise contexts. |
-| Revenue Pathways | Premium assistant subscriptions, enterprise/offline deployments, vertical skill packs, and OEM/device-level partnerships. |
-| Current Status | Stabilized codebase, expert architectural audit completed, and validated support for 11 Indian languages for STT/TTS workflows. |
-| Near-Term Focus | OEM latency tuning, deeper dialect adaptation, reliability benchmarking at scale, and enterprise-grade policy controls. |
+### Orchestrator Flow
 
-## ✨ What UnoOne Does
+`AgentOrchestrator` executes commands through this sequence:
 
-<table>
-<tr>
-<td width="50%">
+1. skill trigger lookup
+2. parser/inference selection
+3. permission gate
+4. safety classification
+5. optional user confirmation
+6. tool execution
+7. verification/logging
+8. voice/text response
 
-### 🎙️ Voice-First
-Say **"UnoOne"** and speak naturally. Wake word detection, offline STT, and spoken responses — no internet needed.
+## Blind Aid Vision Deep Dive
 
-</td>
-<td width="50%">
+The current blind aid path is implemented across parser, orchestrator, UI, and phonecontrol modules:
 
-### 📱 Deep Control
-Tap, scroll, swipe, type, read screens — all through Android's Accessibility Service. Your phone, automated.
+- Activation/deactivation intents:
+  - parser routes `activate blind aid`/`detect objects` to `detect_objects`
+  - parser routes `deactivate blind aid`/`stop blind aid` to `deactivate_blind_aid`
+- Safety behavior:
+  - unlisted tools default to `STRONG_CONFIRM` in `SafetyGuard`, so blind aid activation is confirmation-gated.
+- UI behavior:
+  - `AgentScreen` shows a live `BlindAidCameraPreview` card when blind aid is active.
+  - preview binds `Preview` + `ImageAnalysis` with `ProcessCameraProvider`.
+  - camera resources are explicitly unbound on teardown.
+- Analyzer behavior (`BlindAidManager`):
+  - processes approx 1/6 frames (about 5 FPS from a 30 FPS feed).
+  - runs ML Kit object detection on-device.
+  - loads custom local model if found at:
+    `Android/data/com.unoone.agent/files/models/gemma-local/custom_yolov8.tflite`
+  - emits haptic + tone feedback when obstacle fill ratio crosses threshold.
+  - emits throttled spoken feedback by object label.
 
-</td>
-</tr>
-<tr>
-<td width="50%">
+Current limitation to document clearly:
 
-### 🧠 Local Intelligence
-Rule-based parser handles 20+ command patterns instantly. ONNX LLM fallback for complex requests. Memory that learns your preferences.
+- The live camera card currently does not render visual bounding boxes in Compose; feedback is voice/haptic/tone driven.
 
-</td>
-<td width="50%">
+## Hardware Requirements
 
-### 🔒 Privacy by Design
-Every byte stays on your device. No cloud APIs, no telemetry, no accounts. Your data never leaves your phone.
+### Baseline (Runs app)
 
-</td>
-</tr>
-</table>
+- Android 9+ (API 28+)
+- ARM64 device
+- 4 GB RAM
+- 1 GB free storage
+- Microphone
 
----
+### Recommended (Smooth blind aid + voice)
 
-## 🧪 Expert Architectural Audit (Post-Stabilization)
+- Android 12+ (API 31+)
+- 6 to 8 GB RAM
+- Mid/high-tier SoC with CameraX/ML Kit capable ISP
+- 2+ GB free storage
+- Rear camera + vibration motor
 
-An expert-level, deep-dive architectural audit has been conducted on the newly stabilized UnoOne Agent codebase.
+### Expert (Large local model workflows)
 
-### Audit Scope
+- 8+ GB RAM (12+ GB preferred)
+- Modern NPU-capable chipset (Snapdragon 8-class / equivalent)
+- 5+ GB free storage for optional larger model packs
 
-- End-to-end verification of the 8-step agent orchestration pipeline
-- Cross-module dependency review for clean boundaries and maintainability
-- Safety gate validation across DIRECT, CONFIRM, STRONG_CONFIRM, and BLOCK flows
-- Offline-first fallback behavior checks for STT, parser, TTS, and OCR pathways
-- Observability readiness review for diagnostics, latency tracking, and execution logging
+## Permissions and Security
 
-### Audit Outcome
+Manifest-declared permissions include:
 
-- The architecture is stable and production-ready for privacy-first, on-device automation.
-- Permission and safety checks are consistently enforced before high-impact actions.
-- Module separation is strong, allowing independent evolution of voice, control, safety, memory, and routing systems.
-- Fallback paths reduce hard failures when optional local models are missing or degraded.
-- Primary optimization headroom remains in OEM-specific latency tuning and broader dialect calibration.
+- `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`
+- `CAMERA`, `VIBRATE`
+- `READ_CONTACTS`
+- `READ_CALENDAR`, `WRITE_CALENDAR`
+- `SYSTEM_ALERT_WINDOW`
+- `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`
+- `POST_NOTIFICATIONS`
+- `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`
+- storage compatibility permissions for model directories
 
-## 🇮🇳 Mapped Multilingual Indian Language Support
+Security model highlights:
 
-By leveraging Android's pre-installed neural speech packs and routing them through highly optimized context intents, the following 11 Indian languages are natively supported for Speech-to-Text (STT) and Text-to-Speech (TTS):
+- Unknown or sensitive tools default to strong confirmation.
+- Accessibility actions require explicit user enablement.
+- Screen capture path now filters for visible nodes and truncates oversized context payloads.
 
-| Language | Locale Code | System Support Level | Accent and Dialect Handling | Pronunciation Naturalness |
-|:---------|:------------|:--------------------:|:----------------------------|:--------------------------|
-| English (India) | `en-IN` | 9.5 / 10 | Flawless Hinglish and Indian English mixing | Ultra-clean, local phrasing |
-| Hindi | `hi-IN` | 9.2 / 10 | High tolerance for English-mixed code-switching | Very human-like, natural cadence |
-| Tamil | `ta-IN` | 8.5 / 10 | Handles formal literary and spoken Tamil well | Excellent syllable rendering |
-| Telugu | `te-IN` | 8.0 / 10 | High accuracy for standard Coastal and Rayalaseema variants | Handles long, agglutinative words cleanly |
-| Bengali | `bn-IN` | 8.2 / 10 | Clean vocabulary matching for standard dialects | Emotional variance is stable |
-| Marathi | `mr-IN` | 8.0 / 10 | High accuracy for standard Pune and Mumbai accents | Crisp dental and retroflex pronunciation |
-| Gujarati | `gu-IN` | 7.8 / 10 | Standard dialect coverage | Highly reliable syntax pacing |
-| Kannada | `kn-IN` | 7.8 / 10 | Good accent coverage | Highly readable tone pacing |
-| Malayalam | `ml-IN` | 7.5 / 10 | Complex phoneme recognition is highly stable | Good, though complex sandhi can sound dry |
-| Punjabi | `pa-IN` | 7.5 / 10 | Excellent Gurmukhi mapping | Warm, expressive neural voice |
-| Urdu | `ur-IN` | 7.8 / 10 | High cross-lingual accuracy with Hindi STT | Formal, elegant phonetics |
+## Model and Storage Notes
 
-> Validation note: support levels are based on internal field testing of stabilized builds and may vary slightly across OEM speech engines, firmware versions, and acoustic environments.
+Model folders expected under app external files:
 
-## 🚀 Capabilities
+- `gemma-local`
+- `sherpa-asr`
+- `sherpa-tts`
+- `vad`
+- `punctuation`
+- `ocr-optional`
 
-| 🎯 Capability | ⚙️ How It Works | 📡 Offline? |
-|:-------------|:----------------|:----------:|
-| **Voice wake word** | Sherpa-ONNX Keyword Spotter ("UnoOne") | ✅ |
-| **Speech-to-text** | Sherpa-ONNX offline transducer model | ✅ |
-| **Command parsing** | Rule-based parser + on-device LLM fallback | ✅ |
-| **Text-to-speech** | Sherpa-ONNX Piper TTS | ✅ |
-| **Screen reading** | Accessibility tree capture + ML Kit OCR | ✅ |
-| **App control** | Accessibility gestures (tap, scroll, type, swipe) | ✅ |
-| **Skill automation** | Record multi-step workflows, trigger by voice | ✅ |
-| **Safety guard** | 4-tier risk classifier with confirmation dialogs | ✅ |
-| **Notes & Calendar** | Android intents + ContentProvider queries | ✅ |
+Workspace optimization file:
 
----
+- `android-app/UnoOneAgent/.aiexclude` excludes heavy build/cache/model paths from AI/IDE scanning.
 
-## 💻 Supported Hardware
+## Validation Commands
 
-| ⚙️ Requirement | 🔻 Minimum | ✅ Recommended |
-|:--------------|:-----------|:-------------|
-| Android version | Android 9 (API 28) | Android 12+ (API 31+) |
-| RAM | 4 GB | 8 GB+ |
-| Storage (app) | 50 MB | 50 MB |
-| Storage (models) | 120 MB | 200 MB |
-| SoC | Snapdragon 660 / Exynos 9611 | Snapdragon 8 Gen 2+ / Dimensity 9200+ |
-| Microphone | Required | — |
-
-> **Works on any Android 9+ device.** UnoOne adapts automatically:
-> - **NNAPI** hardware AI acceleration when available, CPU fallback otherwise
-> - **Manufacturer-specific autostart** prompts for Xiaomi (MIUI), Huawei, Oppo, Vivo, OnePlus, Asus — gracefully skip on other devices
-> - **Standard Android APIs** (AccessibilityService, GestureDescription, intents) work identically across all manufacturers
-
----
-
-## 🏗️ Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                            ✨ UI LAYER                                │
-│                                                                      │
-│   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐ ┌────────┐│
-│   │  🤖 Agent│  │  📝 Notes│  │  ⚡ Skills│  │  📋 Logs │ │ ⚙️ Set ││
-│   │  Screen  │  │  Screen  │  │  Screen  │  │  Screen  │ │ tings  ││
-│   └────┬─────┘  └──────────┘  └────┬─────┘  └──────────┘ └────────┘│
-│        │        Jetpack Compose UI      │                            │
-│   ┌────┴───────────────────────────────┴─────┐                      │
-│   │  💬 FloatingAgentService (bubble overlay) │                      │
-│   │  🌊 WaveformVisualizer · ✅ Confirmation  │                      │
-│   └─────────────────┬────────────────────────┘                      │
-└──────────────────────┼───────────────────────────────────────────────┘
-                       │
-┌──────────────────────┼───────────────────────────────────────────────┐
-│              🧠 AGENT ORCHESTRATOR (8-Step Pipeline)                  │
-│                                                                      │
-│   ┌──────────────────────────────────────────────────────────────┐  │
-│   │  ① Skill Match → ② Parse → ③ Permission → ④ Safety          │  │
-│   │  → ⑤ Confirm? → ⑥ Execute → ⑦ Verify → ⑧ Speak             │  │
-│   └──────────────────────────────────────────────────────────────┘  │
-└──────┬──────────┬──────────┬──────────┬──────────┬────────────────┘
-       │          │          │          │          │
-  ┌────┴────┐ ┌───┴───┐ ┌───┴────┐ ┌───┴───┐ ┌───┴────────┐
-  │  🎙️    │ │ 🧠    │ │ 🛡️    │ │ 📱   │ │ ♿        │
-  │  Voice  │ │ Local │ │ Safety │ │ Phone│ │ Access-  │
-  │  Module │ │ Brain │ │ Guard  │ │Ctrl  │ │ ibility  │
-  │         │ │       │ │        │ │      │ │ Control  │
-  │ • STT   │ │ •Rule │ │ •4-tier│ │ •Open│ │ •Tap/Type│
-  │ • TTS   │ │ parser│ │  risk  │ │ •Mail│ │ •Scroll │
-  │ • KWS   │ │ •ONNX │ │  class │ │ •WA  │ │ •Swipe  │
-  │ •Android│ │  LLM  │ │ •Block │ │ •Cal │ │ •Back   │
-  │  fallback│ │ •Mem  │ │ •Conf. │ │ •OCR │ │ •Screen │
-  └─────────┘ └───────┘ └────────┘ └──────┘ └──────────┘
-       │          │          │          │          │
-┌──────┴──────────┴──────────┴──────────┴──────────┴──────────────────┐
-│                     💾 STORAGE LAYER (Room DB)                       │
-│                                                                      │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌──────────┐  ┌──────────┐ │
-│  │  Notes  │  │ Skills  │ │Memories │  │ActionLogs│  │ModelMeta │ │
-│  │  DAO    │  │  DAO    │  │  DAO    │  │   DAO    │  │   DAO    │ │
-│  └─────────┘  └─────────┘  └─────────┘  └──────────┘  └──────────┘ │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-### Module Dependency Graph
-
-```
-app ─┬─ core ──────── Result, ToolCall, TimelineStep, Logger
-     ├─ storage ───── Room entities, DAOs, UnoOneDatabase
-     ├─ modelmanager ─ Model folder detection, checksums
-     ├─ localbrain ─── RuleBasedParser, PromptBuilder, LocalBrain (ONNX)
-     ├─ voice ─────── AudioRecorder, SherpaSttEngine, SherpaTtsEngine,
-     │                KeywordSpotterEngine, AndroidSttEngine, TtsPlayer,
-     │                VoiceService (foreground), VoiceModule
-     ├─ agentrouter ── Tool registry, 10+ built-in tools
-     ├─ safetyguard ── RiskLevel classifier (DIRECT/CONFIRM/STRONG_CONFIRM/BLOCK)
-     ├─ phonecontrol ─ PhoneControl, CalendarControl, OcrControl, PackageResolver
-     ├─ memory ─────── MemoryModule (preferences, corrections, keyword context)
-     ├─ skills ─────── SkillsModule (CRUD, trigger matching, JSON step storage)
-     ├─ observability ─ Diagnostics (latency, success rates)
-     └─ accessibilitycontrol ─ UnoOneAccessibilityService, AccessibilityControl
-```
-
-### 🔄 Agent Loop — 8 Steps
-
-```
-  🎤 Voice / ⌨️ Text Input
-         │
-         ▼
-  ① 🔍 Skill Match ────── Is this a saved skill trigger? → Execute each step
-         │
-         ▼
-  ② 🧩 Parse ──────────── RuleBasedParser → ONNX LLM fallback → ToolCall JSON
-         │
-         ▼
-  ③ 🔑 Permission Check ── Missing runtime permissions? → Request & pause
-         │
-         ▼
-  ④ 🛡️ Safety Classify ─── DIRECT / CONFIRM / STRONG_CONFIRM / BLOCK
-         │
-         ▼
-  ⑤ ⚠️ Confirmation ────── CONFIRM: allow/deny dialog
-         │                  STRONG_CONFIRM: type "confirm" to proceed
-         │                  BLOCK: reject immediately
-         ▼
-  ⑥ ⚡ Execute ─────────── Dispatch to PhoneControl, AccessibilityControl, etc.
-         │
-         ▼
-  ⑦ ✅ Verify ──────────── Log result, check success
-         │
-         ▼
-  ⑧ 🔊 Speak / Display ── TTS for voice input, timeline update for text
-```
-
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|:------|:-----------|
-| **Language** | Kotlin 1.9.23 |
-| **UI** | Jetpack Compose + Material 3 |
-| **Architecture** | MVVM (manual DI, no Hilt/Koin) |
-| **Database** | Room 2.6.1 (5 entities, 5 DAOs) |
-| **Serialization** | kotlinx-serialization 1.6.3 |
-| **Coroutines** | kotlinx-coroutines 1.8.0 |
-| **LLM Inference** | ONNX Runtime 1.18.0 |
-| **Speech** | Sherpa-ONNX 1.10.30 (STT, TTS, KWS) |
-| **OCR** | Google ML Kit Text Recognition 19.0.0 |
-| **Accessibility** | Android AccessibilityService + GestureDescription |
-| **Build** | AGP 8.5.0 · Gradle 8.7 · KSP 1.9.23-1.0.20 |
-| **Target** | Android 9 (API 28) → Android 14 (API 34) |
-
----
-
-## 📂 Project Structure
-
-```
-UnoOne-Local-Agent/
-├── android-app/UnoOneAgent/           # 📱 Android Studio project root
-│   ├── app/                           # 🚀 Application shell
-│   │   └── src/main/java/com/unoone/agent/
-│   │       ├── AgentOrchestrator.kt       # 8-step agent pipeline
-│   │       ├── FloatingAgentService.kt    # Floating bubble + chat overlay
-│   │       ├── MainActivity.kt            # Permissions, battery optimization
-│   │       ├── PermissionManager.kt       # Permission + manufacturer autostart
-│   │       ├── UnoOneApplication.kt       # App entry, orchestrator init
-│   │       └── ui/
-│   │           ├── screens/               # AgentScreen, NotesScreen, SkillsScreen
-│   │           ├── components/            # WaveformVisualizer, ConfirmationDialog
-│   │           ├── viewmodel/             # AgentViewModel, SkillsViewModel
-│   │           ├── navigation/            # UnoOneNavHost, Screen
-│   │           └── theme/                 # UnoOneTheme, Color, Type
-│   ├── core/                          # 📦 Result, ToolCall, TimelineStep, Logger
-│   ├── storage/                       # 🗄️ Room entities, DAOs, UnoOneDatabase
-│   ├── modelmanager/                  # 📂 Model folder detection, checksums
-│   ├── localbrain/                    # 🧠 RuleBasedParser, PromptBuilder, LocalBrain
-│   ├── voice/                         # 🎙️ VoiceModule, VoiceService, AudioRecorder
-│   ├── agentrouter/                   # 🔀 AgentRouter, tool registry
-│   ├── safetyguard/                   # 🛡️ SafetyGuard, 4-tier risk classification
-│   ├── phonecontrol/                  # 📱 PhoneControl, CalendarControl, OcrControl
-│   ├── memory/                        # 💭 MemoryModule (keyword context matching)
-│   ├── skills/                        # ⚡ SkillsModule (JSON step storage)
-│   ├── observability/                 # 📊 Diagnostics (latency, success rates)
-│   └── accessibilitycontrol/         # ♿ UnoOneAccessibilityService, AccessibilityControl
-├── models/                            # 🧠 On-device model files (pushed via ADB)
-│   ├── gemma-local/                   # Intent classifier or Gemma 2B ONNX
-│   ├── sherpa-asr/                    # Sherpa-ONNX ASR transducer model
-│   ├── sherpa-tts/                    # Piper TTS model + espeak-ng-data
-│   └── vad/                           # Keyword spotting model
-├── scripts/                           # 🔧 ADB push, checksum, test scripts
-└── docs/                              # 📖 Architecture, test plans, setup guides
-```
-
----
-
-## 🏁 Getting Started
-
-### Prerequisites
-
-| Tool | Version | Purpose |
-|:-----|:--------|:--------|
-| Android Studio | Latest stable | IDE, build, debug |
-| Android SDK | API 34 | Compile target |
-| JDK | 17 | Kotlin compilation |
-| ADB | Latest | Device deployment, model push |
-
-### Build & Run
+From `android-app/UnoOneAgent`:
 
 ```bash
-# 1. Open in Android Studio
-#    File → Open → UnoOne-Local-Agent/android-app/UnoOneAgent
-
-# 2. Wait for Gradle sync (5-10 min first time)
-
-# 3. Connect your Android device (USB Debugging enabled)
-
-# 4. Build and install:
-./gradlew assembleDebug
-adb install app/build/outputs/apk/debug/app-debug.apk
-
-# 5. On first launch, grant:
-#    🎙️ Microphone, 📇 Contacts, 📅 Calendar, 📷 Camera
-#    🖼️ Display over other apps (overlay)
-#    ♿ Accessibility Service (for deep control)
-#    🔋 Disable battery optimization
-#    ▶️ Autostart permission (Xiaomi/Huawei/Oppo/Vivo/OnePlus/Asus)
+./gradlew.bat :app:testDebugUnitTest
+./gradlew.bat :app:compileDebugKotlin
 ```
 
-### Push Model Files (Required for Voice)
+## Canonical Technical README
 
-```bash
-# Sherpa-ONNX ASR model (~70 MB)
-adb push models/sherpa-asr/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-asr/
+For implementation-level details, see:
 
-# Sherpa-ONNX TTS (Piper) model (~30-60 MB)
-adb push models/sherpa-tts/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-tts/
-
-# Keyword spotting model (~10-30 MB)
-adb push models/vad/ /sdcard/Android/data/com.unoone.agent/files/models/vad/
-
-# Intent classifier or Gemma 2B ONNX (~5 MB - 1.5 GB)
-adb push models/gemma-local/ /sdcard/Android/data/com.unoone.agent/files/models/gemma-local/
-```
-
-> ⚠️ **Without model files**, the app falls back to: Android `SpeechRecognizer` for STT (requires internet), rule-based command parsing for NLU, and no TTS output.
-
----
-
-## 🎤 Voice Commands
-
-### Quick Commands (No Models Required)
-
-| 🗣️ Command | ⚡ Action |
-|:-----------|:---------|
-| `"Create a note: buy milk"` | Saves note to Room DB |
-| `"Open Chrome"` | Launches Chrome |
-| `"Open WhatsApp"` | Launches WhatsApp |
-| `"Open calendar"` | Opens calendar insert |
-| `"Read screen"` | Reads all visible text via accessibility |
-| `"Scroll down"` | Scrolls current app down |
-| `"Go back"` | Presses back button |
-| `"Go home"` | Presses home button |
-| `"Send whatsapp to 1234567890 saying hello"` | Opens WhatsApp with message |
-
-### Skill Commands
-
-| 🗣️ Command | ⚡ Action |
-|:-----------|:---------|
-| `"Teach you a skill called Morning to open Chrome then read screen"` | Creates a reusable skill |
-| `"Morning"` | Triggers the saved skill's steps |
-
-### Deep Control (Accessibility Required)
-
-| 🗣️ Command | ⚡ Action |
-|:-----------|:---------|
-| `"Find and click Login"` | Scrolls to find "Login" text and taps it |
-| `"Fill username with john@example.com"` | Types into the field with "username" hint |
-| `"Swipe left"` | Performs left swipe gesture |
-| `"Open notifications"` | Opens notification shade |
-
----
-
-## 📋 Module Deep Dive
-
-### 🎙️ Voice Pipeline
-
-```
-AudioRecorder (16kHz PCM, continuous)
-       │
-       ▼
-KeywordSpotterEngine ("UnoOne" wake word)
-       │ detected
-       ▼
-VAD Silence Detection (energy-based RMS)
-       │ pause detected
-       ▼
-SherpaSttEngine (offline transducer)
-       │ or fallback
-       ▼
-AndroidSttEngine (Google SpeechRecognizer)
-       │
-       ▼
-AgentOrchestrator.processCommand(text, VOICE)
-       │
-       ▼
-SherpaTtsEngine (Piper voice) → TtsPlayer (AudioTrack)
-```
-
-### ♿ Accessibility Control
-
-All actions go through `UnoOneAccessibilityService` which requires explicit user enablement:
-
-| Method | What It Does |
-|:-------|:------------|
-| `clickNodeWithText(text)` | Finds and clicks a node by its text |
-| `clickAt(x, y)` | Clicks at exact coordinates |
-| `typeTextIntoFocused(text)` | Types into the currently focused input |
-| `fillFieldWithText(hint, text)` | Finds editable by hint and fills it |
-| `scrollDown()` / `scrollUp()` | Scrolls via gesture swipe |
-| `swipe(direction)` | Swipes left / right / up / down |
-| `longPress(x, y)` | Long press at coordinates |
-| `goBack()` / `goHome()` | Global navigation actions |
-| `openNotifications()` / `openRecents()` | System UI actions |
-| `findAndClick(text)` | Scrolls to find text, then clicks it |
-| `captureVisibleText()` | Reads all text from the accessibility tree |
-
-### 🛡️ Safety Guard
-
-Every action is classified before execution:
-
-| ⚠️ Risk Level | 🔒 Behavior | 📋 Example |
-|:-------------|:-----------|:----------|
-| **DIRECT** | Execute immediately | Create note, open Chrome |
-| **CONFIRM** | Show allow/deny dialog | Send WhatsApp, open camera |
-| **STRONG_CONFIRM** | Type "confirm" to proceed | Draft email, fill passwords |
-| **BLOCK** | Reject immediately | Destructive actions |
-
----
-
-## 🔐 Permissions
-
-| Permission | Purpose | Required |
-|:----------|:--------|:--------:|
-| `RECORD_AUDIO` | Voice commands, wake word | ✅ |
-| `READ_CONTACTS` | Email/WhatsApp contact resolution | ✅ |
-| `READ_CALENDAR` / `WRITE_CALENDAR` | Calendar event queries | ✅ |
-| `CAMERA` | Open camera intent | ✅ |
-| `POST_NOTIFICATIONS` | Foreground service notification (API 33+) | ✅ |
-| `SYSTEM_ALERT_WINDOW` | Floating bubble overlay | ✅ |
-| Accessibility Service | Deep app control (tap, scroll, type) | ✅ |
-| `MANAGE_EXTERNAL_STORAGE` | Model file management (API 30+) | Optional |
-| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | Prevent background service kill | Recommended |
-| `FOREGROUND_SERVICE_MICROPHONE` | Background wake word detection | ✅ |
-| `FOREGROUND_SERVICE_SPECIAL_USE` | Floating bubble service | ✅ |
-
-> **Manufacturer-specific prompts** work on Xiaomi (MIUI), Huawei, Oppo, Vivo, OnePlus, and Asus — each targets the correct settings screen. On Pixel/Samsung/Motorola, standard battery optimization dialog is sufficient.
-
----
-
-## 🧠 Models
-
-| Model | Size | Purpose | Source |
-|:------|:-----|:-------|:-------|
-| Sherpa-ONNX ASR | ~70 MB | Offline speech-to-text | [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases) |
-| Sherpa-ONNX TTS (Piper) | ~30-60 MB | Offline text-to-speech | [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases) |
-| Keyword Spotter | ~10-30 MB | Wake word "UnoOne" | [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases) |
-| Intent Classifier | ~5-20 MB | On-device command classification | Custom-trained ONNX |
-| Gemma 2B (optional) | ~1.5-5 GB | Full generative LLM | [Kaggle](https://www.kaggle.com/models/google/gemma-2b) |
-
-> All models are stored in app-private storage and **never leave the device**.
-
----
-
-## 📑 Key Files Quick Reference
-
-| File | Purpose |
-|:-----|:--------|
-| `AgentOrchestrator.kt` | 8-step agent pipeline, skill matching, confirmation flow |
-| `FloatingAgentService.kt` | Floating bubble + chat overlay with voice input |
-| `MainActivity.kt` | Permissions, battery optimization, manufacturer autostart |
-| `PermissionManager.kt` | Runtime, system, permanent denial, manufacturer handling |
-| `RuleBasedParser.kt` | 20+ command patterns with compound command support |
-| `LocalBrain.kt` | ONNX inference engine (rule fallback when no model) |
-| `VoiceService.kt` | Foreground service with KWS → VAD → STT → command pipeline |
-| `UnoOneAccessibilityService.kt` | Screen automation (tap, scroll, type, read) |
-| `SafetyGuard.kt` | 4-tier risk classification engine |
-| `SkillsModule.kt` | Skill CRUD with kotlinx-serialization |
-| `MemoryModule.kt` | Keyword-based context retrieval |
-| `WaveformVisualizer.kt` | Animated waveform during voice input |
-| `ConfirmationDialog.kt` | CONFIRM/STRONG_CONFIRM safety dialogs |
-
----
-
-<div align="center">
-
-### Built with ❤️ by [InBharatAI](https://github.com/inbharatai)
-
-**UnoOne** — *One agent. One device. Zero compromises.*
-
-</div>
+- `android-app/UnoOneAgent/README.md`
