@@ -1,138 +1,207 @@
 <div align="center">
 
-# UnoOne Local Agent
+# UnoOne Agent
 
-### Private Android Assistant for On-Device Automation and Sensory Navigation
+### Your Phone. Your Intelligence. Your Privacy.
+
+> A local-first Android AI companion for voice commands, deep app control, and sensory blind-aid navigation.
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-Android-success?style=for-the-badge&logo=android" alt="Android">
-  <img src="https://img.shields.io/badge/Language-Kotlin-7f52ff?style=for-the-badge&logo=kotlin" alt="Kotlin">
-  <img src="https://img.shields.io/badge/UI-Compose%20%2B%20Material3-1f6feb?style=for-the-badge&logo=jetpackcompose" alt="Compose">
-  <img src="https://img.shields.io/badge/Architecture-13%20Modules-0ea5e9?style=for-the-badge" alt="13 Modules">
+  <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android">
+  <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin">
+  <img src="https://img.shields.io/badge/UI-Compose%20%2B%20Material%203-1F6FEB?style=for-the-badge&logo=jetpackcompose&logoColor=white" alt="Compose">
+  <img src="https://img.shields.io/badge/Modules-13-0EA5E9?style=for-the-badge" alt="13 modules">
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Min%20SDK-28%20(Android%209)-22c55e?style=flat-square" alt="Min SDK 28">
-  <img src="https://img.shields.io/badge/Mode-Offline--First-f59e0b?style=flat-square" alt="Offline First">
-  <img src="https://img.shields.io/badge/Vision-CameraX%20%2B%20ML%20Kit-2563eb?style=flat-square" alt="Vision Stack">
-  <img src="https://img.shields.io/badge/Safety-DIRECT%20%7C%20CONFIRM%20%7C%20STRONG__CONFIRM%20%7C%20BLOCK-ef4444?style=flat-square" alt="Safety Levels">
+  <img src="https://img.shields.io/badge/API-28%2B%20(Android%209%2B)-22C55E?style=flat-square" alt="API 28+">
+  <img src="https://img.shields.io/badge/Build-Gradle%208.7-2563EB?style=flat-square" alt="Gradle 8.7">
+  <img src="https://img.shields.io/badge/Safety-DIRECT%20%7C%20CONFIRM%20%7C%20STRONG__CONFIRM%20%7C%20BLOCK-EF4444?style=flat-square" alt="Safety levels">
+  <img src="https://img.shields.io/badge/Vision-CameraX%20%2B%20ML%20Kit-0B7285?style=flat-square" alt="Vision stack">
 </p>
 
 </div>
 
 ## Quick Navigation
 
-- [What It Is](#what-it-is)
-- [Current Runtime Truth](#current-runtime-truth)
+- [Executive Snapshot](#executive-snapshot)
+- [What UnoOne Delivers](#what-unoone-delivers)
+- [Language Support Matrix](#language-support-matrix)
+- [Architecture Design](#architecture-design)
 - [Blind Aid Vision Deep Dive](#blind-aid-vision-deep-dive)
-- [Architecture](#architecture)
+- [Voice Pipeline](#voice-pipeline)
 - [Hardware Requirements](#hardware-requirements)
-- [Permissions and Safety](#permissions-and-safety)
-- [Validation Commands](#validation-commands)
+- [Security and Permission Model](#security-and-permission-model)
+- [Build and Validation](#build-and-validation)
 
-## What It Is
+## Executive Snapshot
 
-UnoOne Local Agent is an Android-first assistant for:
+UnoOne is built as a modular on-device Android agent that combines:
 
-- deep app control via AccessibilityService
-- voice and text command execution through a safety-gated orchestrator
-- on-device visual assistance workflows using CameraX + ML Kit
-- local persistence of notes, skills, memory, logs, and model metadata
+- privacy-first command execution
+- accessibility-based deep UI control
+- live camera-aided sensory navigation
+- local persistence and safety-gated automation
 
-The workspace is split into two documentation layers:
+The workspace has two core documentation entry points:
 
-- this root README for product/architecture overview
-- `android-app/UnoOneAgent/README.md` for implementation-level technical details
+- root overview (this file)
+- Android implementation details: `android-app/UnoOneAgent/README.md`
 
-## Current Runtime Truth
+## What UnoOne Delivers
 
-This section intentionally documents current behavior without over-claiming.
-
-| Area | Current behavior in code |
+| Capability | Current delivery status |
 |---|---|
-| Voice in app UI | `VoiceModule.startRecording/stopAndTranscribe` is active in UI; if Sherpa STT is not explicitly initialized, Android SpeechRecognizer path is used |
-| Background wake-word service | `VoiceService` includes KWS/STT loop scaffolding, but command callback wiring into orchestrator is not fully end-to-end |
-| LLM inference path | `LocalBrain` ONNX wrapper exists, but `runInference()` still returns a mock JSON placeholder |
-| RAG and diagnostics | `RAGManager` and `Diagnostics` utilities exist but are not broadly integrated in orchestrator runtime flow |
+| Compose app shell + floating overlay | Implemented |
+| 8-step command orchestrator | Implemented |
+| Accessibility deep actions (tap, type, fill, swipe, read) | Implemented |
+| Blind Aid live CameraX + analyzer workflow | Implemented |
+| Rule-based parser with blind-aid trigger fixes | Implemented |
+| Parser unit tests for blind-aid and note intent | Implemented |
 
-## Blind Aid Vision Deep Dive
+### Runtime truth notes
 
-### Command and state path
+| Area | Actual runtime behavior today |
+|---|---|
+| In-app voice path | `VoiceModule.startRecording/stopAndTranscribe` is active; if Sherpa STT is not explicitly initialized, Android SpeechRecognizer fallback is used |
+| Background wake-word service | `VoiceService` includes KWS/STT loop scaffolding, but callback wiring into orchestrator dispatch is not fully end-to-end |
+| LocalBrain inference | ONNX wrapper exists; `runInference()` currently returns a mock JSON placeholder |
+| RAG and diagnostics | `RAGManager` and `Diagnostics` utilities exist but are not broadly integrated into orchestrator runtime flow |
 
-- parser maps `activate blind aid` and related phrases to `detect_objects`
-- parser maps `deactivate blind aid` and related phrases to `deactivate_blind_aid`
-- orchestrator toggles blind aid state and voice feedback
-- UI mounts `BlindAidCameraPreview` when blind aid is active
+## Language Support Matrix
 
-### Camera and analyzer path
+### Speech Recognition (Android fallback path)
 
-`BlindAidCameraPreview`:
+Configured language hints in code:
 
-- binds `Preview` + `ImageAnalysis` with `ProcessCameraProvider`
-- uses `STRATEGY_KEEP_ONLY_LATEST`
-- unbinds providers on dispose
-- releases `BlindAidManager` on teardown
+- English (India): `en-IN`
+- Hindi: `hi-IN`
+- Tamil: `ta-IN`
+- Telugu: `te-IN`
+- Kannada: `kn-IN`
+- Malayalam: `ml-IN`
+- Bengali: `bn-IN`
 
-`BlindAidManager`:
+### Speech Synthesis (Android fallback mapping)
 
-- processes 1 out of every 6 frames (about 5 FPS on a 30 FPS stream)
-- performs on-device ML Kit object detection
-- optionally loads local custom model from:
-  - `Android/data/com.unoone.agent/files/models/gemma-local/custom_yolov8.tflite`
-- computes proximity from bounding box fill ratio
-- emits feedback channels:
-  - vibration intensity
-  - tone beeps
-  - spoken obstacle prompts
+Explicit mappings in code:
 
-Current visual limitation:
+- English (India): `en-IN`
+- Hindi: `hi-IN`
+- Tamil: `ta-IN`
+- Telugu: `te-IN`
 
-- no Compose-rendered bounding-box overlay is currently drawn in the camera preview
+Note:
 
-## Architecture
+- additional language behavior may be available from device-level TTS/STT engines, but the matrix above reflects explicit code mappings/hints.
+
+## Architecture Design
+
+```mermaid
+flowchart TB
+  subgraph UI[UI Layer]
+    A1[Agent Screen]
+    A2[Floating Overlay]
+    A3[Notes / Skills / Logs / Settings]
+  end
+
+  UI --> ORCH[AgentOrchestrator]
+  ORCH --> PARSER[RuleBasedParser / LocalBrain]
+  ORCH --> SAFETY[SafetyGuard]
+  ORCH --> VOICE[VoiceModule / VoiceService]
+  ORCH --> ACCESS[AccessibilityControl]
+  ORCH --> PHONE[PhoneControl / Vision]
+  ORCH --> STORE[Room Storage]
+
+  PHONE --> BLIND[BlindAidManager]
+  BLIND --> CAM[CameraX + ML Kit]
+```
 
 ### Module map (13 modules)
 
 | Module | Responsibility |
 |---|---|
-| `:app` | Compose UI, overlay service, command orchestration, permission handling |
-| `:core` | Shared models and logging primitives |
-| `:storage` | Room database entities and DAOs |
-| `:modelmanager` | Model folder detection, checksums, storage metrics |
-| `:localbrain` | Rule parser, prompt helpers, ONNX wrapper, RAG utility |
-| `:voice` | Recorder, STT/TTS engines, foreground voice service |
-| `:agentrouter` | Tool registration and fallback routing |
-| `:safetyguard` | Risk classification policy |
-| `:phonecontrol` | Device intents, OCR, object detection, blind aid analyzer |
-| `:memory` | Preference/correction/pattern memory retrieval |
-| `:skills` | Skill CRUD and trigger execution |
-| `:observability` | Local diagnostics helper functions |
-| `:accessibilitycontrol` | Accessibility gestures, input, screen text capture |
+| `:app` | Compose UI, overlay service, orchestration, permission handling |
+| `:core` | shared models and logging primitives |
+| `:storage` | Room DB entities and DAOs |
+| `:modelmanager` | model folder detection, checksum verification, storage usage |
+| `:localbrain` | parser, prompt helpers, ONNX wrapper, RAG utility layer |
+| `:voice` | recorder, STT/TTS engines, foreground voice service |
+| `:agentrouter` | tool registration and fallback routing |
+| `:safetyguard` | risk policy classifier |
+| `:phonecontrol` | intents, OCR, object detection, blind aid analyzer |
+| `:memory` | preference/correction/pattern retrieval |
+| `:skills` | skill CRUD and trigger execution |
+| `:observability` | local diagnostics helpers |
+| `:accessibilitycontrol` | gestures, input, context capture, visible text extraction |
 
-### Orchestrator flow
+## Blind Aid Vision Deep Dive
 
-`AgentOrchestrator` processes commands in this order:
+### Command and state flow
 
-1. skill trigger lookup
-2. parser/inference selection
-3. permission gate
-4. safety classification
-5. confirmation gate (if required)
-6. tool execution
-7. verification/logging
-8. spoken or textual response
+1. parser maps activation phrases to `detect_objects`
+2. parser maps stop phrases to `deactivate_blind_aid`
+3. orchestrator toggles blind-aid state and speaks status
+4. UI mounts `BlindAidCameraPreview` when active
+
+### Camera and analyzer flow
+
+`BlindAidCameraPreview`:
+
+- binds `Preview` + `ImageAnalysis` via `ProcessCameraProvider`
+- uses `STRATEGY_KEEP_ONLY_LATEST`
+- unbinds camera providers on dispose
+- releases `BlindAidManager` on teardown
+
+`BlindAidManager`:
+
+- processes 1 frame out of every 6 (about 5 FPS at 30 FPS input)
+- runs ML Kit object detection on-device
+- tries custom local model at:
+  - `Android/data/com.unoone.agent/files/models/gemma-local/custom_yolov8.tflite`
+- falls back to default ML Kit detector if custom model is absent
+- computes obstacle proximity from fill ratio
+- emits feedback channels:
+  - haptics
+  - tone beeps
+  - spoken guidance
+
+### Important limitations (currently accurate)
+
+- blind aid activation currently falls under strong confirmation because unknown tools default to `STRONG_CONFIRM`
+- no Compose-rendered visual bounding-box overlay is currently drawn over the camera preview
+
+## Voice Pipeline
+
+### In-app mic path
+
+- `VoiceModule.startRecording(context, scope)`
+- `VoiceModule.stopAndTranscribe()`
+- amplitude updates are driven from Android STT `onRmsChanged` in fallback path
+
+### Background service path
+
+`VoiceService` includes:
+
+- wake-word + VAD loop scaffolding
+- Sherpa STT/TTS init attempts
+- callback hooks for wake-word and command events
+
+Current gap:
+
+- service callback outputs are not fully wired into orchestrator dispatch path
 
 ## Hardware Requirements
 
-| Tier | Recommended baseline |
+| Tier | Recommended profile |
 |---|---|
 | Baseline (functional) | Android 9+ (API 28), ARM64, 4 GB RAM, 1 GB free storage, microphone |
-| Recommended (smooth blind aid + voice UX) | Android 12+, 6 to 8 GB RAM, rear camera, vibration motor, 2+ GB free storage |
-| Expert local-model tier | 8+ GB RAM (12+ preferred), modern NPU-capable chipset, additional multi-GB model storage |
+| Recommended (smooth blind-aid + voice UX) | Android 12+, 6 to 8 GB RAM, rear camera, vibration motor, 2+ GB free storage |
+| Expert local-model tier | 8+ GB RAM (12+ preferred), NPU-capable chipset, additional multi-GB model storage |
 
-## Permissions and Safety
+## Security and Permission Model
 
-### Manifest-declared capabilities include
+### Manifest-declared permissions include
 
 - `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`
 - `CAMERA`, `VIBRATE`
@@ -146,14 +215,14 @@ Current visual limitation:
 
 ### Safety behavior
 
-- explicit tool rules in `SafetyGuard` map to `DIRECT`, `CONFIRM`, `STRONG_CONFIRM`, `BLOCK`
+- explicit rules in `SafetyGuard` map tools to `DIRECT`, `CONFIRM`, `STRONG_CONFIRM`, `BLOCK`
 - unknown tool names default to `STRONG_CONFIRM`
 - accessibility actions require explicit user enablement
-- screen capture now filters to visible nodes and truncates oversized payloads
+- screen capture path now filters visible nodes and truncates very large payloads
 
-## Model and Storage Notes
+## Models and Storage
 
-Expected app-managed model directories:
+Expected app-managed model folders:
 
 - `gemma-local`
 - `sherpa-asr`
@@ -162,11 +231,11 @@ Expected app-managed model directories:
 - `punctuation`
 - `ocr-optional`
 
-Workspace optimization:
+Workspace optimization file:
 
-- `android-app/UnoOneAgent/.aiexclude` excludes heavy build/cache/model paths from AI/IDE scanning
+- `android-app/UnoOneAgent/.aiexclude` excludes heavy build/cache/model paths from AI context scanning
 
-## Validation Commands
+## Build and Validation
 
 Run from `android-app/UnoOneAgent`:
 
@@ -175,8 +244,8 @@ Run from `android-app/UnoOneAgent`:
 ./gradlew.bat :app:compileDebugKotlin
 ```
 
-## Canonical Technical README
+## Canonical Android Technical README
 
-For implementation-level details, see:
+For implementation-level module details:
 
 - `android-app/UnoOneAgent/README.md`
