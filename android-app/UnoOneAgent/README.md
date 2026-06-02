@@ -1,156 +1,160 @@
-# UnoOneAgent Android Technical README
+<div align="center">
 
-This document describes what is implemented in the Android codebase today, including architecture, hardware requirements, and the current Blind Aid vision stack.
+# UnoOneAgent Android
+### Technical Implementation README
 
-## Implementation Status
+<p align="center">
+  <img src="https://img.shields.io/badge/Build-Gradle%208.7-1f6feb?style=for-the-badge" alt="Gradle">
+  <img src="https://img.shields.io/badge/Min%20SDK-28-success?style=for-the-badge" alt="Min SDK 28">
+  <img src="https://img.shields.io/badge/Modules-13-0ea5e9?style=for-the-badge" alt="13 Modules">
+  <img src="https://img.shields.io/badge/Vision-CameraX%20%2B%20ML%20Kit-2563eb?style=for-the-badge" alt="Vision">
+</p>
 
-The Android workspace builds as a 13-module project and includes:
+</div>
 
-- Compose UI with timeline-driven orchestration UX.
-- Floating overlay chat bubble service.
-- Accessibility-driven deep control (tap, type, fill, scroll, swipe, global actions).
-- Blind Aid camera mode with continuous CameraX + ML Kit analyzer feedback.
-- Unified voice start/stop transcription APIs with waveform amplitude updates.
-- Rule parser updates for blind aid activation/deactivation and note creation phrasing.
-- Unit coverage for parser blind aid triggers.
+> This document is implementation-aligned and intentionally avoids over-claims.
 
-## Module Architecture (13 modules)
+## Quick Navigation
+
+- [Implementation Snapshot](#implementation-snapshot)
+- [Module Architecture](#module-architecture)
+- [Blind Aid Vision Deep Dive](#blind-aid-vision-deep-dive)
+- [Voice Runtime Behavior](#voice-runtime-behavior)
+- [Accessibility and Safety Hardening](#accessibility-and-safety-hardening)
+- [Permissions and Hardware](#permissions-and-hardware)
+- [Validation Commands](#validation-commands)
+- [Known Integration Gaps](#known-integration-gaps)
+
+## Implementation Snapshot
+
+| Capability | Status | Notes |
+|---|---|---|
+| Compose app shell + overlay | Implemented | Main UI + floating chat bubble |
+| Orchestrator pipeline | Implemented | Parse -> permission -> safety -> execute -> verify |
+| Blind Aid camera mode | Implemented | Live CameraX preview + analyzer feedback |
+| Voice input APIs | Implemented | Unified start/stop transcribe interfaces |
+| Parser blind-aid fixes | Implemented | Activation/deactivation collision corrected |
+| Parser tests | Implemented | JUnit coverage for blind aid and note triggers |
+
+## Module Architecture
 
 | Module | Primary responsibility | Core files |
 |---|---|---|
-| `:app` | App shell, orchestration, permissions, UI | `MainActivity.kt`, `AgentOrchestrator.kt`, `AgentScreen.kt`, `FloatingAgentService.kt` |
-| `:core` | Shared primitives and logging | `Result.kt`, `ToolCall.kt`, `TimelineStep.kt`, `Logger` |
+| `:app` | app shell, orchestration, permissions, UI | `MainActivity.kt`, `AgentOrchestrator.kt`, `AgentScreen.kt`, `FloatingAgentService.kt` |
+| `:core` | shared primitives and logging | `Result.kt`, `ToolCall.kt`, `TimelineStep.kt` |
 | `:storage` | Room persistence layer | `UnoOneDatabase.kt`, DAOs, entities |
-| `:modelmanager` | Model folder management and checksum verification | `ModelManager.kt` |
-| `:localbrain` | Parsing/inference utilities | `RuleBasedParser.kt`, `LocalBrain.kt`, `PromptBuilder.kt`, `RAGManager.kt` |
-| `:voice` | Recorder, STT/TTS engines, voice service | `VoiceModule.kt`, `AndroidSttEngine.kt`, `VoiceService.kt` |
-| `:agentrouter` | Tool registry and routing fallback | `AgentRouter.kt` |
-| `:safetyguard` | Risk classification policy | `SafetyGuard.kt` |
-| `:phonecontrol` | Device intents, OCR, object detection, blind aid analyzer | `PhoneControl.kt`, `OcrControl.kt`, `ObjectDetectionControl.kt`, `BlindAidManager.kt` |
-| `:memory` | Preference/correction/pattern memory | `MemoryModule.kt` |
-| `:skills` | Skill CRUD and trigger execution | `SkillsModule.kt` |
-| `:observability` | Local diagnostics helper | `Diagnostics.kt` |
-| `:accessibilitycontrol` | Accessibility service wrappers | `UnoOneAccessibilityService.kt`, `AccessibilityControl.kt` |
+| `:modelmanager` | model folder management and checksum verification | `ModelManager.kt` |
+| `:localbrain` | parsing/inference utilities | `RuleBasedParser.kt`, `LocalBrain.kt`, `PromptBuilder.kt`, `RAGManager.kt` |
+| `:voice` | recorder, STT/TTS engines, voice service | `VoiceModule.kt`, `AndroidSttEngine.kt`, `VoiceService.kt` |
+| `:agentrouter` | tool registry and routing fallback | `AgentRouter.kt` |
+| `:safetyguard` | risk classification policy | `SafetyGuard.kt` |
+| `:phonecontrol` | intents, OCR, object detection, blind aid analyzer | `PhoneControl.kt`, `OcrControl.kt`, `ObjectDetectionControl.kt`, `BlindAidManager.kt` |
+| `:memory` | preference/correction/pattern memory | `MemoryModule.kt` |
+| `:skills` | skill CRUD and trigger execution | `SkillsModule.kt` |
+| `:observability` | local diagnostics helper | `Diagnostics.kt` |
+| `:accessibilitycontrol` | accessibility service wrappers | `UnoOneAccessibilityService.kt`, `AccessibilityControl.kt` |
 
-## Blind Aid Vision Capabilities (Deep Dive)
+## Blind Aid Vision Deep Dive
 
 ### Command and state flow
 
 - `RuleBasedParser` maps activation phrases to `detect_objects`.
 - `RuleBasedParser` maps stop phrases to `deactivate_blind_aid`.
-- `AgentOrchestrator` toggles `isBlindAidActive` state and speaks activation/deactivation status.
-- `AgentScreen` listens to `isBlindAidActive` and mounts/unmounts the camera preview card.
+- `AgentOrchestrator` toggles `isBlindAidActive` and emits spoken state feedback.
+- `AgentScreen` binds preview visibility to blind aid state.
 
 ### Camera pipeline
 
 `BlindAidCameraPreview`:
 
 - obtains `ProcessCameraProvider`
-- binds `Preview` + `ImageAnalysis` to lifecycle owner
+- binds `Preview` and `ImageAnalysis` to lifecycle owner
 - uses `STRATEGY_KEEP_ONLY_LATEST`
 - unbinds camera providers on dispose
 - releases `BlindAidManager` on dispose
 
-### Analyzer and detection logic
+### Analyzer behavior
 
 `BlindAidManager`:
 
-- throttles to 1 of every 6 frames (roughly 5 FPS from a 30 FPS stream)
-- uses ML Kit object detection in single-image mode
-- attempts custom model load from:
+- throttles processing to 1 in 6 frames (about 5 FPS at 30 FPS input)
+- runs ML Kit object detection in single-image mode
+- attempts local custom model load from:
   - `Android/data/com.unoone.agent/files/models/gemma-local/custom_yolov8.tflite`
-- falls back to default ML Kit detector if custom model is not present
-- computes obstacle proximity from bounding-box fill ratio
-- emits feedback via:
+- falls back to default ML Kit detector when custom model is absent
+- computes obstacle proximity from fill ratio
+- emits:
   - vibration intensity scaling
   - tone beeps
-  - throttled spoken prompts (`voiceModule.speak` callback)
+  - throttled spoken guidance via callback
 
-### What is missing today
+### Current visual limitation
 
-- no visual bounding-box overlay rendering in Compose preview
-- blind aid activation currently goes through strong confirmation (default safety behavior for non-whitelisted tools)
+- no Compose-rendered bounding-box overlay is currently drawn over camera preview
 
-## Voice Pipeline and Runtime Behavior
+## Voice Runtime Behavior
 
-### In-app mic flow (AgentScreen and overlay)
+### In-app mic path (Agent screen and overlay)
 
 Current code path uses:
 
 - `VoiceModule.startRecording(context, scope)`
 - `VoiceModule.stopAndTranscribe()`
 
-Behavior:
+Runtime behavior:
 
-- if Sherpa STT is not initialized, falls back to Android SpeechRecognizer path
-- Android STT now streams `onRmsChanged` amplitude to waveform UI
-- Android path avoids recorder contention by running recognizer-first capture flow
+- falls back to Android SpeechRecognizer when Sherpa STT is not initialized
+- Android STT `onRmsChanged` is wired to waveform amplitude updates
+- recognizer-first fallback avoids recorder resource contention
 
-### Background VoiceService flow
+### Background VoiceService path
 
 `VoiceService` includes:
 
-- wake word loop scaffolding
+- wake-word loop scaffolding
 - Sherpa STT/TTS init attempts
 - keyword spotting and RMS VAD loop
 
 Current integration gap:
 
-- service callbacks (`onWakeWordDetected`, `onCommandReceived`) are not wired into app orchestrator in current runtime path
+- service callbacks (`onWakeWordDetected`, `onCommandReceived`) are not fully wired into orchestrator command dispatch
 
-## Accessibility and Context Safety Updates
+## Accessibility and Safety Hardening
 
 Implemented hardening:
 
-- `captureVisibleText()` now filters by `isVisibleToUser`
+- `captureVisibleText()` filters by `isVisibleToUser`
 - traversal recycles child nodes to reduce leak pressure
-- `AccessibilityControl.captureScreenText()` truncates payloads above 100,000 chars before passing onward
+- `AccessibilityControl.captureScreenText()` truncates payloads above 100,000 chars
 
-## Safety and Permissions
+Safety behavior:
 
-### Safety classification
+- `SafetyGuard` maps known tools to explicit risk levels
+- unknown tools default to `STRONG_CONFIRM`
+- blind aid activation currently falls under strong confirmation unless rule table is expanded
 
-`SafetyGuard` maps known tools to explicit risk levels.
+## Permissions and Hardware
 
-Important default behavior:
-
-- any unknown tool name defaults to `STRONG_CONFIRM`
-
-### Manifest permissions (current)
+### Manifest permission profile
 
 - audio: `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`
 - camera and haptics: `CAMERA`, `VIBRATE`
-- calendar/contacts: `READ_CALENDAR`, `WRITE_CALENDAR`, `READ_CONTACTS`
-- overlay/control: `SYSTEM_ALERT_WINDOW`
+- contacts/calendar: `READ_CONTACTS`, `READ_CALENDAR`, `WRITE_CALENDAR`
+- overlay control: `SYSTEM_ALERT_WINDOW`
 - background execution: `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`, `WAKE_LOCK`, `POST_NOTIFICATIONS`
-- power/storage compatibility permissions for model and service reliability
+- storage compatibility permissions for model access
 
-## Hardware Requirements
+### Hardware tiers
 
-### Minimum (functional baseline)
+| Tier | Recommended profile |
+|---|---|
+| Minimum (functional baseline) | Android 9+ (API 28), 4 GB RAM, 1 GB free storage, microphone |
+| Recommended (smooth blind aid + voice UX) | Android 12+, 6 to 8 GB RAM, rear camera with stable autofocus, vibration motor, 2+ GB free storage |
+| Expert local model tier | 8+ GB RAM (12+ preferred), modern NPU-capable chipset, additional multi-GB model storage |
 
-- Android 9+ (API 28)
-- 4 GB RAM
-- 1 GB free storage
-- microphone
+### Model folder expectations
 
-### Recommended (smooth blind aid and voice UX)
-
-- Android 12+
-- 6 to 8 GB RAM
-- rear camera with stable autofocus
-- vibration motor
-- 2+ GB free storage
-
-### Expert local model tier
-
-- 8+ GB RAM (12+ GB preferred)
-- modern NPU-capable chipset
-- additional storage depending on model packs (several GB for larger local models)
-
-## Model Folder Expectations
-
-App-managed model directories under app external files include:
+App-managed model directories under app external files:
 
 - `gemma-local`
 - `sherpa-asr`
@@ -159,27 +163,22 @@ App-managed model directories under app external files include:
 - `punctuation`
 - `ocr-optional`
 
-## Testing and Verification
+## Validation Commands
 
-Validated commands:
+Run from this directory (`android-app/UnoOneAgent`):
 
 ```bash
 ./gradlew.bat :app:testDebugUnitTest
 ./gradlew.bat :app:compileDebugKotlin
 ```
 
-Current parser unit tests include:
+## Known Integration Gaps
 
-- blind aid activation phrase routing
-- blind aid deactivation phrase routing
-- note creation trigger routing
+These components exist but are not yet fully integrated end-to-end:
 
-## Documentation Accuracy Notes
-
-The following components exist in code but are not fully integrated end-to-end yet:
-
-- `LocalBrain.runInference()` still returns a mock JSON output placeholder (tokenizer/inference integration is incomplete).
-- `RAGManager` exists but is not currently wired into orchestrator runtime flow.
+- `LocalBrain.runInference()` currently returns mock JSON placeholder output.
+- `RAGManager` exists but is not wired into orchestrator runtime flow.
 - `Diagnostics` helpers exist but are not broadly instrumented across execution paths.
+- `VoiceService` callback outputs are not fully wired into orchestrator dispatch.
 
-This README intentionally describes shipped behavior and these gaps explicitly, so architecture and hardware guidance remain trustworthy.
+This README is intentionally explicit about these gaps to keep architecture and hardware guidance accurate.
