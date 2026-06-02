@@ -13,6 +13,7 @@ class SafetyGuard {
         "speak_response" to RiskLevel.DIRECT,
         "open_chrome" to RiskLevel.DIRECT,
         "open_app" to RiskLevel.DIRECT,
+        "deactivate_blind_aid" to RiskLevel.DIRECT,
 
         // Risk 1 — Confirmation
         "open_url" to RiskLevel.CONFIRM,
@@ -24,6 +25,7 @@ class SafetyGuard {
         "delete_notes" to RiskLevel.STRONG_CONFIRM,
         "delete_all_notes" to RiskLevel.STRONG_CONFIRM,
         "export_data" to RiskLevel.STRONG_CONFIRM,
+        "detect_objects" to RiskLevel.STRONG_CONFIRM,
 
         // Risk 3 — Block
         "send_message" to RiskLevel.BLOCK,

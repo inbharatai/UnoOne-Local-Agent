@@ -45,6 +45,8 @@ class VoiceService : Service() {
     companion object {
         private const val CHANNEL_ID = "voice_service_channel"
         private const val NOTIFICATION_ID = 1001
+        const val ACTION_VOICE_COMMAND = "com.unoone.agent.VOICE_COMMAND"
+        const val EXTRA_COMMAND = "command"
 
         fun start(context: Context) {
             val intent = Intent(context, VoiceService::class.java)
@@ -186,6 +188,13 @@ class VoiceService : Service() {
                         if (transcript is Result.Success && transcript.data.isNotBlank()) {
                             Logger.i("VoiceService: Command: '${transcript.data}'")
                             onCommandReceived?.invoke(transcript.data)
+
+                            // Local secure broadcast to fully wire background voice service to Master Orchestrator end-to-end
+                            val commandIntent = Intent(ACTION_VOICE_COMMAND).apply {
+                                putExtra(EXTRA_COMMAND, transcript.data)
+                                setPackage(packageName)
+                            }
+                            sendBroadcast(commandIntent)
                         }
 
                         updateNotification("UnoOne is listening")

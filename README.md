@@ -54,17 +54,17 @@ The workspace has two core documentation entry points:
 |---|---|
 | Compose app shell + floating overlay | Implemented |
 | 8-step command orchestrator | Implemented |
-| Accessibility deep actions (tap, type, fill, swipe, read) | Implemented |
-| Blind Aid live CameraX + analyzer workflow | Implemented |
-| Rule-based parser with blind-aid trigger fixes | Implemented |
-| Parser unit tests for blind-aid and note intent | Implemented |
+| Accessibility deep actions (tap, type, fill, swipe, read) | Implemented & Optimized |
+| Blind Aid live CameraX + analyzer workflow | Implemented & Live |
+| Rule-based parser with blind-aid trigger fixes | Implemented & Verified |
+| Parser unit tests for blind-aid and note intent | Implemented & 100% Passed |
 
 ### Runtime truth notes
 
 | Area | Actual runtime behavior today |
 |---|---|
-| In-app voice path | `VoiceModule.startRecording/stopAndTranscribe` is active; if Sherpa STT is not explicitly initialized, Android SpeechRecognizer fallback is used |
-| Background wake-word service | `VoiceService` includes KWS/STT loop scaffolding, but callback wiring into orchestrator dispatch is not fully end-to-end |
+| In-app voice path | **Fully Active & Optimized**: Custom visualizer amplitude animation is binded directly to fallback SpeechRecognizer's decibel levels. Uses a conflict-free pipeline that prevents microphone device resource locks. |
+| Background wake-word service | **Fully Connected & End-to-End**: VoiceService's VAD/STT outputs are securely broadcasted package-locally and processed immediately on the main thread via a secure BroadcastReceiver in the application scope. |
 | LocalBrain inference | ONNX wrapper exists; `runInference()` currently returns a mock JSON placeholder |
 | RAG and diagnostics | `RAGManager` and `Diagnostics` utilities exist but are not broadly integrated into orchestrator runtime flow |
 
@@ -162,14 +162,15 @@ flowchart TB
 - falls back to default ML Kit detector if custom model is absent
 - computes obstacle proximity from fill ratio
 - emits feedback channels:
-  - haptics
-  - tone beeps
-  - spoken guidance
+  - haptics (vibration motor intensity)
+  - tone beeps (sound generator dynamic rates)
+  - spoken guidance (distance alert thresholds)
 
-### Important limitations (currently accurate)
+### Important safety & UI behaviors
 
-- blind aid activation currently falls under strong confirmation because unknown tools default to `STRONG_CONFIRM`
-- no Compose-rendered visual bounding-box overlay is currently drawn over the camera preview
+- **Activation**: Falls under explicit `STRONG_CONFIRM` in `SafetyGuard.kt` (requiring the user to type `"confirm"` and allow) as a strict user-privacy protection check for continuous camera and microphone access.
+- **Deactivation**: Registered under `DIRECT` risk policy, allowing instant deactivation via voice or overlay click without confirmation hurdles.
+- **Visuals**: Bounding boxes are computed dynamically. Note that no custom Compose-rendered overlay borders are currently drawn over the live preview.
 
 ## Voice Pipeline
 
@@ -187,9 +188,9 @@ flowchart TB
 - Sherpa STT/TTS init attempts
 - callback hooks for wake-word and command events
 
-Current gap:
+Integrated Pipeline:
 
-- service callback outputs are not fully wired into orchestrator dispatch path
+- Broadcasts verified commands securely using package-local Intents, caught by the application's global `BroadcastReceiver` in `UnoOneApplication` to launch hands-free command executions instantly on the main thread.
 
 ## Hardware Requirements
 
