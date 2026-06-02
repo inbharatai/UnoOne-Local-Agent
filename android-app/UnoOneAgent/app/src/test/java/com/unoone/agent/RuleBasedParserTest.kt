@@ -3,7 +3,6 @@ package com.unoone.agent
 import com.unoone.agent.localbrain.RuleBasedParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RuleBasedParserTest {
@@ -63,16 +62,40 @@ class RuleBasedParserTest {
     }
 
     @Test
+    fun testNoteRememberToStripsToPrefix() {
+        // "remember to buy groceries" should strip the grammatical "to" and yield "buy groceries"
+        val toolCall = RuleBasedParser.parse("remember to buy groceries")
+        assertNotNull(toolCall)
+        assertEquals("create_note", toolCall!!.tool)
+        val content = toolCall.args["content"]?.toString()?.replace("\"", "") ?: ""
+        assertEquals("buy groceries", content)
+    }
+
+    @Test
     fun testCompoundCommand() {
-        // "scroll down and go home" should produce a compound tool call with both parts.
-        // Note: "open chrome and go home" doesn't reach the compound handler because "open chrome"
-        // matches a standalone rule first — the compound handler is only reached when neither
-        // half is a standalone prefix match.
+        // "scroll down and go home" — both halves are navigation commands,
+        // so the compound handler splits and parses them correctly.
+        // Domain-specific rules (skill, email, whatsapp, calendar) are checked
+        // BEFORE compound splitting, so they preserve their internal "and" semantics.
         val toolCall = RuleBasedParser.parse("scroll down and go home")
         assertNotNull("Compound command should parse", toolCall)
         assertEquals("compound", toolCall!!.tool)
-        assertNotNull(toolCall.args["first_tool"])
-        assertNotNull(toolCall.args["second_tool"])
+        val firstTool = toolCall.args["first_tool"]?.toString()?.replace("\"", "")
+        val secondTool = toolCall.args["second_tool"]?.toString()?.replace("\"", "")
+        assertEquals("system_control", firstTool)
+        assertEquals("system_control", secondTool)
+    }
+
+    @Test
+    fun testCompoundCommandDoesNotBreakSkillSteps() {
+        // "create skill called greeting to say hello and wave goodbye" — the skill rule
+        // must match as a whole (not split on "and"), with both steps preserved.
+        val toolCall = RuleBasedParser.parse("create skill called greeting to say hello and wave goodbye")
+        assertNotNull(toolCall)
+        assertEquals("create_skill", toolCall!!.tool)
+        val steps = toolCall.args["steps"]?.toString()?.replace("\"", "") ?: ""
+        assertEquals(true, steps.contains("say hello"))
+        assertEquals(true, steps.contains("wave goodbye"))
     }
 
     @Test

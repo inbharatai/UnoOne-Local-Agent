@@ -116,8 +116,9 @@ class AndroidSttEngine(private val context: Context) {
 
     fun release() {
         synchronized(this) {
-            speechRecognizer?.destroy()
+            val recognizer = speechRecognizer
             speechRecognizer = null
+            recognizer?.destroy()
         }
     }
 }

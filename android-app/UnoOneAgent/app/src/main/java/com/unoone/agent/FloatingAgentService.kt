@@ -87,8 +87,14 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        // Only dispatch lifecycle events if not already at RESUMED (onStartCommand can be
+        // called multiple times with START_STICKY, and RESUMED→STARTED is an invalid transition)
+        if (!lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            if (lifecycleRegistry.currentState == Lifecycle.State.CREATED) {
+                lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+            }
+            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        }
         return START_STICKY
     }
 
@@ -159,9 +165,6 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
                             serviceContext = this@FloatingAgentService,
                             orchestrator = orchestrator,
                             voiceModule = voiceModule,
-                            hasMicPermission = ContextCompat.checkSelfPermission(
-                                this@FloatingAgentService, Manifest.permission.RECORD_AUDIO
-                            ) == PackageManager.PERMISSION_GRANTED,
                             onClose = { hideChatOverlay() }
                         )
                     }
@@ -222,13 +225,17 @@ fun ChatOverlayCard(
     serviceContext: android.content.Context,
     orchestrator: AgentOrchestrator,
     voiceModule: VoiceModule,
-    hasMicPermission: Boolean,
     onClose: () -> Unit
 ) {
     var text by remember { mutableStateOf("") }
     var isListening by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val steps by orchestrator.timelineSteps.collectAsState()
+
+    // Reactive mic permission check — re-evaluated on every recomposition
+    val hasMicPermission = ContextCompat.checkSelfPermission(
+        serviceContext, Manifest.permission.RECORD_AUDIO
+    ) == PackageManager.PERMISSION_GRANTED
 
     Card(
         modifier = modifier

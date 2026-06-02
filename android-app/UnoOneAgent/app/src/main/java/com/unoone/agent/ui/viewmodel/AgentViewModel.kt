@@ -82,11 +82,11 @@ class AgentViewModel(
     }
 
     fun setBlindAidActive(active: Boolean) {
-        // Route through processCommand so the full safety/permission pipeline is honored
-        viewModelScope.launch {
-            val command = if (active) "activate blind aid" else "deactivate blind aid"
-            orchestrator.processCommand(command, InputType.TEXT)
-        }
+        // Direct toggle when the user explicitly presses the UI button — no safety
+        // confirmation needed because the user initiated this action deliberately.
+        // Voice/text commands like "activate blind aid" still go through the full
+        // safety pipeline via processCommand.
+        orchestrator.setBlindAidActive(active)
     }
 
     fun onTextCommand(text: String) {
@@ -116,7 +116,8 @@ class AgentViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        // Release the single shared VoiceModule instance
-        voiceModuleInstance.release()
+        // Do NOT release voiceModuleInstance here — it is the application-scoped shared
+        // instance owned by UnoOneApplication. Releasing it would destroy the VoiceModule
+        // used by the orchestrator, broadcast receiver, and FloatingAgentService.
     }
 }

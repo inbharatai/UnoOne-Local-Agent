@@ -332,10 +332,10 @@ fun BlindAidCameraPreview(
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
 
-    // Lazy-init BlindAidManager: only allocate detector + toneGenerator when actually needed
-    var blindAidManager by remember { mutableStateOf<com.unoone.agent.phonecontrol.BlindAidManager?>(null) }
-    LaunchedEffect(Unit) {
-        blindAidManager = com.unoone.agent.phonecontrol.BlindAidManager(context) { feedback ->
+    // BlindAidManager is eagerly created via remember — it only runs when this composable
+    // is visible (inside AnimatedVisibility), so the detector/toneGenerator cost is acceptable.
+    val blindAidManager = remember {
+        com.unoone.agent.phonecontrol.BlindAidManager(context) { feedback ->
             voiceModule.speak(feedback)
         }
     }
@@ -348,8 +348,7 @@ fun BlindAidCameraPreview(
             } catch (e: Exception) {
                 com.unoone.agent.core.util.Logger.e("BlindAidCameraPreview: Camera unbind failed", e)
             }
-            blindAidManager?.release()
-            blindAidManager = null
+            blindAidManager.release()
         }
     }
 
@@ -362,20 +361,18 @@ fun BlindAidCameraPreview(
 
                 // One-time camera binding in factory — avoids rebind on every recomposition
                 val cameraProvider = cameraProviderFuture.get()
+
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
 
-                val manager = blindAidManager
                 val imageAnalysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build().also { analysis ->
-                        if (manager != null) {
-                            analysis.setAnalyzer(
-                                ContextCompat.getMainExecutor(context),
-                                manager.getAnalyzer()
-                            )
-                        }
+                        analysis.setAnalyzer(
+                            ContextCompat.getMainExecutor(context),
+                            blindAidManager.getAnalyzer()
+                        )
                     }
 
                 val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA

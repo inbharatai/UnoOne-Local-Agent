@@ -54,8 +54,9 @@ class AgentOrchestrator(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    // Shared VoiceModule — set externally by the Application/ViewModel to avoid duplicate instances
-    var voiceModule: VoiceModule = VoiceModule(context)
+    // Shared VoiceModule — set externally by the Application/ViewModel to avoid duplicate instances.
+    // Using lateinit to avoid creating a throwaway instance that leaks resources.
+    lateinit var voiceModule: VoiceModule
         private set
 
     private val localBrain = LocalBrain()
@@ -113,7 +114,6 @@ class AgentOrchestrator(
         try {
             val intent = Intent(context, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                putExtra("activate_blind_aid", true)
             }
             context.startActivity(intent)
             Logger.i("Orchestrator: Launched MainActivity for blind-aid camera binding")
@@ -160,24 +160,93 @@ class AgentOrchestrator(
                 return
             }
 
-            // Step 2b: Expand compound commands into sequential execution
+            // Step 2b: Expand compound commands — run full permission + safety checks on each part
             if (toolCall.tool == "compound") {
-                addStep(AgentStatus.TOOL_SELECTED, "Agent Plan", "Compound: executing both parts")
+                addStep(AgentStatus.TOOL_SELECTED, "Agent Plan", "Compound: checking both parts")
+
+                // Check permissions for both compound parts
+                val allMissingPermissions = mutableListOf<String>()
+                for (part in listOf("first", "second")) {
+                    val partTool = toolCall.args["${part}_tool"]?.jsonPrimitive?.content ?: continue
+                    allMissingPermissions.addAll(
+                        getRequiredPermissionsForTool(partTool).filter { perm ->
+                            if (perm == Manifest.permission.SYSTEM_ALERT_WINDOW) {
+                                !Settings.canDrawOverlays(context)
+                            } else {
+                                PackageManager.PERMISSION_GRANTED != ContextCompat.checkSelfPermission(context, perm)
+                            }
+                        }
+                    )
+                }
+                if (allMissingPermissions.isNotEmpty()) {
+                    addStep(AgentStatus.SAFETY_CHECK, "Access Required", "Compound needs permissions")
+                    pendingCommand = text
+                    pendingInputType = inputType
+                    onPermissionRequired?.invoke(allMissingPermissions.distinct())
+                    _isProcessing.value = false
+                    return
+                }
+
+                // Check safety classification for both compound parts
+                var blocked = false
+                var needsConfirmation = false
+                var confirmationMessage = ""
+                for (part in listOf("first", "second")) {
+                    val partTool = toolCall.args["${part}_tool"]?.jsonPrimitive?.content ?: continue
+                    val risk = safetyGuard.classify(partTool)
+                    addStep(AgentStatus.SAFETY_CHECK, "Safety Filter ($part)", "Risk: ${risk.name}")
+                    if (risk == RiskLevel.BLOCK) {
+                        addStep(AgentStatus.FAILED, "Security Block", "Compound part '$partTool' blocked for security.")
+                        blocked = true
+                    }
+                    if (risk == RiskLevel.STRONG_CONFIRM) {
+                        needsConfirmation = true
+                        confirmationMessage = "SECURITY CHECK: One part ($partTool) is sensitive. Confirm both?"
+                    } else if (risk == RiskLevel.CONFIRM && !needsConfirmation) {
+                        needsConfirmation = true
+                        confirmationMessage = "Confirm: Execute compound command?"
+                    }
+                }
+                if (blocked) {
+                    saveLog(log.copy(selectedTool = "compound", status = "blocked"))
+                    _isProcessing.value = false
+                    return
+                }
+                if (needsConfirmation) {
+                    addStep(AgentStatus.SAFETY_CHECK, "Confirmation Required", confirmationMessage)
+                    val confirmed = awaitConfirmation(confirmationMessage)
+                    if (!confirmed) {
+                        addStep(AgentStatus.FAILED, "Cancelled", "User declined compound confirmation")
+                        saveLog(log.copy(selectedTool = "compound", status = "cancelled"))
+                        _isProcessing.value = false
+                        return
+                    }
+                }
+
+                // Execute both parts
+                addStep(AgentStatus.EXECUTING, "Agent Active", "Executing compound command...")
                 val firstResult = executeCompoundPart(toolCall, "first")
                 val secondResult = executeCompoundPart(toolCall, "second")
+
+                val errors = listOfNotNull(
+                    (firstResult as? Result.Error)?.message,
+                    (secondResult as? Result.Error)?.message
+                )
+                val successes = listOfNotNull(
+                    (firstResult as? Result.Success)?.data,
+                    (secondResult as? Result.Success)?.data
+                )
+
                 val combined: Result<String> = when {
-                    firstResult is Result.Error && secondResult is Result.Error ->
-                        Result.Error("Both commands failed: ${firstResult.message}; ${secondResult.message}")
-                    firstResult is Result.Error -> secondResult
-                    secondResult is Result.Error -> firstResult
-                    firstResult is Result.Success && secondResult is Result.Success ->
-                        Result.Success("${firstResult.data}; ${secondResult.data}")
-                    else -> Result.Success("Done")
+                    errors.size == 2 -> Result.Error("Both parts failed: ${errors.joinToString("; ")}")
+                    errors.isNotEmpty() -> Result.Success("${successes.joinToString("; ")} [${errors.size} part(s) failed: ${errors.joinToString("; ")}]")
+                    else -> Result.Success(successes.joinToString("; "))
                 }
+
                 if (combined is Result.Error) {
                     addStep(AgentStatus.FAILED, "Execution Error", combined.message)
                 } else if (combined is Result.Success) {
-                    addStep(AgentStatus.VERIFYING, "Verifying Outcome", "Both commands complete")
+                    addStep(AgentStatus.VERIFYING, "Verifying Outcome", "Compound complete")
                     if (inputType == InputType.VOICE) {
                         addStep(AgentStatus.SPEAKING, "Response", combined.data)
                         voiceModule.speak(combined.data)

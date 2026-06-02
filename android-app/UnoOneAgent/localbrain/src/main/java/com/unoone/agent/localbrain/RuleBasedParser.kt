@@ -10,33 +10,22 @@ import kotlinx.serialization.json.JsonPrimitive
  */
 object RuleBasedParser {
 
+    // Domain-specific patterns that use "and" internally for their own semantics.
+    // These MUST be checked BEFORE the compound handler splits on " and ".
+    private val domainSpecificKeywords = listOf(
+        "teach you", "create skill", "new skill",
+        "email", "mail",
+        "whatsapp",
+        "calendar", "schedule", "events"
+    )
+
     fun parse(command: String): ToolCall? {
         val lowered = command.lowercase().trim()
 
-        // Check for compound commands FIRST: "X and Y"
-        // Only match if both halves parse successfully; otherwise fall through to individual rules
-        if (lowered.contains(" and ")) {
-            val parts = lowered.split(" and ", limit = 2)
-            val first = parse(parts[0].trim())
-            val second = parse(parts[1].trim())
-            if (first != null && second != null) {
-                return ToolCall(
-                    "compound",
-                    JsonObject(mapOf(
-                        "first_tool" to JsonPrimitive(first.tool),
-                        "first_args" to JsonPrimitive(first.args.toString()),
-                        "second_tool" to JsonPrimitive(second.tool),
-                        "second_args" to JsonPrimitive(second.args.toString())
-                    ))
-                )
-            }
-            // If only the first half parses, return it (the " and " was not a command separator)
-            if (first != null) return first
-            // Otherwise fall through to the rule chain below
-        }
-
         return when {
-            // Skill Building
+            // === DOMAIN-SPECIFIC RULES (use "and" internally — must be checked FIRST) ===
+
+            // Skill Building — steps are joined with " and " / " then "
             lowered.contains("teach you") || lowered.contains("create skill") || lowered.contains("new skill") -> {
                 val name = Regex("skill called (.*?) to").find(lowered)?.groupValues?.get(1) ?: "Custom Skill"
                 val steps = lowered.substringAfter("to ").split(" then ", " and ").map { it.trim() }
@@ -93,9 +82,32 @@ object RuleBasedParser {
                 } else null
             }
 
-            // Offline Object & Obstacle Detection (Vision) - Deactivation
-            // Checked BEFORE activation to prevent "deactivate" being matched by "activate" substring,
-            // and to catch negative-intent phrases like "stop barriers" / "remove obstacles"
+            // === COMPOUND COMMANDS (after domain-specific rules, before simple rules) ===
+            // "scroll down and go home" → compound. Skipped if the command matches a
+            // domain-specific pattern above that uses "and" internally (e.g. skill steps).
+            lowered.contains(" and ") && domainSpecificKeywords.none { lowered.contains(it) } -> {
+                val parts = lowered.split(" and ", limit = 2)
+                val first = parse(parts[0].trim())
+                val second = parse(parts[1].trim())
+                if (first != null && second != null) {
+                    ToolCall(
+                        "compound",
+                        JsonObject(mapOf(
+                            "first_tool" to JsonPrimitive(first.tool),
+                            "first_args" to JsonPrimitive(first.args.toString()),
+                            "second_tool" to JsonPrimitive(second.tool),
+                            "second_args" to JsonPrimitive(second.args.toString())
+                        ))
+                    )
+                } else {
+                    // If only the first half parses, return it (the "and" was not a command separator)
+                    first
+                }
+            }
+
+            // === SIMPLE RULES (no internal "and" usage) ===
+
+            // Blind Aid Deactivation
             lowered.contains("stop blind aid") || lowered.contains("deactivate blind aid") ||
             lowered.contains("turn off blind aid") || lowered.contains("stop scanning") ||
             ((lowered.contains("barriers") || lowered.contains("obstacles")) &&
@@ -104,7 +116,7 @@ object RuleBasedParser {
                 ToolCall("deactivate_blind_aid", JsonObject(emptyMap()))
             }
 
-            // Offline Object & Obstacle Detection (Vision) - Activation
+            // Blind Aid Activation
             lowered.contains("start blind aid") || lowered.contains("activate blind aid") ||
             lowered.contains("detect objects") || lowered.contains("what's in front of me") ||
             lowered.contains("detect barrier") || lowered.contains("barriers") || lowered.contains("obstacles") -> {
@@ -160,7 +172,8 @@ object RuleBasedParser {
                 ToolCall("system_control", JsonObject(mapOf("action" to JsonPrimitive("find_and_click"), "target" to JsonPrimitive(target))))
             }
             lowered.contains("fill") -> {
-                val field = Regex("fill (?:the )?(.+?)(?: with|:| ) (.+)", RegexOption.IGNORE_CASE)
+                // Accept "with", ":", or bare space as separator between hint and value
+                val field = Regex("fill (?:the )?(.+?)(?:\\s+with\\s+|\\s*:\\s*|\\s+)(.+)", RegexOption.IGNORE_CASE)
                     .find(lowered)
                 val hint = field?.groupValues?.get(1)?.trim() ?: ""
                 val value = field?.groupValues?.get(2)?.trim() ?: ""
@@ -220,7 +233,7 @@ object RuleBasedParser {
      * - "remember: pick up groceries"  → "pick up groceries"
      * - "create note buy milk"          → "buy milk"
      * - "add note: meeting at 5pm"      → "meeting at 5pm"
-     * - "remember to buy groceries"     → "to buy groceries"
+     * - "remember to buy groceries"     → "buy groceries" (strips grammatical "to")
      */
     private fun extractNoteContent(command: String): String {
         // If there's a colon, take everything after it as content
@@ -228,14 +241,14 @@ object RuleBasedParser {
         // Strip common prefixes like "create note", "add note", "new note", "remember"
         val stripped = afterColon
             .let { Regex("^(create|add|new)?\\s*note\\s*", RegexOption.IGNORE_CASE).replace(it, "") }
-            .let { Regex("^remember\\s*", RegexOption.IGNORE_CASE).replace(it, "") }
+            .let { Regex("^remember\\s*(?:to\\s+)?", RegexOption.IGNORE_CASE).replace(it, "") }
             .trim()
         // If colon-based extraction yielded meaningful content, use it; otherwise parse the whole command
         return if (stripped.isNotBlank()) stripped else {
             // No colon or nothing after colon — strip prefixes from the full command
             command.trim()
                 .let { Regex("^(create|add|new)?\\s*note\\s*", RegexOption.IGNORE_CASE).replace(it, "") }
-                .let { Regex("^remember\\s*", RegexOption.IGNORE_CASE).replace(it, "") }
+                .let { Regex("^remember\\s*(?:to\\s+)?", RegexOption.IGNORE_CASE).replace(it, "") }
                 .trim()
                 .ifEmpty { command }
         }

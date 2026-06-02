@@ -12,6 +12,7 @@ import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class UnoOneApplication : Application() {
@@ -24,7 +25,7 @@ class UnoOneApplication : Application() {
     lateinit var sharedVoiceModule: VoiceModule
         private set
 
-    private val appScope = CoroutineScope(Dispatchers.Main)
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private val voiceCommandReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
