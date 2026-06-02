@@ -47,83 +47,123 @@ class UnoOneAccessibilityService : AccessibilityService() {
 
     fun clickNodeWithText(text: String): Boolean {
         val rootNode = rootInActiveWindow ?: return false
-        val nodes = rootNode.findAccessibilityNodeInfosByText(text)
-        for (node in nodes) {
-            if (node.isClickable) {
-                return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            }
-            var parent = node.parent
-            while (parent != null) {
-                if (parent.isClickable) {
-                    return parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        try {
+            val nodes = rootNode.findAccessibilityNodeInfosByText(text)
+            try {
+                for (node in nodes) {
+                    if (node.isClickable) {
+                        return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    }
+                    var parent = node.parent
+                    while (parent != null) {
+                        if (parent.isClickable) {
+                            val clicked = parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                            parent.recycle()
+                            return clicked
+                        }
+                        val grandParent = parent.parent
+                        parent.recycle()
+                        parent = grandParent
+                    }
                 }
-                parent = parent.parent
+                return false
+            } finally {
+                nodes.forEach { it.recycle() }
             }
+        } finally {
+            rootNode.recycle()
         }
-        return false
     }
 
     fun typeTextIntoFocused(text: String): Boolean {
         val rootNode = rootInActiveWindow ?: return false
-        val focusedNode = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
-        val arguments = Bundle()
-        arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-        return focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+        try {
+            val focusedNode = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
+            try {
+                val arguments = Bundle()
+                arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                return focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+            } finally {
+                focusedNode.recycle()
+            }
+        } finally {
+            rootNode.recycle()
+        }
     }
 
     fun fillFieldWithText(hint: String, text: String): Boolean {
         val rootNode = rootInActiveWindow ?: return false
-        val nodes = rootNode.findAccessibilityNodeInfosByText(hint)
-        for (node in nodes) {
-            if (node.isEditable) {
-                val arguments = Bundle()
-                arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-                return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+        try {
+            val nodes = rootNode.findAccessibilityNodeInfosByText(hint)
+            try {
+                for (node in nodes) {
+                    if (node.isEditable) {
+                        val arguments = Bundle()
+                        arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                        return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                    }
+                }
+                return false
+            } finally {
+                nodes.forEach { it.recycle() }
             }
+        } finally {
+            rootNode.recycle()
         }
-        return false
     }
 
     @Suppress("DEPRECATION")
     fun captureVisibleText(): List<String> {
         val rootNode = rootInActiveWindow ?: return emptyList()
         val texts = mutableListOf<String>()
-        fun traverse(node: AccessibilityNodeInfo) {
-            if (node.isVisibleToUser) {
-                val text = node.text?.toString() ?: node.contentDescription?.toString()
-                if (!text.isNullOrBlank()) {
-                    texts.add(text)
+        try {
+            fun traverse(node: AccessibilityNodeInfo) {
+                if (node.isVisibleToUser) {
+                    val text = node.text?.toString() ?: node.contentDescription?.toString()
+                    if (!text.isNullOrBlank()) {
+                        texts.add(text)
+                    }
+                }
+                for (i in 0 until node.childCount) {
+                    node.getChild(i)?.let { child ->
+                        traverse(child)
+                        child.recycle() // Always recycle child nodes to prevent memory leaks
+                    }
                 }
             }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { child ->
-                    traverse(child)
-                    child.recycle() // Always recycle nodes to prevent memory leaks
-                }
-            }
+            traverse(rootNode)
+        } finally {
+            rootNode.recycle()
         }
-        traverse(rootNode)
         return texts.distinct()
     }
 
     fun scrollDown(): Boolean {
         val rootNode = rootInActiveWindow ?: return false
-        val bounds = android.graphics.Rect()
-        rootNode.getBoundsInScreen(bounds)
-        val centerX = bounds.exactCenterX()
-        val startY = bounds.exactCenterY() + bounds.height() * 0.25f
-        val endY = bounds.exactCenterY() - bounds.height() * 0.25f
-        return performSwipe(centerX, startY, centerX, endY, 500L)
+        try {
+            val bounds = android.graphics.Rect()
+            rootNode.getBoundsInScreen(bounds)
+            val centerX = bounds.exactCenterX()
+            val startY = bounds.exactCenterY() + bounds.height() * 0.25f
+            val endY = bounds.exactCenterY() - bounds.height() * 0.25f
+            return performSwipe(centerX, startY, centerX, endY, 500L)
+        } finally {
+            rootNode.recycle()
+        }
     }
 
     fun scrollUp(): Boolean {
         val rootNode = rootInActiveWindow ?: return false
-        val bounds = android.graphics.Rect()
-        rootNode.getBoundsInScreen(bounds)
-        val centerX = bounds.exactCenterX()
-        val startY = bounds.exactCenterY() - bounds.height() * 0.25f
-        val endY = bounds.exactCenterY() + bounds.height() * 0.25f
-        return performSwipe(centerX, startY, centerX, endY, 500L)
+        try {
+            val bounds = android.graphics.Rect()
+            rootNode.getBoundsInScreen(bounds)
+            val centerX = bounds.exactCenterX()
+            val startY = bounds.exactCenterY() - bounds.height() * 0.25f
+            val endY = bounds.exactCenterY() + bounds.height() * 0.25f
+            return performSwipe(centerX, startY, centerX, endY, 500L)
+        } finally {
+            rootNode.recycle()
+        }
     }
 
     fun swipe(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long = 300): Boolean {
@@ -152,6 +192,7 @@ class UnoOneAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        @Volatile
         private var instance: UnoOneAccessibilityService? = null
         fun getInstance(): UnoOneAccessibilityService? = instance
         fun isEnabled(): Boolean = instance != null

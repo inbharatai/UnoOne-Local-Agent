@@ -2,6 +2,7 @@ package com.unoone.agent
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.provider.Settings
@@ -20,7 +21,6 @@ import com.unoone.agent.localbrain.RuleBasedParser
 import com.unoone.agent.memory.MemoryModule
 import com.unoone.agent.phonecontrol.CalendarControl
 import com.unoone.agent.phonecontrol.OcrControl
-import com.unoone.agent.phonecontrol.ObjectDetectionControl
 import com.unoone.agent.phonecontrol.PhoneControl
 import com.unoone.agent.safetyguard.SafetyGuard
 import com.unoone.agent.skills.SkillsModule
@@ -33,11 +33,13 @@ import com.unoone.agent.storage.entity.NoteEntity
 import com.unoone.agent.voice.VoiceModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -50,15 +52,18 @@ class AgentOrchestrator(
     private val memoryDao: MemoryDao,
     private val skillDao: SkillDao
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main)
-    private val voiceModule = VoiceModule(context)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    // Shared VoiceModule — set externally by the Application/ViewModel to avoid duplicate instances
+    var voiceModule: VoiceModule = VoiceModule(context)
+        private set
+
     private val localBrain = LocalBrain()
     private val agentRouter = AgentRouter()
     private val safetyGuard = SafetyGuard()
     private val phoneControl = PhoneControl(context)
     private val calendarControl = CalendarControl(context)
     private val ocrControl = OcrControl(context)
-    private val objectDetectionControl = ObjectDetectionControl(context)
     private val accessibilityControl = AccessibilityControl()
     private val memoryModule = MemoryModule(memoryDao)
     val skillsModule = SkillsModule(skillDao)
@@ -79,12 +84,41 @@ class AgentOrchestrator(
     private var pendingCommand: String? = null
     private var pendingInputType: InputType? = null
 
+    /**
+     * Injects the shared VoiceModule from the Application/ViewModel layer.
+     * Called once at startup to eliminate the dual-instance problem.
+     */
+    fun setVoiceModule(shared: VoiceModule) {
+        voiceModule = shared
+    }
+
     fun setBlindAidActive(active: Boolean) {
         _isBlindAidActive.value = active
         if (active) {
             voiceModule.speak("Blind Aid activated. Scanning for obstacles ahead.")
+            // If activated from background (no Activity in foreground), launch MainActivity
+            // so the CameraX preview can bind to a lifecycle and start scanning
+            bringAppToForegroundIfNeeded()
         } else {
             voiceModule.speak("Blind Aid deactivated.")
+        }
+    }
+
+    /**
+     * When blind aid is activated from a background path (VoiceService broadcast, FloatingAgent),
+     * the CameraX preview in AgentScreen needs an active lifecycle to bind to.
+     * This brings the app to the foreground so the Compose UI can start the camera.
+     */
+    private fun bringAppToForegroundIfNeeded() {
+        try {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra("activate_blind_aid", true)
+            }
+            context.startActivity(intent)
+            Logger.i("Orchestrator: Launched MainActivity for blind-aid camera binding")
+        } catch (e: Exception) {
+            Logger.e("Orchestrator: Failed to launch MainActivity for blind-aid", e)
         }
     }
 
@@ -126,9 +160,37 @@ class AgentOrchestrator(
                 return
             }
 
+            // Step 2b: Expand compound commands into sequential execution
+            if (toolCall.tool == "compound") {
+                addStep(AgentStatus.TOOL_SELECTED, "Agent Plan", "Compound: executing both parts")
+                val firstResult = executeCompoundPart(toolCall, "first")
+                val secondResult = executeCompoundPart(toolCall, "second")
+                val combined: Result<String> = when {
+                    firstResult is Result.Error && secondResult is Result.Error ->
+                        Result.Error("Both commands failed: ${firstResult.message}; ${secondResult.message}")
+                    firstResult is Result.Error -> secondResult
+                    secondResult is Result.Error -> firstResult
+                    firstResult is Result.Success && secondResult is Result.Success ->
+                        Result.Success("${firstResult.data}; ${secondResult.data}")
+                    else -> Result.Success("Done")
+                }
+                if (combined is Result.Error) {
+                    addStep(AgentStatus.FAILED, "Execution Error", combined.message)
+                } else if (combined is Result.Success) {
+                    addStep(AgentStatus.VERIFYING, "Verifying Outcome", "Both commands complete")
+                    if (inputType == InputType.VOICE) {
+                        addStep(AgentStatus.SPEAKING, "Response", combined.data)
+                        voiceModule.speak(combined.data)
+                    }
+                }
+                saveLog(log.copy(selectedTool = "compound", status = if (combined is Result.Error) "failed" else "success"))
+                _isProcessing.value = false
+                return
+            }
+
             addStep(AgentStatus.TOOL_SELECTED, "Agent Plan", "Action: ${toolCall.tool}")
 
-            // Step 3: Dynamic Permission Check (Handling standard runtime & system settings permissions)
+            // Step 3: Dynamic Permission Check
             val missingPermissions = getRequiredPermissionsForTool(toolCall.tool).filter { perm ->
                 if (perm == Manifest.permission.SYSTEM_ALERT_WINDOW) {
                     !Settings.canDrawOverlays(context)
@@ -244,6 +306,7 @@ class AgentOrchestrator(
             "system_control" -> listOf(Manifest.permission.SYSTEM_ALERT_WINDOW)
             "voice_recording" -> listOf(Manifest.permission.RECORD_AUDIO)
             "detect_objects" -> listOf(Manifest.permission.CAMERA)
+            "deactivate_blind_aid" -> emptyList()
             else -> emptyList()
         }
     }
@@ -310,9 +373,17 @@ class AgentOrchestrator(
                         "scroll_up" -> accessibilityControl.scrollUp().map { "Scrolled up" }
                         "swipe" -> accessibilityControl.swipe(target).map { "Swiped $target" }
                         "long_press" -> {
-                            val x = target.toFloatOrNull() ?: 0f
-                            val y = toolCall.args["y"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 0f
-                            accessibilityControl.longPress(x, y).map { "Long pressed" }
+                            // If target is a text label (not numeric coords), find the node and long-press it
+                            val x = target.toFloatOrNull()
+                            val y = toolCall.args["y"]?.jsonPrimitive?.content?.toFloatOrNull()
+                            if (x != null && y != null) {
+                                accessibilityControl.longPress(x, y).map { "Long pressed at ($x, $y)" }
+                            } else if (target.isNotBlank()) {
+                                // Text-based long press: find the node and long-press it
+                                accessibilityControl.longPressNodeWithText(target).map { "Long pressed '$target'" }
+                            } else {
+                                Result.Error("Long press requires either coordinates or a target text label")
+                            }
                         }
                         "go_back" -> accessibilityControl.goBack().map { "Went back" }
                         "go_home" -> accessibilityControl.goHome().map { "Went home" }
@@ -331,11 +402,32 @@ class AgentOrchestrator(
                     setBlindAidActive(false)
                     Result.Success("Blind Aid deactivated.")
                 }
+                "compound" -> {
+                    // This should be handled in processCommand before reaching executeTool,
+                    // but handle it here as a fallback: execute first part only
+                    val firstResult = executeCompoundPart(toolCall, "first")
+                    firstResult
+                }
                 else -> agentRouter.route(toolCall)
             }
         } catch (e: Exception) {
             Result.Error("Action failed: ${e.message}")
         }
+    }
+
+    /**
+     * Executes one half of a compound tool call.
+     */
+    private suspend fun executeCompoundPart(compound: ToolCall, which: String): Result<String> {
+        val toolName = compound.args["${which}_tool"]?.jsonPrimitive?.content ?: return Result.Error("Missing $which tool in compound")
+        val argsJson = compound.args["${which}_args"]?.jsonPrimitive?.content ?: "{}"
+        // Reconstruct the ToolCall from the serialized args
+        val args = try {
+            kotlinx.serialization.json.Json.decodeFromString<JsonObject>(argsJson)
+        } catch (e: Exception) {
+            JsonObject(emptyMap())
+        }
+        return executeTool(ToolCall(toolName, args))
     }
 
     private fun addStep(status: AgentStatus, label: String, detail: String = "") {

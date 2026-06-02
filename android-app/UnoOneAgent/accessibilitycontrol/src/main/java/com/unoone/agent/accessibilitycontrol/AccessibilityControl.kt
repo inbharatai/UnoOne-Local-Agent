@@ -2,6 +2,7 @@ package com.unoone.agent.accessibilitycontrol
 
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
+import kotlinx.coroutines.delay
 
 class AccessibilityControl {
 
@@ -92,20 +93,24 @@ class AccessibilityControl {
             ?: return Result.Error("Accessibility Service not enabled")
         val rootNode = service.rootInActiveWindow
             ?: return Result.Error("No active window")
-        val bounds = android.graphics.Rect()
-        service.rootInActiveWindow?.getBoundsInScreen(bounds) ?: return Result.Error("No bounds")
-        val cx = bounds.exactCenterX()
-        val cy = bounds.exactCenterY()
-        val dx = bounds.width() * 0.4f
-        val dy = bounds.height() * 0.4f
-        val result = when (direction.lowercase()) {
-            "left" -> service.swipe(cx + dx, cy, cx - dx, cy)
-            "right" -> service.swipe(cx - dx, cy, cx + dx, cy)
-            "up" -> service.swipe(cx, cy + dy, cx, cy - dy)
-            "down" -> service.swipe(cx, cy - dy, cx, cy + dy)
-            else -> return Result.Error("Unknown swipe direction: $direction")
+        try {
+            val bounds = android.graphics.Rect()
+            rootNode.getBoundsInScreen(bounds)
+            val cx = bounds.exactCenterX()
+            val cy = bounds.exactCenterY()
+            val dx = bounds.width() * 0.4f
+            val dy = bounds.height() * 0.4f
+            val result = when (direction.lowercase()) {
+                "left" -> service.swipe(cx + dx, cy, cx - dx, cy)
+                "right" -> service.swipe(cx - dx, cy, cx + dx, cy)
+                "up" -> service.swipe(cx, cy + dy, cx, cy - dy)
+                "down" -> service.swipe(cx, cy - dy, cx, cy + dy)
+                else -> return Result.Error("Unknown swipe direction: $direction")
+            }
+            return if (result) Result.Success(Unit) else Result.Error("Swipe failed")
+        } finally {
+            rootNode.recycle()
         }
-        return if (result) Result.Success(Unit) else Result.Error("Swipe failed")
     }
 
     fun longPress(x: Float, y: Float): Result<Unit> {
@@ -113,6 +118,33 @@ class AccessibilityControl {
             ?: return Result.Error("Accessibility Service not enabled")
         return if (service.longPress(x, y)) Result.Success(Unit)
         else Result.Error("Long press failed")
+    }
+
+    /**
+     * Finds a node by text and performs a long-press gesture at its center coordinates.
+     */
+    fun longPressNodeWithText(text: String): Result<Unit> {
+        val service = UnoOneAccessibilityService.getInstance()
+            ?: return Result.Error("Accessibility Service not enabled")
+        val rootNode = service.rootInActiveWindow
+            ?: return Result.Error("No active window")
+        try {
+            val nodes = rootNode.findAccessibilityNodeInfosByText(text)
+            try {
+                val targetNode = nodes.firstOrNull()
+                    ?: return Result.Error("Could not find node with text: $text")
+                val bounds = android.graphics.Rect()
+                targetNode.getBoundsInScreen(bounds)
+                val cx = bounds.exactCenterX()
+                val cy = bounds.exactCenterY()
+                return if (service.longPress(cx, cy)) Result.Success(Unit)
+                else Result.Error("Long press on '$text' failed")
+            } finally {
+                nodes.forEach { it.recycle() }
+            }
+        } finally {
+            rootNode.recycle()
+        }
     }
 
     fun goBack(): Result<Unit> {
@@ -143,17 +175,17 @@ class AccessibilityControl {
         else Result.Error("Could not open recents")
     }
 
-    fun findAndClick(text: String, maxScrolls: Int = 5): Result<Unit> {
+    suspend fun findAndClick(text: String, maxScrolls: Int = 5): Result<Unit> {
         val service = UnoOneAccessibilityService.getInstance()
             ?: return Result.Error("Accessibility Service not enabled")
 
         // Try clicking without scrolling first
         if (service.clickNodeWithText(text)) return Result.Success(Unit)
 
-        // Scroll and retry
+        // Scroll and retry — using delay instead of Thread.sleep to avoid blocking the main thread
         repeat(maxScrolls) {
             service.scrollDown()
-            Thread.sleep(500)
+            delay(500)
             if (service.clickNodeWithText(text)) return Result.Success(Unit)
         }
         return Result.Error("Could not find '$text' after scrolling")

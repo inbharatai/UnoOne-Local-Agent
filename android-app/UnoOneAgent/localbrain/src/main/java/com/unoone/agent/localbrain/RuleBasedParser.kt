@@ -13,6 +13,28 @@ object RuleBasedParser {
     fun parse(command: String): ToolCall? {
         val lowered = command.lowercase().trim()
 
+        // Check for compound commands FIRST: "X and Y"
+        // Only match if both halves parse successfully; otherwise fall through to individual rules
+        if (lowered.contains(" and ")) {
+            val parts = lowered.split(" and ", limit = 2)
+            val first = parse(parts[0].trim())
+            val second = parse(parts[1].trim())
+            if (first != null && second != null) {
+                return ToolCall(
+                    "compound",
+                    JsonObject(mapOf(
+                        "first_tool" to JsonPrimitive(first.tool),
+                        "first_args" to JsonPrimitive(first.args.toString()),
+                        "second_tool" to JsonPrimitive(second.tool),
+                        "second_args" to JsonPrimitive(second.args.toString())
+                    ))
+                )
+            }
+            // If only the first half parses, return it (the " and " was not a command separator)
+            if (first != null) return first
+            // Otherwise fall through to the rule chain below
+        }
+
         return when {
             // Skill Building
             lowered.contains("teach you") || lowered.contains("create skill") || lowered.contains("new skill") -> {
@@ -71,16 +93,21 @@ object RuleBasedParser {
                 } else null
             }
 
-            // Offline Object & Obstacle Detection (Vision) - Deactivation (Checked first to prevent substring collision with "activate")
+            // Offline Object & Obstacle Detection (Vision) - Deactivation
+            // Checked BEFORE activation to prevent "deactivate" being matched by "activate" substring,
+            // and to catch negative-intent phrases like "stop barriers" / "remove obstacles"
             lowered.contains("stop blind aid") || lowered.contains("deactivate blind aid") ||
-            lowered.contains("turn off blind aid") || lowered.contains("stop scanning") -> {
+            lowered.contains("turn off blind aid") || lowered.contains("stop scanning") ||
+            ((lowered.contains("barriers") || lowered.contains("obstacles")) &&
+                (lowered.contains("stop") || lowered.contains("remove") || lowered.contains("turn off") ||
+                 lowered.contains("deactivate") || lowered.contains("disable") || lowered.contains("no more"))) -> {
                 ToolCall("deactivate_blind_aid", JsonObject(emptyMap()))
             }
 
             // Offline Object & Obstacle Detection (Vision) - Activation
             lowered.contains("start blind aid") || lowered.contains("activate blind aid") ||
             lowered.contains("detect objects") || lowered.contains("what's in front of me") ||
-            lowered.contains("barriers") || lowered.contains("obstacles") || lowered.contains("detect barrier") -> {
+            lowered.contains("detect barrier") || lowered.contains("barriers") || lowered.contains("obstacles") -> {
                 ToolCall("detect_objects", JsonObject(emptyMap()))
             }
 
@@ -121,8 +148,11 @@ object RuleBasedParser {
             lowered.contains("swipe down") -> {
                 ToolCall("system_control", JsonObject(mapOf("action" to JsonPrimitive("swipe"), "target" to JsonPrimitive("down"))))
             }
+            // Long press on a text element — extract the target text, not coordinates
             lowered.contains("long press") || lowered.contains("long tap") -> {
-                ToolCall("system_control", JsonObject(mapOf("action" to JsonPrimitive("long_press"), "target" to JsonPrimitive(""))))
+                val target = Regex("(?:long press|long tap) (?:on )?(.+)", RegexOption.IGNORE_CASE)
+                    .find(lowered)?.groupValues?.get(1)?.trim() ?: ""
+                ToolCall("system_control", JsonObject(mapOf("action" to JsonPrimitive("long_press"), "target" to JsonPrimitive(target))))
             }
             lowered.contains("find") && lowered.contains("click") -> {
                 val target = Regex("find (?:and click|and tap|then click|then tap) (.+)", RegexOption.IGNORE_CASE)
@@ -130,7 +160,7 @@ object RuleBasedParser {
                 ToolCall("system_control", JsonObject(mapOf("action" to JsonPrimitive("find_and_click"), "target" to JsonPrimitive(target))))
             }
             lowered.contains("fill") -> {
-                val field = Regex("fill (?:the )?(.+?)(?: with|:) (.+)", RegexOption.IGNORE_CASE)
+                val field = Regex("fill (?:the )?(.+?)(?: with|:| ) (.+)", RegexOption.IGNORE_CASE)
                     .find(lowered)
                 val hint = field?.groupValues?.get(1)?.trim() ?: ""
                 val value = field?.groupValues?.get(2)?.trim() ?: ""
@@ -141,13 +171,9 @@ object RuleBasedParser {
                 )))
             }
 
-            // Note Management
+            // Note Management — robust content extraction with or without colon separator
             lowered.contains("note") || lowered.contains("remember") -> {
-                val content = command.substringAfterLast(":").trim()
-                    .let { Regex("^(create|add|new)?\\s*note", RegexOption.IGNORE_CASE).replace(it, "") }
-                    .let { Regex("^remember", RegexOption.IGNORE_CASE).replace(it, "") }
-                    .trim()
-                    .ifEmpty { command }
+                val content = extractNoteContent(command)
                 ToolCall(
                     "create_note",
                     JsonObject(mapOf(
@@ -179,13 +205,6 @@ object RuleBasedParser {
                 ToolCall("open_camera", JsonObject(emptyMap()))
             }
 
-            // Compound commands: "open chrome and search for weather"
-            lowered.contains(" and ") -> {
-                val parts = lowered.split(" and ", limit = 2)
-                val first = parse(parts[0].trim())
-                first
-            }
-
             // Catch-all App Opener
             lowered.startsWith("open ") || lowered.startsWith("launch ") -> {
                 val appName = Regex("^(open|launch) ", RegexOption.IGNORE_CASE).replace(lowered, "").trim()
@@ -193,6 +212,32 @@ object RuleBasedParser {
             }
 
             else -> null
+        }
+    }
+
+    /**
+     * Extracts note content from commands like:
+     * - "remember: pick up groceries"  → "pick up groceries"
+     * - "create note buy milk"          → "buy milk"
+     * - "add note: meeting at 5pm"      → "meeting at 5pm"
+     * - "remember to buy groceries"     → "to buy groceries"
+     */
+    private fun extractNoteContent(command: String): String {
+        // If there's a colon, take everything after it as content
+        val afterColon = command.substringAfterLast(":").trim()
+        // Strip common prefixes like "create note", "add note", "new note", "remember"
+        val stripped = afterColon
+            .let { Regex("^(create|add|new)?\\s*note\\s*", RegexOption.IGNORE_CASE).replace(it, "") }
+            .let { Regex("^remember\\s*", RegexOption.IGNORE_CASE).replace(it, "") }
+            .trim()
+        // If colon-based extraction yielded meaningful content, use it; otherwise parse the whole command
+        return if (stripped.isNotBlank()) stripped else {
+            // No colon or nothing after colon — strip prefixes from the full command
+            command.trim()
+                .let { Regex("^(create|add|new)?\\s*note\\s*", RegexOption.IGNORE_CASE).replace(it, "") }
+                .let { Regex("^remember\\s*", RegexOption.IGNORE_CASE).replace(it, "") }
+                .trim()
+                .ifEmpty { command }
         }
     }
 }

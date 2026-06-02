@@ -1,6 +1,7 @@
 package com.unoone.agent.ui.screens
 
 import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -53,6 +54,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,11 +65,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.unoone.agent.core.model.AgentStatus
 import com.unoone.agent.core.model.TimelineStep
 import com.unoone.agent.ui.components.ConfirmationDialog
@@ -221,7 +223,14 @@ fun AgentScreen(viewModel: AgentViewModel) {
                     if (viewModel.isListening) {
                         viewModel.stopListening()
                     } else {
-                        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        // Check if permission is already granted before launching system dialog
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+                            == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            viewModel.startListening(context)
+                        } else {
+                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
                     }
                 },
                 shape = CircleShape,
@@ -323,49 +332,50 @@ fun BlindAidCameraPreview(
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
 
-    val blindAidManager = remember {
-        com.unoone.agent.phonecontrol.BlindAidManager(context) { feedback ->
+    // Lazy-init BlindAidManager: only allocate detector + toneGenerator when actually needed
+    var blindAidManager by remember { mutableStateOf<com.unoone.agent.phonecontrol.BlindAidManager?>(null) }
+    LaunchedEffect(Unit) {
+        blindAidManager = com.unoone.agent.phonecontrol.BlindAidManager(context) { feedback ->
             voiceModule.speak(feedback)
         }
     }
 
     DisposableEffect(lifecycleOwner) {
         onDispose {
-            cameraProviderFuture.addListener(
-                {
-                    try {
-                        cameraProviderFuture.get().unbindAll()
-                    } catch (e: Exception) {
-                        com.unoone.agent.core.util.Logger.e("BlindAidCameraPreview: Camera unbind failed", e)
-                    }
-                },
-                ContextCompat.getMainExecutor(context)
-            )
-            blindAidManager.release()
+            // Directly unbind camera — cameraProviderFuture is already complete by this point
+            try {
+                cameraProviderFuture.get().unbindAll()
+            } catch (e: Exception) {
+                com.unoone.agent.core.util.Logger.e("BlindAidCameraPreview: Camera unbind failed", e)
+            }
+            blindAidManager?.release()
+            blindAidManager = null
         }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
             factory = { ctx ->
-                PreviewView(ctx).apply {
+                val previewView = PreviewView(ctx).apply {
                     scaleType = PreviewView.ScaleType.FILL_CENTER
                 }
-            },
-            modifier = Modifier.fillMaxSize(),
-            update = { previewView ->
+
+                // One-time camera binding in factory — avoids rebind on every recomposition
                 val cameraProvider = cameraProviderFuture.get()
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
 
+                val manager = blindAidManager
                 val imageAnalysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build().also {
-                        it.setAnalyzer(
-                            ContextCompat.getMainExecutor(context),
-                            blindAidManager.getAnalyzer()
-                        )
+                    .build().also { analysis ->
+                        if (manager != null) {
+                            analysis.setAnalyzer(
+                                ContextCompat.getMainExecutor(context),
+                                manager.getAnalyzer()
+                            )
+                        }
                     }
 
                 val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
@@ -381,7 +391,10 @@ fun BlindAidCameraPreview(
                 } catch (e: Exception) {
                     com.unoone.agent.core.util.Logger.e("BlindAidCameraPreview: Camera binding failed", e)
                 }
-            }
+
+                previewView
+            },
+            modifier = Modifier.fillMaxSize()
         )
 
         // Overlay Close Button

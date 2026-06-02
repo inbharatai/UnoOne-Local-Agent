@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import androidx.core.content.ContextCompat
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.di.DatabaseProvider
+import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +18,10 @@ class UnoOneApplication : Application() {
 
     // Expert: Master Orchestrator accessible from anywhere (Activity or Service)
     lateinit var orchestrator: AgentOrchestrator
+        private set
+
+    // Single shared VoiceModule — used by orchestrator, ViewModel, and FloatingAgentService
+    lateinit var sharedVoiceModule: VoiceModule
         private set
 
     private val appScope = CoroutineScope(Dispatchers.Main)
@@ -39,9 +44,12 @@ class UnoOneApplication : Application() {
         super.onCreate()
         Logger.i("UnoOne starting up - Expert Mode")
         appContext = applicationContext
-        
+
         val db = DatabaseProvider.getDatabase(this)
-        // Correcting the orchestrator initialization with skillDao
+
+        // Create the shared VoiceModule first, then inject it into the orchestrator
+        sharedVoiceModule = VoiceModule(this)
+
         orchestrator = AgentOrchestrator(
             this,
             db.noteDao(),
@@ -49,6 +57,7 @@ class UnoOneApplication : Application() {
             db.memoryDao(),
             db.skillDao()
         )
+        orchestrator.setVoiceModule(sharedVoiceModule)
 
         // Register background voice command broadcast receiver securely
         val filter = IntentFilter(VoiceService.ACTION_VOICE_COMMAND)

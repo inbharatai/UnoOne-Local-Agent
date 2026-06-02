@@ -59,7 +59,9 @@ class MainActivity : ComponentActivity() {
         val app = application as UnoOneApplication
         agentOrchestrator = app.orchestrator
         val database = DatabaseProvider.getDatabase(this)
-        val voiceModule = VoiceModule(this)
+
+        // Use the single shared VoiceModule from the Application — no duplicate instances
+        val voiceModule = app.sharedVoiceModule
 
         agentOrchestrator.onPermissionRequired = { missing ->
             requestPermissionLauncher.launch(missing.toTypedArray())

@@ -32,7 +32,7 @@ class AndroidSttEngine(private val context: Context) {
     }
 
     /**
-     * Transcribe speech with support for automatic multilingual recognition, 
+     * Transcribe speech with support for automatic multilingual recognition,
      * defaulting to combined English and Indian Locale.
      */
     suspend fun transcribeOnce(
@@ -53,8 +53,8 @@ class AndroidSttEngine(private val context: Context) {
         var resumed = false
 
         recognizer.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { 
-                Logger.d("Multilingual STT: Ready") 
+            override fun onReadyForSpeech(params: Bundle?) {
+                Logger.d("Multilingual STT: Ready")
             }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {
@@ -70,10 +70,7 @@ class AndroidSttEngine(private val context: Context) {
                     resumed = true
                     continuation.resume(Result.Error("Speech error code: $error"))
                 }
-                recognizer.destroy()
-                if (speechRecognizer == recognizer) {
-                    speechRecognizer = null
-                }
+                safeDestroyRecognizer(recognizer)
             }
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -83,16 +80,30 @@ class AndroidSttEngine(private val context: Context) {
                     resumed = true
                     continuation.resume(Result.Success(text))
                 }
-                recognizer.destroy()
-                if (speechRecognizer == recognizer) {
-                    speechRecognizer = null
-                }
+                safeDestroyRecognizer(recognizer)
             }
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
 
         recognizer.startListening(intent)
+    }
+
+    /**
+     * Safely destroys the recognizer exactly once, preventing double-destroy
+     * if both onError and onResults fire in rapid succession.
+     */
+    private fun safeDestroyRecognizer(recognizer: SpeechRecognizer) {
+        synchronized(this) {
+            if (speechRecognizer == recognizer) {
+                speechRecognizer = null
+                try {
+                    recognizer.destroy()
+                } catch (e: Exception) {
+                    Logger.e("AndroidSttEngine: Error destroying recognizer", e)
+                }
+            }
+        }
     }
 
     fun stopListening() {
@@ -104,7 +115,9 @@ class AndroidSttEngine(private val context: Context) {
     }
 
     fun release() {
-        speechRecognizer?.destroy()
-        speechRecognizer = null
+        synchronized(this) {
+            speechRecognizer?.destroy()
+            speechRecognizer = null
+        }
     }
 }

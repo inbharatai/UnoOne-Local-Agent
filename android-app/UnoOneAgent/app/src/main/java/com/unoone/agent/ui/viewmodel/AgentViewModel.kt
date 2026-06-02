@@ -18,14 +18,15 @@ import kotlinx.coroutines.launch
 
 class AgentViewModel(
     private val orchestrator: AgentOrchestrator,
-    private val voiceModule: VoiceModule
+    voiceModule: VoiceModule
 ) : ViewModel() {
 
     val timelineSteps: StateFlow<List<TimelineStep>> = orchestrator.timelineSteps
     val isProcessing: StateFlow<Boolean> = orchestrator.isProcessing
     val isBlindAidActive: StateFlow<Boolean> = orchestrator.isBlindAidActive
 
-    val voiceModuleInstance: VoiceModule get() = voiceModule
+    // Single shared VoiceModule instance — also used by the orchestrator for speak()
+    val voiceModuleInstance: VoiceModule = voiceModule
 
     private var _isListening = false
     val isListening: Boolean get() = _isListening
@@ -37,7 +38,10 @@ class AgentViewModel(
     val pendingConfirmation: StateFlow<Pair<String, ConfirmationLevel>?> = _pendingConfirmation.asStateFlow()
 
     init {
-        voiceModule.onAmplitude = { amp ->
+        // Wire the shared VoiceModule into the orchestrator so both use the same instance
+        orchestrator.setVoiceModule(voiceModuleInstance)
+
+        voiceModuleInstance.onAmplitude = { amp ->
             _amplitude.value = amp
         }
 
@@ -54,7 +58,7 @@ class AgentViewModel(
     fun startListening(context: Context) {
         if (_isListening || isProcessing.value) return
         viewModelScope.launch {
-            val result = voiceModule.startRecording(context, viewModelScope)
+            val result = voiceModuleInstance.startRecording(context, viewModelScope)
             if (result is Result.Success) {
                 _isListening = true
             } else if (result is Result.Error) {
@@ -68,7 +72,7 @@ class AgentViewModel(
         _isListening = false
         _amplitude.value = 0f
         viewModelScope.launch {
-            val result = voiceModule.stopAndTranscribe()
+            val result = voiceModuleInstance.stopAndTranscribe()
             if (result is Result.Success && result.data.isNotBlank()) {
                 orchestrator.processCommand(result.data, InputType.VOICE)
             } else if (result is Result.Error) {
@@ -78,7 +82,11 @@ class AgentViewModel(
     }
 
     fun setBlindAidActive(active: Boolean) {
-        orchestrator.setBlindAidActive(active)
+        // Route through processCommand so the full safety/permission pipeline is honored
+        viewModelScope.launch {
+            val command = if (active) "activate blind aid" else "deactivate blind aid"
+            orchestrator.processCommand(command, InputType.TEXT)
+        }
     }
 
     fun onTextCommand(text: String) {
@@ -108,6 +116,7 @@ class AgentViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        voiceModule.release()
+        // Release the single shared VoiceModule instance
+        voiceModuleInstance.release()
     }
 }

@@ -1,7 +1,9 @@
 package com.unoone.agent
 
+import android.Manifest
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.PixelFormat
 import android.os.IBinder
 import android.view.Gravity
@@ -29,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.*
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
@@ -48,7 +51,7 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
     private lateinit var windowManager: WindowManager
     private var bubbleView: View? = null
     private var chatOverlayView: View? = null
-    
+
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val store = ViewModelStore()
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
@@ -64,13 +67,14 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
         super.onCreate()
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
-        
+
         val app = application as UnoOneApplication
         orchestrator = app.orchestrator
-        voiceModule = VoiceModule(this)
+        // Reuse the orchestrator's shared VoiceModule instead of creating a duplicate
+        voiceModule = orchestrator.voiceModule
 
         // Expert: handle permissions by redirecting to MainActivity
-        orchestrator.onPermissionRequired = { missing ->
+        orchestrator.onPermissionRequired = { _ ->
             val intent = Intent(this, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -84,6 +88,7 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         return START_STICKY
     }
 
@@ -104,7 +109,7 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
             setViewTreeLifecycleOwner(this@FloatingAgentService)
             setViewTreeViewModelStoreOwner(this@FloatingAgentService)
             setViewTreeSavedStateRegistryOwner(this@FloatingAgentService)
-            
+
             setContent {
                 UnoOneTheme {
                     FloatingBubbleUI(
@@ -142,17 +147,21 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
             setViewTreeLifecycleOwner(this@FloatingAgentService)
             setViewTreeViewModelStoreOwner(this@FloatingAgentService)
             setViewTreeSavedStateRegistryOwner(this@FloatingAgentService)
-            
+
             setContent {
                 UnoOneTheme {
                     Box(modifier = Modifier.fillMaxSize()) {
                         // Background click to close
                         Box(modifier = Modifier.fillMaxSize().clickable { hideChatOverlay() })
-                        
+
                         ChatOverlayCard(
                             modifier = Modifier.align(Alignment.Center),
+                            serviceContext = this@FloatingAgentService,
                             orchestrator = orchestrator,
                             voiceModule = voiceModule,
+                            hasMicPermission = ContextCompat.checkSelfPermission(
+                                this@FloatingAgentService, Manifest.permission.RECORD_AUDIO
+                            ) == PackageManager.PERMISSION_GRANTED,
                             onClose = { hideChatOverlay() }
                         )
                     }
@@ -172,10 +181,13 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
     }
 
     override fun onDestroy() {
-        super.onDestroy()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         bubbleView?.let { windowManager.removeView(it) }
         hideChatOverlay()
+        // No voiceModule.release() here — it's shared with the orchestrator and will be
+        // released when the Application is destroyed or the ViewModel is cleared.
         store.clear()
     }
 
@@ -207,8 +219,10 @@ fun FloatingBubbleUI(onDrag: (Float, Float) -> Unit, onClick: () -> Unit) {
 @Composable
 fun ChatOverlayCard(
     modifier: Modifier = Modifier,
+    serviceContext: android.content.Context,
     orchestrator: AgentOrchestrator,
     voiceModule: VoiceModule,
+    hasMicPermission: Boolean,
     onClose: () -> Unit
 ) {
     var text by remember { mutableStateOf("") }
@@ -232,7 +246,7 @@ fun ChatOverlayCard(
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = onClose) { Icon(Icons.Default.Close, null) }
             }
-            
+
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -258,9 +272,22 @@ fun ChatOverlayCard(
                     shape = CircleShape
                 )
                 Spacer(Modifier.width(8.dp))
-                
+
                 IconButton(
                     onClick = {
+                        if (!hasMicPermission) {
+                            // Redirect to MainActivity for permission grant
+                            Toast.makeText(
+                                serviceContext,
+                                "Microphone permission required. Opening UnoOne...",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            val intent = Intent(serviceContext, MainActivity::class.java).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            serviceContext.startActivity(intent)
+                            return@IconButton
+                        }
                         if (isListening) {
                             isListening = false
                             scope.launch {
@@ -271,7 +298,7 @@ fun ChatOverlayCard(
                             }
                         } else {
                             isListening = true
-                            voiceModule.startRecording(UnoOneApplication.appContext, scope)
+                            voiceModule.startRecording(serviceContext, scope)
                         }
                     },
                     colors = IconButtonDefaults.iconButtonColors(

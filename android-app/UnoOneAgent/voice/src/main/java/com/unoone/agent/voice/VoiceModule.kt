@@ -113,6 +113,8 @@ class VoiceModule(private val context: Context) {
 
     fun stopRecording(): ByteArray {
         isRecordingInternal = false
+        // Cancel the active STT job to prevent orphaned coroutines
+        activeSttJob?.cancel()
         activeSttJob = null
         return recorder.stop()
     }
