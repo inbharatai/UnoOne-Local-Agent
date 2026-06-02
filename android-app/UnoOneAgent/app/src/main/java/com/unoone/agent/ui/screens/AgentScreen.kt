@@ -3,11 +3,15 @@ package com.unoone.agent.ui.screens
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -29,6 +33,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
@@ -44,8 +49,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,8 +63,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import com.unoone.agent.core.model.AgentStatus
 import com.unoone.agent.core.model.TimelineStep
 import com.unoone.agent.ui.components.ConfirmationDialog
@@ -79,6 +89,7 @@ fun AgentScreen(viewModel: AgentViewModel) {
     var textInput by remember { mutableStateOf("") }
     val timeline by viewModel.timelineSteps.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
+    val isBlindAidActive by viewModel.isBlindAidActive.collectAsState()
     val amplitude by viewModel.amplitude.collectAsState()
     val pendingConfirmation by viewModel.pendingConfirmation.collectAsState()
     val context = LocalContext.current
@@ -121,19 +132,59 @@ fun AgentScreen(viewModel: AgentViewModel) {
         )
 
         // Offline badge
-        Box(
-            modifier = Modifier
-                .padding(vertical = 8.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f))
-                .padding(horizontal = 10.dp, vertical = 4.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Offline Local",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.secondary,
-                fontWeight = FontWeight.SemiBold
-            )
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 8.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "Offline Local",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.secondary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            if (isBlindAidActive) {
+                Box(
+                    modifier = Modifier
+                        .padding(vertical = 8.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SafetyOrange.copy(alpha = 0.2f))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "Blind Aid Active",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = SafetyOrange,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        // Live Blind Aid Camera Preview
+        AnimatedVisibility(visible = isBlindAidActive) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(260.dp)
+                    .padding(vertical = 8.dp),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(8.dp)
+            ) {
+                BlindAidCameraPreview(
+                    voiceModule = viewModel.voiceModuleInstance,
+                    onClose = { viewModel.setBlindAidActive(false) }
+                )
+            }
         }
 
         // Progress indicator
@@ -235,8 +286,8 @@ fun AgentScreen(viewModel: AgentViewModel) {
             QuickActionButton("Calendar", Icons.Default.CalendarMonth, enabled = !isProcessing) {
                 viewModel.onQuickAction("Calendar")
             }
-            QuickActionButton("Open App", Icons.Default.Language, enabled = !isProcessing) {
-                viewModel.onQuickAction("Open App")
+            QuickActionButton("Blind Aid", Icons.Default.Language, enabled = !isProcessing) {
+                viewModel.onTextCommand("activate blind aid")
             }
         }
 
@@ -258,6 +309,91 @@ fun AgentScreen(viewModel: AgentViewModel) {
             items(timeline) { step ->
                 TimelineStepCard(step)
             }
+        }
+    }
+}
+
+@Composable
+fun BlindAidCameraPreview(
+    voiceModule: com.unoone.agent.voice.VoiceModule,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+
+    val blindAidManager = remember {
+        com.unoone.agent.phonecontrol.BlindAidManager(context) { feedback ->
+            voiceModule.speak(feedback)
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        onDispose {
+            cameraProviderFuture.addListener(
+                {
+                    try {
+                        cameraProviderFuture.get().unbindAll()
+                    } catch (e: Exception) {
+                        com.unoone.agent.core.util.Logger.e("BlindAidCameraPreview: Camera unbind failed", e)
+                    }
+                },
+                ContextCompat.getMainExecutor(context)
+            )
+            blindAidManager.release()
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { ctx ->
+                PreviewView(ctx).apply {
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            update = { previewView ->
+                val cameraProvider = cameraProviderFuture.get()
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build().also {
+                        it.setAnalyzer(
+                            ContextCompat.getMainExecutor(context),
+                            blindAidManager.getAnalyzer()
+                        )
+                    }
+
+                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        cameraSelector,
+                        preview,
+                        imageAnalysis
+                    )
+                } catch (e: Exception) {
+                    com.unoone.agent.core.util.Logger.e("BlindAidCameraPreview: Camera binding failed", e)
+                }
+            }
+        )
+
+        // Overlay Close Button
+        IconButton(
+            onClick = onClose,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(12.dp)
+                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                .size(36.dp)
+        ) {
+            Icon(Icons.Default.Close, contentDescription = "Close Scanning", tint = Color.White)
         }
     }
 }

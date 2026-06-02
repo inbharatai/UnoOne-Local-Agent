@@ -23,6 +23,9 @@ class AgentViewModel(
 
     val timelineSteps: StateFlow<List<TimelineStep>> = orchestrator.timelineSteps
     val isProcessing: StateFlow<Boolean> = orchestrator.isProcessing
+    val isBlindAidActive: StateFlow<Boolean> = orchestrator.isBlindAidActive
+
+    val voiceModuleInstance: VoiceModule get() = voiceModule
 
     private var _isListening = false
     val isListening: Boolean get() = _isListening
@@ -51,7 +54,7 @@ class AgentViewModel(
     fun startListening(context: Context) {
         if (_isListening || isProcessing.value) return
         viewModelScope.launch {
-            val result = voiceModule.startRecording(context)
+            val result = voiceModule.startRecording(context, viewModelScope)
             if (result is Result.Success) {
                 _isListening = true
             } else if (result is Result.Error) {
@@ -65,20 +68,17 @@ class AgentViewModel(
         _isListening = false
         _amplitude.value = 0f
         viewModelScope.launch {
-            // Try Sherpa STT first, fall back to Android
-            if (voiceModule.isSttInitialized()) {
-                val result = voiceModule.stopAndTranscribe()
-                if (result is Result.Success && result.data.isNotBlank()) {
-                    orchestrator.processCommand(result.data, InputType.VOICE)
-                    return@launch
-                }
-            }
-            // Fallback to Android STT
-            val androidResult = voiceModule.transcribeWithAndroid()
-            if (androidResult is Result.Success && androidResult.data.isNotBlank()) {
-                orchestrator.processCommand(androidResult.data, InputType.VOICE)
+            val result = voiceModule.stopAndTranscribe()
+            if (result is Result.Success && result.data.isNotBlank()) {
+                orchestrator.processCommand(result.data, InputType.VOICE)
+            } else if (result is Result.Error) {
+                Logger.e("Speech transcription failed: ${result.message}")
             }
         }
+    }
+
+    fun setBlindAidActive(active: Boolean) {
+        orchestrator.setBlindAidActive(active)
     }
 
     fun onTextCommand(text: String) {

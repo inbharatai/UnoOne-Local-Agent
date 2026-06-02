@@ -8,7 +8,10 @@ import com.unoone.agent.voice.stt.AndroidSttEngine
 import com.unoone.agent.voice.stt.SherpaSttEngine
 import com.unoone.agent.voice.tts.SherpaTtsEngine
 import com.unoone.agent.voice.tts.TtsPlayer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -20,6 +23,9 @@ class VoiceModule(private val context: Context) {
     private var androidStt: AndroidSttEngine? = null
     private val ttsPlayer = TtsPlayer()
     private var useAndroidStt = true
+
+    private var activeSttJob: Deferred<Result<String>>? = null
+    private var isRecordingInternal = false
 
     init {
         // Initialize the universal, high-quality native TTS player immediately
@@ -60,25 +66,54 @@ class VoiceModule(private val context: Context) {
         }
     }
 
-    fun startRecording(context: Context): Result<Unit> {
-        if (!recorder.hasPermission(context)) {
-            return Result.Error("Microphone permission not granted")
+    fun startRecording(context: Context, scope: CoroutineScope): Result<Unit> {
+        if (isRecordingInternal) return Result.Success(Unit)
+
+        return if (useAndroidStt || sttEngine == null) {
+            isRecordingInternal = true
+            val engine = androidStt ?: AndroidSttEngine(context).also { androidStt = it }
+            val initResult = engine.initialize()
+            if (initResult is Result.Error) {
+                isRecordingInternal = false
+                return initResult
+            }
+
+            activeSttJob = scope.async(Dispatchers.Main) {
+                engine.transcribeOnce(onAmplitude = onAmplitude)
+            }
+            Result.Success(Unit)
+        } else {
+            if (!recorder.hasPermission(context)) {
+                return Result.Error("Microphone permission not granted")
+            }
+            val result = recorder.start()
+            if (result is Result.Success) {
+                isRecordingInternal = true
+            }
+            result
         }
-        return recorder.start()
     }
 
     suspend fun stopAndTranscribe(): Result<String> {
-        val pcm = recorder.stop()
-        if (pcm.isEmpty()) return Result.Error("No audio captured")
+        if (!isRecordingInternal) return Result.Error("No active voice capture session")
+        isRecordingInternal = false
 
         return if (useAndroidStt || sttEngine == null) {
-            transcribeWithAndroid()
+            androidStt?.stopListening()
+            val job = activeSttJob ?: return Result.Error("No active STT job")
+            val res = job.await()
+            activeSttJob = null
+            res
         } else {
+            val pcm = recorder.stop()
+            if (pcm.isEmpty()) return Result.Error("No audio captured")
             sttEngine!!.transcribe(pcm)
         }
     }
 
     fun stopRecording(): ByteArray {
+        isRecordingInternal = false
+        activeSttJob = null
         return recorder.stop()
     }
 
@@ -90,7 +125,7 @@ class VoiceModule(private val context: Context) {
             val engine = androidStt ?: AndroidSttEngine(context).also { androidStt = it }
             val initResult = engine.initialize()
             if (initResult is Result.Error) return@withContext initResult
-            engine.transcribeOnce(locale)
+            engine.transcribeOnce(locale, onAmplitude)
         }
     }
 
@@ -112,13 +147,15 @@ class VoiceModule(private val context: Context) {
         ttsPlayer.stop()
     }
 
-    fun isRecording(): Boolean = recorder.isRecording()
+    fun isRecording(): Boolean = isRecordingInternal
 
     fun isSttInitialized(): Boolean = sttEngine?.isInitialized() == true
 
     fun isTtsInitialized(): Boolean = ttsEngine?.isInitialized() == true
 
     fun release() {
+        isRecordingInternal = false
+        activeSttJob = null
         recorder.stop()
         sttEngine?.release()
         ttsEngine?.release()

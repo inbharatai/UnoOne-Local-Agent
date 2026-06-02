@@ -90,6 +90,13 @@ dependencies {
     // World-class on-device OCR
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.0")
 
+    // CameraX for real-time continuous blind aid analysis
+    val cameraVersion = "1.3.3"
+    implementation("androidx.camera:camera-core:$cameraVersion")
+    implementation("androidx.camera:camera-camera2:$cameraVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraVersion")
+    implementation("androidx.camera:camera-view:$cameraVersion")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")

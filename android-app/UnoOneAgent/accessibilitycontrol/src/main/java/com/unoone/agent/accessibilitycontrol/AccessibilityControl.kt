@@ -58,10 +58,19 @@ class AccessibilityControl {
             ?: return Result.Error("Accessibility Service not enabled")
         val texts = service.captureVisibleText()
         return if (texts.isNotEmpty()) {
-            Result.Success(texts.joinToString("\n"))
+            val fullText = texts.joinToString("\n")
+            val cleanText = limitInputToSafeThreshold(fullText)
+            Result.Success(cleanText)
         } else {
             Result.Error("No text found on screen")
         }
+    }
+
+    private fun limitInputToSafeThreshold(input: String, maxChars: Int = 100_000): String {
+        if (input.length > maxChars) {
+            return "... [Truncated due to length] ... \n" + input.takeLast(maxChars)
+        }
+        return input
     }
 
     fun scrollDown(): Result<Unit> {

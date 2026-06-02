@@ -35,8 +35,13 @@ class AndroidSttEngine(private val context: Context) {
      * Transcribe speech with support for automatic multilingual recognition, 
      * defaulting to combined English and Indian Locale.
      */
-    suspend fun transcribeOnce(locale: Locale = Locale("en", "IN")): Result<String> = suspendCoroutine { continuation ->
-        val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+    suspend fun transcribeOnce(
+        locale: Locale = Locale("en", "IN"),
+        onAmplitude: ((Float) -> Unit)? = null
+    ): Result<String> = suspendCoroutine { continuation ->
+        val recognizer = SpeechRecognizer.createSpeechRecognizer(context).also {
+            speechRecognizer = it
+        }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale.toString())
@@ -45,29 +50,57 @@ class AndroidSttEngine(private val context: Context) {
             putExtra(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES, arrayOf("en-IN", "hi-IN", "ta-IN", "te-IN", "kn-IN", "ml-IN", "bn-IN"))
         }
 
+        var resumed = false
+
         recognizer.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { Logger.d("Multilingual STT: Ready") }
+            override fun onReadyForSpeech(params: Bundle?) { 
+                Logger.d("Multilingual STT: Ready") 
+            }
             override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onRmsChanged(rmsdB: Float) {
+                // Normalize rmsdB (typically ranges from -2 to 10+) to 0..1 range
+                val normalized = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
+                onAmplitude?.invoke(normalized)
+            }
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onError(error: Int) {
                 Logger.e("Multilingual STT Error: $error")
-                continuation.resume(Result.Error("Speech error code: $error"))
+                if (!resumed) {
+                    resumed = true
+                    continuation.resume(Result.Error("Speech error code: $error"))
+                }
                 recognizer.destroy()
+                if (speechRecognizer == recognizer) {
+                    speechRecognizer = null
+                }
             }
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val text = matches?.firstOrNull() ?: ""
                 Logger.i("Multilingual STT Transcribed: '$text'")
-                continuation.resume(Result.Success(text))
+                if (!resumed) {
+                    resumed = true
+                    continuation.resume(Result.Success(text))
+                }
                 recognizer.destroy()
+                if (speechRecognizer == recognizer) {
+                    speechRecognizer = null
+                }
             }
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
 
         recognizer.startListening(intent)
+    }
+
+    fun stopListening() {
+        try {
+            speechRecognizer?.stopListening()
+        } catch (e: Exception) {
+            Logger.e("AndroidSttEngine: Error stopping listening", e)
+        }
     }
 
     fun release() {

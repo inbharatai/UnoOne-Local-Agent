@@ -1,0 +1,8 @@
+# Exclude build directories
+**/build/
+**/.gradle/
+
+# Exclude databases and local media
+**/*.db
+**/*.db-journal
+**/assets/

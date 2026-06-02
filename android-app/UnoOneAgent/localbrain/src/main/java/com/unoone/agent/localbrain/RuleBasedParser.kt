@@ -71,7 +71,14 @@ object RuleBasedParser {
                 } else null
             }
 
-            // Offline Object & Obstacle Detection (Vision)
+            // Offline Object & Obstacle Detection (Vision) - Deactivation (Checked first to prevent substring collision with "activate")
+            lowered.contains("stop blind aid") || lowered.contains("deactivate blind aid") ||
+            lowered.contains("turn off blind aid") || lowered.contains("stop scanning") -> {
+                ToolCall("deactivate_blind_aid", JsonObject(emptyMap()))
+            }
+
+            // Offline Object & Obstacle Detection (Vision) - Activation
+            lowered.contains("start blind aid") || lowered.contains("activate blind aid") ||
             lowered.contains("detect objects") || lowered.contains("what's in front of me") ||
             lowered.contains("barriers") || lowered.contains("obstacles") || lowered.contains("detect barrier") -> {
                 ToolCall("detect_objects", JsonObject(emptyMap()))
@@ -135,10 +142,9 @@ object RuleBasedParser {
             }
 
             // Note Management
-            lowered.contains("create note") || lowered.contains("note:") ||
-            lowered.contains("add note") || lowered.contains("new note") || lowered.contains("remember") -> {
+            lowered.contains("note") || lowered.contains("remember") -> {
                 val content = command.substringAfterLast(":").trim()
-                    .let { Regex("^(create|add|new) note", RegexOption.IGNORE_CASE).replace(it, "") }
+                    .let { Regex("^(create|add|new)?\\s*note", RegexOption.IGNORE_CASE).replace(it, "") }
                     .let { Regex("^remember", RegexOption.IGNORE_CASE).replace(it, "") }
                     .trim()
                     .ifEmpty { command }

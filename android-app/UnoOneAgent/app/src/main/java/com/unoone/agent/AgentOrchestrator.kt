@@ -69,12 +69,24 @@ class AgentOrchestrator(
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
 
+    private val _isBlindAidActive = MutableStateFlow(false)
+    val isBlindAidActive: StateFlow<Boolean> = _isBlindAidActive.asStateFlow()
+
     var onPermissionRequired: ((List<String>) -> Unit)? = null
     var onConfirmationRequired: ((String, (Boolean) -> Unit) -> Unit)? = null
 
     // Pending command for re-execution after permission grant
     private var pendingCommand: String? = null
     private var pendingInputType: InputType? = null
+
+    fun setBlindAidActive(active: Boolean) {
+        _isBlindAidActive.value = active
+        if (active) {
+            voiceModule.speak("Blind Aid activated. Scanning for obstacles ahead.")
+        } else {
+            voiceModule.speak("Blind Aid deactivated.")
+        }
+    }
 
     suspend fun processCommand(text: String, inputType: InputType = InputType.TEXT) {
         if (_isProcessing.value) return
@@ -312,20 +324,12 @@ class AgentOrchestrator(
                 }
                 "ocr_screen", "read_screen" -> accessibilityControl.captureScreenText()
                 "detect_objects" -> {
-                    // For on-device offline testing we mock a direct capture. 
-                    // In real use, this links into a Live CameraX Analyzer.
-                    val dummyBitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
-                    val ocrResult = objectDetectionControl.detectObjects(dummyBitmap)
-                    if (ocrResult is Result.Success) {
-                        val firstObj = ocrResult.data.firstOrNull()
-                        if (firstObj != null) {
-                            Result.Success("Found offline object: ${firstObj.label}. Barrier: ${firstObj.isBarrier}")
-                        } else {
-                            Result.Success("No offline barriers detected in path.")
-                        }
-                    } else {
-                        Result.Error("Failed to initialize object detector.")
-                    }
+                    setBlindAidActive(true)
+                    Result.Success("Blind Aid activated.")
+                }
+                "deactivate_blind_aid" -> {
+                    setBlindAidActive(false)
+                    Result.Success("Blind Aid deactivated.")
                 }
                 else -> agentRouter.route(toolCall)
             }

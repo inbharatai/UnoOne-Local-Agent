@@ -264,18 +264,14 @@ fun ChatOverlayCard(
                         if (isListening) {
                             isListening = false
                             scope.launch {
-                                // Fix type mismatch by reading raw bytes from recorder
-                                val pcmData = voiceModule.stopRecording()
-                                if (pcmData.isNotEmpty()) {
-                                    val result = voiceModule.transcribeWithAndroid()
-                                    if (result is com.unoone.agent.core.model.Result.Success) {
-                                        orchestrator.processCommand(result.data, com.unoone.agent.core.model.InputType.VOICE)
-                                    }
+                                val result = voiceModule.stopAndTranscribe()
+                                if (result is com.unoone.agent.core.model.Result.Success) {
+                                    orchestrator.processCommand(result.data, com.unoone.agent.core.model.InputType.VOICE)
                                 }
                             }
                         } else {
                             isListening = true
-                            voiceModule.startRecording(UnoOneApplication.appContext)
+                            voiceModule.startRecording(UnoOneApplication.appContext, scope)
                         }
                     },
                     colors = IconButtonDefaults.iconButtonColors(

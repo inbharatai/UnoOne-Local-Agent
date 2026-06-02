@@ -31,4 +31,11 @@ dependencies {
     
     // World-class offline on-device Object Detection and Tracking
     implementation("com.google.mlkit:object-detection:17.0.2")
+    implementation("com.google.mlkit:object-detection-custom:17.0.2")
+
+    // CameraX for real-time continuous blind aid analysis
+    val cameraVersion = "1.3.3"
+    implementation("androidx.camera:camera-core:$cameraVersion")
+    implementation("androidx.camera:camera-camera2:$cameraVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraVersion")
 }

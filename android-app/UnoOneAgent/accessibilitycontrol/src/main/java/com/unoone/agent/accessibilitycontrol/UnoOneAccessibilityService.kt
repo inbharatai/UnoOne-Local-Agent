@@ -84,14 +84,22 @@ class UnoOneAccessibilityService : AccessibilityService() {
         return false
     }
 
+    @Suppress("DEPRECATION")
     fun captureVisibleText(): List<String> {
         val rootNode = rootInActiveWindow ?: return emptyList()
         val texts = mutableListOf<String>()
         fun traverse(node: AccessibilityNodeInfo) {
-            node.text?.let { texts.add(it.toString()) }
-            node.contentDescription?.let { texts.add(it.toString()) }
+            if (node.isVisibleToUser) {
+                val text = node.text?.toString() ?: node.contentDescription?.toString()
+                if (!text.isNullOrBlank()) {
+                    texts.add(text)
+                }
+            }
             for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { traverse(it) }
+                node.getChild(i)?.let { child ->
+                    traverse(child)
+                    child.recycle() // Always recycle nodes to prevent memory leaks
+                }
             }
         }
         traverse(rootNode)
