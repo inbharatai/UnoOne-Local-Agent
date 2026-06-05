@@ -10,10 +10,11 @@ import java.nio.ByteOrder
  * Uses reflection/safe-loading to ensure the app compiles and runs perfectly 
  * on any Android device even if the native .so libraries are missing.
  */
-class KeywordSpotterEngine(private val modelDir: String) {
+class KeywordSpotterEngine(private val modelDir: String, private val cacheDir: String? = null) {
 
     private var spotter: Any? = null
-    private var initialized = false
+    @Volatile private var initialized = false
+    private var keywordFilePath: String? = null
 
     fun initialize(keywords: List<String>): Result<Unit> {
         return try {
@@ -97,9 +98,14 @@ class KeywordSpotterEngine(private val modelDir: String) {
     }
 
     private fun createKeywordFile(keywords: List<String>): String {
-        val file = java.io.File.createTempFile("keywords", ".txt")
+        // 0C-4: Use cacheDir (provided by caller, usually context.cacheDir) instead of
+        // createTempFile + deleteOnExit. deleteOnExit is unreliable on Android (only runs
+        // on clean JVM shutdown, which almost never happens). We'll delete in release() instead.
+        val dir = if (cacheDir != null) java.io.File(cacheDir) else java.io.File(System.getProperty("java.io.tmpdir"))
+        dir.mkdirs()
+        val file = java.io.File(dir, "unoone_keywords.txt")
         file.writeText(keywords.joinToString("\n") { it })
-        file.deleteOnExit()
+        keywordFilePath = file.absolutePath
         return file.absolutePath
     }
 
@@ -114,5 +120,13 @@ class KeywordSpotterEngine(private val modelDir: String) {
         }
         spotter = null
         initialized = false
+
+        // 0C-4: Clean up keyword temp file
+        keywordFilePath?.let {
+            try {
+                java.io.File(it).delete()
+            } catch (_: Exception) { }
+        }
+        keywordFilePath = null
     }
 }

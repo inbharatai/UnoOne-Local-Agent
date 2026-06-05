@@ -15,7 +15,11 @@ import com.unoone.agent.core.model.RiskLevel
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.TimelineStep
 import com.unoone.agent.core.model.ToolCall
+import com.unoone.agent.core.util.CallbackMulticast
+import com.unoone.agent.core.util.ConfirmationListener
+import com.unoone.agent.core.util.InputSanitizer
 import com.unoone.agent.core.util.Logger
+import com.unoone.agent.core.util.PermissionListener
 import com.unoone.agent.localbrain.LocalBrain
 import com.unoone.agent.localbrain.RuleBasedParser
 import com.unoone.agent.memory.MemoryModule
@@ -38,12 +42,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class AgentOrchestrator(
     private val context: Context,
@@ -52,7 +59,9 @@ class AgentOrchestrator(
     private val memoryDao: MemoryDao,
     private val skillDao: SkillDao
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // 0C-12: Use Dispatchers.Default for CPU-bound orchestration work.
+    // DB writes use Dispatchers.IO via withContext. StateFlow.value setter is thread-safe.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // Shared VoiceModule — set externally by the Application/ViewModel to avoid duplicate instances.
     // Using lateinit to avoid creating a throwaway instance that leaks resources.
@@ -74,6 +83,7 @@ class AgentOrchestrator(
 
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
+    private val processingLock = AtomicBoolean(false)
 
     private val _isBlindAidActive = MutableStateFlow(false)
     val isBlindAidActive: StateFlow<Boolean> = _isBlindAidActive.asStateFlow()
@@ -81,9 +91,14 @@ class AgentOrchestrator(
     var onPermissionRequired: ((List<String>) -> Unit)? = null
     var onConfirmationRequired: ((String, (Boolean) -> Unit) -> Unit)? = null
 
-    // Pending command for re-execution after permission grant
-    private var pendingCommand: String? = null
-    private var pendingInputType: InputType? = null
+    // Thread-safe multicast callbacks — both MainActivity and FloatingAgentService
+    // can register simultaneously without overwriting each other.
+    val onPermissionRequiredMulticast = CallbackMulticast<PermissionListener>()
+    val onConfirmationRequiredMulticast = CallbackMulticast<ConfirmationListener>()
+
+    // Pending command for re-execution after permission grant (thread-safe)
+    private val pendingCommand = AtomicReference<String?>(null)
+    private val pendingInputType = AtomicReference<InputType?>(null)
 
     /**
      * Injects the shared VoiceModule from the Application/ViewModel layer.
@@ -123,18 +138,27 @@ class AgentOrchestrator(
     }
 
     suspend fun processCommand(text: String, inputType: InputType = InputType.TEXT) {
-        if (_isProcessing.value) return
+        // Atomic check-and-set to prevent concurrent command execution
+        if (!processingLock.compareAndSet(false, true)) return
         _isProcessing.value = true
         _timelineSteps.value = emptyList()
 
+        // SECURITY: Sanitize user input before processing
+        val sanitizedText = InputSanitizer.sanitize(text)
+        if (sanitizedText.isBlank()) {
+            addStep(AgentStatus.FAILED, "Empty Input", "No command detected after sanitization.")
+            releaseProcessingLock()
+            return
+        }
+
         val startTime = System.currentTimeMillis()
-        val log = ActionLogEntity(inputText = text, inputType = inputType.name.lowercase())
+        val log = ActionLogEntity(inputText = sanitizedText, inputType = inputType.name.lowercase())
 
         try {
-            addStep(AgentStatus.UNDERSTANDING, "Understanding Command", text)
+            addStep(AgentStatus.UNDERSTANDING, "Understanding Command", sanitizedText)
 
             // Step 1: Check if this triggers a custom Skill
-            val skill = skillsModule.findSkillByTrigger(text)
+            val skill = skillsModule.findSkillByTrigger(sanitizedText)
             if (skill != null) {
                 addStep(AgentStatus.TOOL_SELECTED, "Executing Skill", skill.name)
                 val steps = skillsModule.getSkillSteps(skill)
@@ -147,16 +171,16 @@ class AgentOrchestrator(
                 }
                 addStep(AgentStatus.DONE, "Skill Complete", "Sequence finished successfully")
                 saveLog(log.copy(selectedTool = "skill:${skill.name}", status = "success", modelLatencyMs = System.currentTimeMillis() - startTime))
-                _isProcessing.value = false
+                releaseProcessingLock()
                 return
             }
 
             // Step 2: Planning / Intent Extraction
-            val toolCall = parseCommand(text)
+            val toolCall = parseCommand(sanitizedText)
             if (toolCall == null) {
                 addStep(AgentStatus.FAILED, "Accuracy Alert", "Intent not clear. Please rephrase.")
                 saveLog(log.copy(status = "failed", errorMessage = "Extraction failed"))
-                _isProcessing.value = false
+                releaseProcessingLock()
                 return
             }
 
@@ -180,10 +204,11 @@ class AgentOrchestrator(
                 }
                 if (allMissingPermissions.isNotEmpty()) {
                     addStep(AgentStatus.SAFETY_CHECK, "Access Required", "Compound needs permissions")
-                    pendingCommand = text
-                    pendingInputType = inputType
+                    pendingCommand.set(sanitizedText)
+                    pendingInputType.set(inputType)
                     onPermissionRequired?.invoke(allMissingPermissions.distinct())
-                    _isProcessing.value = false
+                    onPermissionRequiredMulticast.invokeAll { it(allMissingPermissions.distinct()) }
+                    releaseProcessingLock()
                     return
                 }
 
@@ -209,7 +234,7 @@ class AgentOrchestrator(
                 }
                 if (blocked) {
                     saveLog(log.copy(selectedTool = "compound", status = "blocked"))
-                    _isProcessing.value = false
+                    releaseProcessingLock()
                     return
                 }
                 if (needsConfirmation) {
@@ -218,7 +243,7 @@ class AgentOrchestrator(
                     if (!confirmed) {
                         addStep(AgentStatus.FAILED, "Cancelled", "User declined compound confirmation")
                         saveLog(log.copy(selectedTool = "compound", status = "cancelled"))
-                        _isProcessing.value = false
+                        releaseProcessingLock()
                         return
                     }
                 }
@@ -253,7 +278,7 @@ class AgentOrchestrator(
                     }
                 }
                 saveLog(log.copy(selectedTool = "compound", status = if (combined is Result.Error) "failed" else "success"))
-                _isProcessing.value = false
+                releaseProcessingLock()
                 return
             }
 
@@ -270,21 +295,30 @@ class AgentOrchestrator(
 
             if (missingPermissions.isNotEmpty()) {
                 addStep(AgentStatus.SAFETY_CHECK, "Access Required", "Needs permissions")
-                pendingCommand = text
-                pendingInputType = inputType
+                pendingCommand.set(text)
+                pendingInputType.set(inputType)
                 onPermissionRequired?.invoke(missingPermissions)
-                _isProcessing.value = false
+                onPermissionRequiredMulticast.invokeAll { it(missingPermissions) }
+                releaseProcessingLock()
                 return
             }
 
             // Step 4: Risk Classification & Confirmation
-            val riskLevel = safetyGuard.classify(toolCall.tool)
+            var riskLevel = safetyGuard.classify(toolCall.tool)
+
+            // Input-level risk check: upgrade risk if the raw input contains dangerous keywords
+            val inputRisk = safetyGuard.classifyFromInput(sanitizedText)
+            if (inputRisk.ordinal > riskLevel.ordinal) {
+                Logger.w("Orchestrator: Input risk (${inputRisk.name}) overrides tool risk (${riskLevel.name})")
+                riskLevel = inputRisk
+            }
+
             addStep(AgentStatus.SAFETY_CHECK, "Safety Filter", "Risk: ${riskLevel.name}")
 
             if (riskLevel == RiskLevel.BLOCK) {
                 addStep(AgentStatus.FAILED, "Security Block", "Action blocked for security.")
                 saveLog(log.copy(selectedTool = toolCall.tool, status = "blocked"))
-                _isProcessing.value = false
+                releaseProcessingLock()
                 return
             }
 
@@ -299,7 +333,7 @@ class AgentOrchestrator(
                 if (!confirmed) {
                     addStep(AgentStatus.FAILED, "Cancelled", "User declined confirmation")
                     saveLog(log.copy(selectedTool = toolCall.tool, status = "cancelled"))
-                    _isProcessing.value = false
+                    releaseProcessingLock()
                     return
                 }
             }
@@ -311,7 +345,7 @@ class AgentOrchestrator(
             if (result is Result.Error) {
                 addStep(AgentStatus.FAILED, "Execution Error", result.message)
                 saveLog(log.copy(selectedTool = toolCall.tool, status = "failed", errorMessage = result.message))
-                _isProcessing.value = false
+                releaseProcessingLock()
                 return
             }
 
@@ -337,37 +371,56 @@ class AgentOrchestrator(
             Logger.e("Master Orchestrator Exception", e)
             addStep(AgentStatus.FAILED, "System Error", e.localizedMessage ?: "Error")
         } finally {
-            _isProcessing.value = false
+            releaseProcessingLock()
+            processingLock.set(false)
         }
     }
 
     fun clearPendingAndReExecute() {
-        val cmd = pendingCommand
-        val type = pendingInputType
-        pendingCommand = null
-        pendingInputType = null
+        val cmd = pendingCommand.getAndSet(null)
+        val type = pendingInputType.getAndSet(null)
         if (cmd != null && type != null) {
             scope.launch { processCommand(cmd, type) }
         }
     }
 
     private suspend fun awaitConfirmation(message: String): Boolean {
-        return if (onConfirmationRequired != null) {
-            suspendCancellableCoroutine { cont ->
-                onConfirmationRequired?.invoke(message) { result ->
-                    cont.resumeWith(kotlin.Result.success(result))
-                } ?: cont.resumeWith(kotlin.Result.success(true))
+        // Prefer multicast if listeners are registered (both Activity and FloatingService)
+        if (onConfirmationRequiredMulticast.hasListeners) {
+            return suspendCancellableCoroutine { cont ->
+                // First listener to respond wins — others are ignored
+                var responded = false
+                onConfirmationRequiredMulticast.invokeAll { listener ->
+                    listener(message) { result ->
+                        if (!responded) {
+                            responded = true
+                            cont.resumeWith(kotlin.Result.success(result))
+                        }
+                    }
+                }
             }
-        } else {
-            true
+        }
+
+        // Fallback to legacy single-delegate callback for backward compatibility
+        if (onConfirmationRequired == null) {
+            Logger.w("Orchestrator: onConfirmationRequired is null — denying by default for safety")
+            return false
+        }
+        return suspendCancellableCoroutine { cont ->
+            onConfirmationRequired?.invoke(message) { result ->
+                cont.resumeWith(kotlin.Result.success(result))
+            } ?: run {
+                Logger.w("Orchestrator: onConfirmationRequired became null during confirmation — denying")
+                cont.resumeWith(kotlin.Result.success(false))
+            }
         }
     }
 
     private fun getRequiredPermissionsForTool(tool: String): List<String> {
         return when (tool) {
             "create_note" -> emptyList()
-            "draft_email" -> listOf(Manifest.permission.READ_CONTACTS)
-            "send_whatsapp" -> listOf(Manifest.permission.READ_CONTACTS)
+            "draft_email" -> emptyList() // Removed READ_CONTACTS — not actually used
+            "send_whatsapp" -> emptyList() // Removed READ_CONTACTS — not actually used
             "check_calendar" -> listOf(Manifest.permission.READ_CALENDAR)
             "open_calendar_insert" -> listOf(Manifest.permission.WRITE_CALENDAR)
             "open_camera" -> listOf(Manifest.permission.CAMERA)
@@ -500,13 +553,18 @@ class AgentOrchestrator(
     }
 
     private fun addStep(status: AgentStatus, label: String, detail: String = "") {
-        val current = _timelineSteps.value.toMutableList()
-        current.add(TimelineStep(status, label, detail))
-        _timelineSteps.value = current
+        _timelineSteps.value = _timelineSteps.value + TimelineStep(status, label, detail)
+    }
+
+    private fun releaseProcessingLock() {
+        _isProcessing.value = false
+        processingLock.set(false)
     }
 
     private suspend fun saveLog(log: ActionLogEntity) {
-        try { actionLogDao.insert(log) } catch (e: Exception) { Logger.e("Log error", e) }
+        try {
+            withContext(Dispatchers.IO) { actionLogDao.insert(log) }
+        } catch (e: Exception) { Logger.e("Log error", e) }
     }
 
     private fun <T, R> Result<T>.map(transform: (T) -> R): Result<R> {

@@ -125,11 +125,19 @@ class VoiceService : Service() {
         Logger.i("VoiceService: Starting keyword spotting loop")
         val kws = keywordSpotter ?: return
         val chunkSizeMs = 1000L // Process 1-second chunks
-        val chunkSamples = (AudioRecorder.SAMPLE_RATE * chunkSizeMs / 1000).toInt()
-        val chunkBytes = chunkSamples * 2 // 16-bit = 2 bytes per sample
 
         var consecutiveSilenceChunks = 0
         val maxSilenceChunks = 3 // 3 seconds of silence = end of command
+
+        // 0C-7: Keep recorder running continuously instead of start/stop every second.
+        // Start recording ONCE and use readChunk() to drain accumulated audio incrementally.
+        if (!recorder.isRecording() && recorder.hasPermission(this@VoiceService)) {
+            val startResult = recorder.start()
+            if (startResult is Result.Error) {
+                Logger.e("VoiceService: Cannot start recorder: ${startResult.message}")
+                return
+            }
+        }
 
         while (serviceScope.isActive) {
             try {
@@ -138,18 +146,21 @@ class VoiceService : Service() {
                     continue
                 }
 
-                // Start recording for keyword spotting
+                // If recorder stopped (e.g., after command capture), restart it
                 if (!recorder.isRecording()) {
-                    recorder.start()
+                    val startResult = recorder.start()
+                    if (startResult is Result.Error) {
+                        delay(500)
+                        continue
+                    }
                 }
 
                 // Wait to accumulate audio
                 delay(chunkSizeMs)
 
-                // Get accumulated audio
-                val pcmData = recorder.stop()
+                // Read accumulated chunk without stopping the recorder
+                val pcmData = recorder.readChunk()
                 if (pcmData.isEmpty()) {
-                    delay(200)
                     continue
                 }
 
@@ -164,9 +175,6 @@ class VoiceService : Service() {
 
                         // Update notification
                         updateNotification("Listening for command...")
-
-                        // Start recording for command
-                        recorder.start()
                     }
                 } else {
                     // In command mode, check for silence
@@ -178,31 +186,41 @@ class VoiceService : Service() {
                         consecutiveSilenceChunks++
                     }
 
-                    // Accumulate command audio until silence detected
+                    // End of command when silence detected
                     if (consecutiveSilenceChunks >= maxSilenceChunks) {
-                        // End of command - transcribe
-                        val commandPcm = recorder.stop()
+                        // Drain final audio and stop recording
+                        val finalChunk = recorder.readChunk()
                         isListeningForCommand = false
+
+                        // Combine final chunk with what we already have
+                        val commandPcm = if (finalChunk.isNotEmpty()) {
+                            pcmData + finalChunk
+                        } else {
+                            pcmData
+                        }
 
                         val transcript = transcribeAudio(commandPcm)
                         if (transcript is Result.Success && transcript.data.isNotBlank()) {
                             Logger.i("VoiceService: Command: '${transcript.data}'")
                             onCommandReceived?.invoke(transcript.data)
 
-                            // Local secure broadcast to fully wire background voice service to Master Orchestrator end-to-end
-                            val commandIntent = Intent(ACTION_VOICE_COMMAND).apply {
-                                putExtra(EXTRA_COMMAND, transcript.data)
-                                setPackage(packageName)
-                            }
-                            sendBroadcast(commandIntent)
+                            // SECURITY: Use SharedFlow instead of broadcast Intent.
+                            // sendBroadcast() is visible in system logs even with setPackage(),
+                            // exposing the user's transcribed speech. SharedFlow keeps commands
+                            // in-process only.
+                            (applicationContext as? com.unoone.agent.UnoOneApplication)?.postVoiceCommand(transcript.data)
                         }
 
                         updateNotification("UnoOne is listening")
-                        // Resume keyword spotting
+                        // Recorder will be restarted at top of loop
                     }
                 }
             } catch (e: Exception) {
                 Logger.e("VoiceService: Error in spotting loop", e)
+                // 0C-11: Defensive stop on error
+                if (recorder.isRecording()) {
+                    recorder.stop()
+                }
                 delay(500)
             }
         }
@@ -266,7 +284,11 @@ class VoiceService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         monitoringJob?.cancel()
-        recorder.stop()
+        // 0C-11: Defensive stop — ensure recorder is always released even if
+        // an exception interrupted the monitoring loop before reaching recorder.stop()
+        if (recorder.isRecording()) {
+            recorder.stop()
+        }
         sttEngine?.release()
         ttsEngine?.release()
         keywordSpotter?.release()

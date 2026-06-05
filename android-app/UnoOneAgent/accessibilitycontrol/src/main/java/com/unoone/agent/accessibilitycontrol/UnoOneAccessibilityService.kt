@@ -10,9 +10,9 @@ import com.unoone.agent.core.util.Logger
 
 class UnoOneAccessibilityService : AccessibilityService() {
 
-    var currentPackage: String? = null
+    @Volatile var currentPackage: String? = null
         private set
-    var currentActivity: String? = null
+    @Volatile var currentActivity: String? = null
         private set
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {

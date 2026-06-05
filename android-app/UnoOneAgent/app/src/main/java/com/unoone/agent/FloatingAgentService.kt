@@ -1,6 +1,9 @@
 package com.unoone.agent
 
 import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,6 +13,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.core.app.NotificationCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -52,6 +56,11 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
     private var bubbleView: View? = null
     private var chatOverlayView: View? = null
 
+    companion object {
+        private const val CHANNEL_ID = "floating_agent_channel"
+        private const val NOTIFICATION_ID = 2001
+    }
+
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val store = ViewModelStore()
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
@@ -67,6 +76,10 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
         super.onCreate()
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+
+        // 0C-1: Must start as foreground service to prevent being killed by the system
+        createNotificationChannel()
+        startForeground(NOTIFICATION_ID, createNotification())
 
         val app = application as UnoOneApplication
         orchestrator = app.orchestrator
@@ -187,14 +200,47 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+
+        // 0C-10: Dispose ComposeView compositions before removing from window
+        // to prevent memory leaks from lingering compositions
+        (bubbleView as? ComposeView)?.disposeComposition()
+        (chatOverlayView as? ComposeView)?.disposeComposition()
+
         bubbleView?.let { windowManager.removeView(it) }
+        bubbleView = null
         hideChatOverlay()
+
+        // 0C-1: Stop foreground service properly
+        stopForeground(STOP_FOREGROUND_REMOVE)
+
         // No voiceModule.release() here — it's shared with the orchestrator and will be
         // released when the Application is destroyed or the ViewModel is cleared.
         store.clear()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun createNotificationChannel() {
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Floating Agent",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Keeps the floating AI bubble running"
+        }
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(channel)
+    }
+
+    private fun createNotification(): Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("UnoOne Agent")
+            .setContentText("Floating agent is active")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .build()
+    }
 }
 
 @Composable

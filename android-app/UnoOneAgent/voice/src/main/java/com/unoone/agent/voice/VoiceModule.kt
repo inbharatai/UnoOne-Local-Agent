@@ -14,18 +14,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class VoiceModule(private val context: Context) {
 
     private val recorder = AudioRecorder()
-    private var sttEngine: SherpaSttEngine? = null
-    private var ttsEngine: SherpaTtsEngine? = null
-    private var androidStt: AndroidSttEngine? = null
+    @Volatile private var sttEngine: SherpaSttEngine? = null
+    @Volatile private var ttsEngine: SherpaTtsEngine? = null
+    @Volatile private var androidStt: AndroidSttEngine? = null
     private val ttsPlayer = TtsPlayer()
-    private var useAndroidStt = true
+    @Volatile private var useAndroidStt = true
 
-    private var activeSttJob: Deferred<Result<String>>? = null
-    private var isRecordingInternal = false
+    private val activeSttJob = AtomicReference<Deferred<Result<String>>?>(null)
+    private val isRecordingFlag = AtomicBoolean(false)
 
     init {
         // Initialize the universal, high-quality native TTS player immediately
@@ -67,42 +69,41 @@ class VoiceModule(private val context: Context) {
     }
 
     fun startRecording(context: Context, scope: CoroutineScope): Result<Unit> {
-        if (isRecordingInternal) return Result.Success(Unit)
+        if (!isRecordingFlag.compareAndSet(false, true)) return Result.Success(Unit)
 
         return if (useAndroidStt || sttEngine == null) {
-            isRecordingInternal = true
             val engine = androidStt ?: AndroidSttEngine(context).also { androidStt = it }
             val initResult = engine.initialize()
             if (initResult is Result.Error) {
-                isRecordingInternal = false
+                isRecordingFlag.set(false)
                 return initResult
             }
 
-            activeSttJob = scope.async(Dispatchers.Main) {
+            activeSttJob.set(scope.async(Dispatchers.Main) {
                 engine.transcribeOnce(onAmplitude = onAmplitude)
-            }
+            })
             Result.Success(Unit)
         } else {
             if (!recorder.hasPermission(context)) {
+                isRecordingFlag.set(false)
                 return Result.Error("Microphone permission not granted")
             }
             val result = recorder.start()
-            if (result is Result.Success) {
-                isRecordingInternal = true
+            if (result is Result.Error) {
+                isRecordingFlag.set(false)
             }
             result
         }
     }
 
     suspend fun stopAndTranscribe(): Result<String> {
-        if (!isRecordingInternal) return Result.Error("No active voice capture session")
-        isRecordingInternal = false
+        if (!isRecordingFlag.getAndSet(false)) return Result.Error("No active voice capture session")
 
         return if (useAndroidStt || sttEngine == null) {
             androidStt?.stopListening()
-            val job = activeSttJob ?: return Result.Error("No active STT job")
+            val job = activeSttJob.getAndSet(null)
+                ?: return Result.Error("No active STT job")
             val res = job.await()
-            activeSttJob = null
             res
         } else {
             val pcm = recorder.stop()
@@ -112,10 +113,9 @@ class VoiceModule(private val context: Context) {
     }
 
     fun stopRecording(): ByteArray {
-        isRecordingInternal = false
+        isRecordingFlag.set(false)
         // Cancel the active STT job to prevent orphaned coroutines
-        activeSttJob?.cancel()
-        activeSttJob = null
+        activeSttJob.getAndSet(null)?.cancel()
         return recorder.stop()
     }
 
@@ -149,15 +149,15 @@ class VoiceModule(private val context: Context) {
         ttsPlayer.stop()
     }
 
-    fun isRecording(): Boolean = isRecordingInternal
+    fun isRecording(): Boolean = isRecordingFlag.get()
 
     fun isSttInitialized(): Boolean = sttEngine?.isInitialized() == true
 
     fun isTtsInitialized(): Boolean = ttsEngine?.isInitialized() == true
 
     fun release() {
-        isRecordingInternal = false
-        activeSttJob = null
+        isRecordingFlag.set(false)
+        activeSttJob.getAndSet(null)?.cancel()
         recorder.stop()
         sttEngine?.release()
         ttsEngine?.release()

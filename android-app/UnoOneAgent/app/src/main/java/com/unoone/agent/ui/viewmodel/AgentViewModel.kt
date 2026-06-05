@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicReference
 
 class AgentViewModel(
     private val orchestrator: AgentOrchestrator,
@@ -28,14 +29,18 @@ class AgentViewModel(
     // Single shared VoiceModule instance — also used by the orchestrator for speak()
     val voiceModuleInstance: VoiceModule = voiceModule
 
-    private var _isListening = false
-    val isListening: Boolean get() = _isListening
+    // Thread-safe listening state, observable by Compose
+    private val _isListening = MutableStateFlow(false)
+    val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
 
     private val _amplitude = MutableStateFlow(0f)
     val amplitude: StateFlow<Float> = _amplitude.asStateFlow()
 
     private val _pendingConfirmation = MutableStateFlow<Pair<String, ConfirmationLevel>?>(null)
     val pendingConfirmation: StateFlow<Pair<String, ConfirmationLevel>?> = _pendingConfirmation.asStateFlow()
+
+    // Thread-safe confirmation callback using AtomicReference
+    private val confirmationCallback = AtomicReference<((Boolean) -> Unit)?>(null)
 
     init {
         // Wire the shared VoiceModule into the orchestrator so both use the same instance
@@ -49,18 +54,16 @@ class AgentViewModel(
             val level = if (message.startsWith("SECURITY CHECK")) ConfirmationLevel.STRONG_CONFIRM
             else ConfirmationLevel.CONFIRM
             _pendingConfirmation.value = message to level
-            confirmationCallback = callback
+            confirmationCallback.set(callback)
         }
     }
 
-    private var confirmationCallback: ((Boolean) -> Unit)? = null
-
     fun startListening(context: Context) {
-        if (_isListening || isProcessing.value) return
+        if (_isListening.value || isProcessing.value) return
         viewModelScope.launch {
             val result = voiceModuleInstance.startRecording(context, viewModelScope)
             if (result is Result.Success) {
-                _isListening = true
+                _isListening.value = true
             } else if (result is Result.Error) {
                 Logger.w("Failed to start recording: ${result.message}")
             }
@@ -68,8 +71,8 @@ class AgentViewModel(
     }
 
     fun stopListening() {
-        if (!_isListening) return
-        _isListening = false
+        if (!_isListening.value) return
+        _isListening.value = false
         _amplitude.value = 0f
         viewModelScope.launch {
             val result = voiceModuleInstance.stopAndTranscribe()
@@ -109,8 +112,7 @@ class AgentViewModel(
     }
 
     fun respondToConfirmation(allowed: Boolean) {
-        confirmationCallback?.invoke(allowed)
-        confirmationCallback = null
+        confirmationCallback.getAndSet(null)?.invoke(allowed)
         _pendingConfirmation.value = null
     }
 

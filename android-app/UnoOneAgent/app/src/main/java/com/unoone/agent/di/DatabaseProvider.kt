@@ -14,7 +14,9 @@ object DatabaseProvider {
                 context.applicationContext,
                 UnoOneDatabase::class.java,
                 "unoone_database"
-            ).build()
+            )
+                .addMigrations(UnoOneDatabase.MIGRATION_1_2)
+                .build()
             INSTANCE = instance
             instance
         }

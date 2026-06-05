@@ -65,4 +65,17 @@ class ObjectDetectionControl(private val context: Context) {
         val isBarrier: Boolean,
         val boundingBoxString: String
     )
+
+    /**
+     * Release the ML Kit object detector to prevent memory leaks.
+     * Call this when ObjectDetectionControl is no longer needed.
+     */
+    fun release() {
+        try {
+            detector.close()
+            Logger.i("ObjectDetectionControl: Detector released")
+        } catch (e: Exception) {
+            Logger.e("ObjectDetectionControl: Error releasing detector", e)
+        }
+    }
 }

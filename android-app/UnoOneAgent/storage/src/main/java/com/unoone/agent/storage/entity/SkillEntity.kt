@@ -1,9 +1,15 @@
 package com.unoone.agent.storage.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "skills")
+@Entity(
+    tableName = "skills",
+    indices = [
+        Index("name", unique = true)
+    ]
+)
 data class SkillEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,

@@ -16,21 +16,25 @@
         android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- MANAGE_EXTERNAL_STORAGE removed: app uses getExternalFilesDir() which is app-private
+         and does not require this permission. This permission would trigger Google Play review. -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Background Processing -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- System Integration & Control -->
-    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- READ_CONTACTS removed: declared but never used in code. Will trigger Play review. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- QUERY_ALL_PACKAGES removed: PackageResolver uses a hardcoded 10-app map, no runtime
+         package query needed. This permission is sensitive and causes Play review rejection.
+         Use queryIntentActivities() with specific intents instead. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- Hardware Features -->
@@ -45,8 +49,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.UnoOne"
-        android:requestLegacyExternalStorage="true">
+        android:theme="@style/Theme.UnoOne">
 
         <activity
             android:name=".MainActivity"
@@ -60,9 +63,10 @@
             </intent-filter>
         </activity>
 
-        <!-- Floating Agent Bubble -->
+        <!-- Floating Agent Bubble — foreground service to prevent system kill -->
         <service
             android:name=".FloatingAgentService"
+            android:foregroundServiceType="specialUse"
             android:exported="false" />
 
         <!-- The "Hands" of the Agent - Accessibility Service -->

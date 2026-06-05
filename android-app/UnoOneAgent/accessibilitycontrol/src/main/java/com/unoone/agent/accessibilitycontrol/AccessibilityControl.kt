@@ -1,6 +1,7 @@
 package com.unoone.agent.accessibilitycontrol
 
 import com.unoone.agent.core.model.Result
+import com.unoone.agent.core.util.InputSanitizer
 import com.unoone.agent.core.util.Logger
 import kotlinx.coroutines.delay
 
@@ -11,21 +12,23 @@ class AccessibilityControl {
     }
 
     fun clickText(text: String): Result<Unit> {
+        val safeText = InputSanitizer.sanitizeForAccessibility(text)
         val service = UnoOneAccessibilityService.getInstance()
             ?: return Result.Error("Accessibility Service not enabled")
 
-        return if (service.clickNodeWithText(text)) {
+        return if (service.clickNodeWithText(safeText)) {
             Result.Success(Unit)
         } else {
-            Result.Error("Could not find or click text: $text")
+            Result.Error("Could not find or click text: $safeText")
         }
     }
 
     fun typeText(text: String): Result<Unit> {
+        val safeText = InputSanitizer.sanitizeForAccessibility(text)
         val service = UnoOneAccessibilityService.getInstance()
             ?: return Result.Error("Accessibility Service not enabled")
 
-        return if (service.typeTextIntoFocused(text)) {
+        return if (service.typeTextIntoFocused(safeText)) {
             Result.Success(Unit)
         } else {
             Result.Error("Could not type text - no input field focused")

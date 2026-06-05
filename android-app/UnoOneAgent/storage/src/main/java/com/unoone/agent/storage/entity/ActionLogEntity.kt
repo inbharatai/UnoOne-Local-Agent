@@ -1,9 +1,16 @@
 package com.unoone.agent.storage.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "action_logs")
+@Entity(
+    tableName = "action_logs",
+    indices = [
+        Index("status"),
+        Index("createdAt")
+    ]
+)
 data class ActionLogEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,

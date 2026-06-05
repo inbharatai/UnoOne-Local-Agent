@@ -32,7 +32,7 @@ class BlindAidManager(
 ) {
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
-    
+
     @SuppressLint("ServiceCast")
     private val vibrator: Vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
@@ -42,7 +42,19 @@ class BlindAidManager(
         context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
     }
 
-    private val toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
+    // 0C-5: ToneGenerator can throw on some devices — create lazily with try-catch
+    private var toneGenerator: ToneGenerator? = null
+
+    private fun getToneGenerator(): ToneGenerator? {
+        if (toneGenerator == null) {
+            try {
+                toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
+            } catch (e: Exception) {
+                Logger.e("BlindAidManager: Failed to create ToneGenerator", e)
+            }
+        }
+        return toneGenerator
+    }
 
     // Option C: Loader for Custom YOLOv8-Nano / MobileNet 4-bit TFLite model
     private val customModelFile = File(context.getExternalFilesDir("models"), "gemma-local/custom_yolov8.tflite")
@@ -139,11 +151,11 @@ class BlindAidManager(
             // Audio Cue: Car Parking Sensor style beeping
             val beepDuration = if (fillRatio > 0.45f) {
                 // Immediate danger: Solid tone / Continuous beep
-                toneGenerator.startTone(ToneGenerator.TONE_CDMA_PIP, 150)
+                getToneGenerator()?.startTone(ToneGenerator.TONE_CDMA_PIP, 150)
                 100L
             } else {
                 // Warning zone: Pulsing tone
-                toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 80)
+                getToneGenerator()?.startTone(ToneGenerator.TONE_PROP_BEEP, 80)
                 400L
             }
 
@@ -172,9 +184,32 @@ class BlindAidManager(
     }
 
     fun release() {
+        // 0C-5: Proper executor shutdown with awaitTermination
         executor.shutdown()
-        toneGenerator.release()
-        detector.close()
+        try {
+            if (!executor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                Logger.w("BlindAidManager: Executor did not terminate in 2s, forcing shutdown")
+                executor.shutdownNow()
+            }
+        } catch (e: InterruptedException) {
+            executor.shutdownNow()
+            Thread.currentThread().interrupt()
+        }
+
+        // 0C-2: Close ML Kit detector to prevent leak
+        try {
+            detector.close()
+        } catch (e: Exception) {
+            Logger.e("BlindAidManager: Error closing detector", e)
+        }
+
+        // 0C-5: Release ToneGenerator
+        try {
+            toneGenerator?.release()
+            toneGenerator = null
+        } catch (e: Exception) {
+            Logger.e("BlindAidManager: Error releasing ToneGenerator", e)
+        }
         Logger.i("BlindAidManager: Released successfully")
     }
 }

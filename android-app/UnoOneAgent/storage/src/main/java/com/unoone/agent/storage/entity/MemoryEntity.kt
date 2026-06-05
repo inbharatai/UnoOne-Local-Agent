@@ -1,9 +1,16 @@
 package com.unoone.agent.storage.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "memories")
+@Entity(
+    tableName = "memories",
+    indices = [
+        Index("key", unique = true),
+        Index("type")
+    ]
+)
 data class MemoryEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,

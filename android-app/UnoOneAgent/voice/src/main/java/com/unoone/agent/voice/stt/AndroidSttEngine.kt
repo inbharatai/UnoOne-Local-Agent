@@ -11,6 +11,7 @@ import com.unoone.agent.core.util.Logger
 import java.util.Locale
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Highly compatible, multilingual STT using Android System Speech.
@@ -34,11 +35,31 @@ class AndroidSttEngine(private val context: Context) {
     /**
      * Transcribe speech with support for automatic multilingual recognition,
      * defaulting to combined English and Indian Locale.
+     * Includes a 15-second timeout to prevent indefinite hangs.
      */
     suspend fun transcribeOnce(
         locale: Locale = Locale("en", "IN"),
         onAmplitude: ((Float) -> Unit)? = null
-    ): Result<String> = suspendCoroutine { continuation ->
+    ): Result<String> {
+        // 0C-3: Wrap in timeout to prevent indefinite hangs if SpeechRecognizer
+        // never fires onError or onResults (happens on some devices/emulators)
+        return withTimeoutOrNull(15_000L) {
+            suspendCoroutine { continuation ->
+                doTranscribe(locale, onAmplitude, continuation)
+            }
+        } ?: run {
+            // Timeout: destroy the recognizer and return error
+            Logger.w("AndroidSttEngine: Transcription timed out after 15s")
+            release()
+            Result.Error("Speech recognition timed out")
+        }
+    }
+
+    private fun doTranscribe(
+        locale: Locale,
+        onAmplitude: ((Float) -> Unit)?,
+        continuation: kotlin.coroutines.Continuation<Result<String>>
+    ) {
         val recognizer = SpeechRecognizer.createSpeechRecognizer(context).also {
             speechRecognizer = it
         }

@@ -26,4 +26,17 @@ class OcrControl(private val context: Context) {
                 continuation.resume(Result.Error("Failed to read text from screen: ${e.message}"))
             }
     }
+
+    /**
+     * Release the ML Kit text recognizer to prevent memory leaks.
+     * Call this when the OcrControl is no longer needed.
+     */
+    fun release() {
+        try {
+            recognizer.close()
+            Logger.i("OcrControl: Recognizer released")
+        } catch (e: Exception) {
+            Logger.e("OcrControl: Error releasing recognizer", e)
+        }
+    }
 }

@@ -9,6 +9,7 @@ import android.media.MediaRecorder
 import androidx.core.content.ContextCompat
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
+import java.io.ByteArrayOutputStream
 import kotlin.math.sqrt
 
 class AudioRecorder {
@@ -23,7 +24,9 @@ class AudioRecorder {
     private var audioRecord: AudioRecord? = null
     private var recordingThread: Thread? = null
     private val bufferLock = Object()
-    private val audioBuffer = mutableListOf<Byte>()
+    // 0C-6: ByteArrayOutputStream avoids boxing every byte into Byte objects
+    // (was mutableListOf<Byte>() creating 32K objects/sec). Pre-allocate 64KB.
+    private val audioBuffer = ByteArrayOutputStream(65536)
     @Volatile
     private var isRecording = false
 
@@ -56,7 +59,7 @@ class AudioRecorder {
             }
 
             audioRecord = record
-            audioBuffer.clear()
+            audioBuffer.reset()
             isRecording = true
             record.startRecording()
 
@@ -67,9 +70,7 @@ class AudioRecorder {
                     val read = record.read(buffer, 0, buffer.size)
                     if (read > 0) {
                         synchronized(bufferLock) {
-                            for (i in 0 until read) {
-                                audioBuffer.add(buffer[i])
-                            }
+                            audioBuffer.write(buffer, 0, read)
                         }
 
                         // Report amplitude for waveform visualization
@@ -110,12 +111,14 @@ class AudioRecorder {
             Logger.e("Error stopping recorder", e)
         }
         audioRecord = null
-        recordingThread?.join(500)
+        // 0C-6: Increase thread join timeout from 500ms to 2000ms to prevent
+        // truncated audio if the recording thread is still flushing data
+        recordingThread?.join(2000)
         recordingThread = null
 
         val result = synchronized(bufferLock) {
             val bytes = audioBuffer.toByteArray()
-            audioBuffer.clear()
+            audioBuffer.reset()
             bytes
         }
         Logger.i("AudioRecorder stopped. Captured ${result.size} bytes")
@@ -123,4 +126,17 @@ class AudioRecorder {
     }
 
     fun isRecording(): Boolean = isRecording
+
+    /**
+     * 0C-7: Read accumulated audio data incrementally without stopping the recorder.
+     * Returns the bytes accumulated since the last call to readChunk() (or since start).
+     * This avoids the create/destroy AudioRecord cycle that VoiceService was doing every second.
+     */
+    fun readChunk(): ByteArray {
+        synchronized(bufferLock) {
+            val bytes = audioBuffer.toByteArray()
+            audioBuffer.reset()
+            return bytes
+        }
+    }
 }

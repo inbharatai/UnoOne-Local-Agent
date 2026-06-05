@@ -10,10 +10,11 @@ import com.unoone.agent.core.util.Logger
  */
 class SherpaTtsEngine(private val modelDir: String) {
 
-    private var tts: Any? = null
+    @Volatile private var tts: Any? = null
     private val ttsPlayer = TtsPlayer()
-    private var initialized = false
+    @Volatile private var initialized = false
 
+    @Synchronized
     fun initialize(): Result<Unit> {
         return try {
             Logger.i("SherpaTtsEngine: Checking model files in $modelDir")
@@ -56,6 +57,7 @@ class SherpaTtsEngine(private val modelDir: String) {
         }
     }
 
+    @Synchronized
     fun speak(text: String): Result<Unit> {
         if (!initialized || tts == null) {
             return Result.Error("SherpaTtsEngine not initialized")
@@ -85,6 +87,7 @@ class SherpaTtsEngine(private val modelDir: String) {
         ttsPlayer.stop()
     }
 
+    @Synchronized
     fun release() {
         stop()
         try {

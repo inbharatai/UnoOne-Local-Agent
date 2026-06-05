@@ -1,11 +1,6 @@
 package com.unoone.agent
 
 import android.app.Application
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import androidx.core.content.ContextCompat
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.di.DatabaseProvider
 import com.unoone.agent.voice.VoiceModule
@@ -13,6 +8,9 @@ import com.unoone.agent.voice.VoiceService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
 class UnoOneApplication : Application() {
@@ -27,19 +25,14 @@ class UnoOneApplication : Application() {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private val voiceCommandReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == VoiceService.ACTION_VOICE_COMMAND) {
-                val command = intent.getStringExtra(VoiceService.EXTRA_COMMAND)
-                if (!command.isNullOrBlank()) {
-                    Logger.i("UnoOneApplication: Received background voice command: '$command'")
-                    appScope.launch {
-                        orchestrator.processCommand(command, com.unoone.agent.core.model.InputType.VOICE)
-                    }
-                }
-            }
-        }
-    }
+    /**
+     * SharedFlow for voice commands from VoiceService.
+     * Replaces the insecure BroadcastReceiver approach — commands are no longer
+     * broadcast via Intent (which is visible in system logs even with setPackage).
+     * VoiceService posts commands here, and the orchestrator collects them.
+     */
+    private val _commandFlow = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    val commandFlow: SharedFlow<String> = _commandFlow.asSharedFlow()
 
     override fun onCreate() {
         super.onCreate()
@@ -60,14 +53,15 @@ class UnoOneApplication : Application() {
         )
         orchestrator.setVoiceModule(sharedVoiceModule)
 
-        // Register background voice command broadcast receiver securely
-        val filter = IntentFilter(VoiceService.ACTION_VOICE_COMMAND)
-        ContextCompat.registerReceiver(
-            this,
-            voiceCommandReceiver,
-            filter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
+        // Collect voice commands from SharedFlow and dispatch to orchestrator
+        appScope.launch {
+            commandFlow.collect { command ->
+                if (command.isNotBlank()) {
+                    Logger.i("UnoOneApplication: Received voice command: '$command'")
+                    orchestrator.processCommand(command, com.unoone.agent.core.model.InputType.VOICE)
+                }
+            }
+        }
 
         // Expert: Start background services for hands-free and floating assistant
         try {
@@ -75,6 +69,14 @@ class UnoOneApplication : Application() {
         } catch (e: Exception) {
             Logger.e("Failed to auto-start VoiceService", e)
         }
+    }
+
+    /**
+     * Post a voice command to the SharedFlow. Called by VoiceService instead of
+     * sending a broadcast Intent. This avoids exposing transcribed speech in system logs.
+     */
+    fun postVoiceCommand(command: String) {
+        _commandFlow.tryEmit(command)
     }
 
     companion object {

@@ -12,9 +12,10 @@ import java.nio.ByteOrder
  */
 class SherpaSttEngine(private val modelDir: String) {
 
-    private var recognizer: Any? = null
-    private var initialized = false
+    @Volatile private var recognizer: Any? = null
+    @Volatile private var initialized = false
 
+    @Synchronized
     fun initialize(): Result<Unit> {
         return try {
             Logger.i("SherpaSttEngine: Checking model files in $modelDir")
@@ -59,6 +60,7 @@ class SherpaSttEngine(private val modelDir: String) {
         }
     }
 
+    @Synchronized
     fun transcribe(pcmBytes: ByteArray): Result<String> {
         if (!initialized || recognizer == null) {
             return Result.Error("SherpaSttEngine not initialized")
@@ -92,6 +94,7 @@ class SherpaSttEngine(private val modelDir: String) {
 
     fun isInitialized(): Boolean = initialized
 
+    @Synchronized
     fun release() {
         try {
             if (recognizer != null) {
