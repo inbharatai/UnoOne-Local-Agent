@@ -27,11 +27,11 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/API-28%2B%20(Android%209%2B)-22C55E?style=flat-square" alt="API 28+">
-  <img src="https://img.shields.io/badge/Build-Gradle%208.7-2563EB?style=flat-square" alt="Gradle 8.7">
+  <img src="https://img.shields.io/badge/Build-Gradle%208.11.1-2563EB?style=flat-square" alt="Gradle 8.11.1">
   <img src="https://img.shields.io/badge/Safety-4%20Tier%20Policy-EF4444?style=flat-square" alt="Safety levels">
   <img src="https://img.shields.io/badge/Vision-CameraX%20%2B%20ML%20Kit-0B7285?style=flat-square" alt="Vision stack">
   <img src="https://img.shields.io/badge/STT-Multilingual%207%20Languages-F59E0B?style=flat-square" alt="7 languages">
-  <img src="https://img.shields.io/badge/Tests-9%20Passing-22C55E?style=flat-square" alt="9 tests passing">
+  <img src="https://img.shields.io/badge/Tests-13%2B%20Passing-22C55E?style=flat-square" alt="13+ tests passing">
 </p>
 
 </div>
@@ -45,7 +45,7 @@
 | Cloud AI assistants send your voice, contacts, and screen content to remote servers | **100% on-device** — no data leaves the phone, ever |
 | Voice assistants can't control your apps | **AccessibilityService deep control** — tap, type, fill, swipe, read any screen |
 | Blind and low-vision users lack real-time spatial awareness | **Live blind-aid navigation** with camera, haptics, tone beeps, and spoken guidance |
-| Background listening requires internet | **Offline wake-word + VAD** with package-local broadcast routing |
+| Background listening requires internet | **Offline wake-word + VAD** routed through an in-app `SharedFlow` — no cross-app broadcast, no cloud |
 | AI assistants execute destructive commands without safeguards | **4-tier safety gate** (DIRECT → CONFIRM → STRONG_CONFIRM → BLOCK) |
 
 ---
@@ -112,7 +112,7 @@ flowchart TB
 
     BLIND --> CAM["CameraX + ML Kit"]
 
-    BG -->|Secure Broadcast| RX["UnoOneApplication<br/>BroadcastReceiver"]
+    BG -->|SharedFlow| RX["UnoOneApplication<br/>commandFlow"]
     RX --> ORCH
 
     OV --> ORCH
@@ -126,12 +126,12 @@ flowchart TB
 
 | Module | Responsibility | Key Files |
 |---|---|---|
-| `:app` | Compose UI, overlay service, orchestration, permissions | `MainActivity`, `AgentOrchestrator`, `AgentScreen`, `FloatingAgentService`, `AgentViewModel` |
+| `:app` | Compose UI, overlay service, orchestration, permissions, SharedFlow command collector | `MainActivity`, `AgentOrchestrator`, `AgentScreen`, `FloatingAgentService`, `AgentViewModel`, `ScreenshotPermissionActivity` |
 | `:core` | Shared models (`Result`, `ToolCall`, `AgentStatus`, `TimelineStep`) and logging | `Result.kt`, `ToolCall.kt`, `Logger.kt` |
 | `:storage` | Room DB — notes, skills, memory entities and DAOs | `UnoOneDatabase.kt` |
-| `:modelmanager` | Model folder detection, checksum verification, storage usage | `ModelManager.kt` |
-| `:localbrain` | Parser, prompt builder, Gemma 4 / LiteRT-LM planner, manual tool calling, RAG utility | `RuleBasedParser.kt`, `GemmaPlanner.kt`, `LocalBrain.kt`, `UnoOneToolSet.kt` |
-| `:voice` | Recorder, STT/TTS engines, foreground voice service, broadcast routing | `VoiceModule.kt`, `AndroidSttEngine.kt`, `VoiceService.kt` |
+| `:modelmanager` | Model folder detection, checksum verification, storage usage, `.litertlm` discovery | `ModelManager.kt` |
+| `:localbrain` | Parser, prompt builder, Gemma 4 / LiteRT-LM planner, manual tool calling, RAG utility | `RuleBasedParser.kt`, `GemmaPlanner.kt`, `LocalBrain.kt`, `UnoOneToolSet.kt`, `ContextSnapshot.kt`, `PromptBuilder.kt` |
+| `:voice` | Recorder, STT/TTS engines, foreground voice service, SharedFlow command routing | `VoiceModule.kt`, `AndroidSttEngine.kt`, `VoiceService.kt` |
 | `:agentrouter` | Tool registration and fallback routing | `AgentRouter.kt` |
 | `:safetyguard` | 4-tier risk classification policy | `SafetyGuard.kt` |
 | `:phonecontrol` | App intents, OCR, object detection, blind aid analyzer | `PhoneControl.kt`, `BlindAidManager.kt` |
@@ -165,7 +165,9 @@ Each step is displayed in real-time on the **Agent Flow Timeline** with color-co
 | Swipe in any direction | `swipe()` | DIRECT |
 | Scroll up / down | `scrollUp()` / `scrollDown()` | DIRECT |
 | Read all visible text | `captureVisibleText()` | DIRECT |
-| Find and click with delay | `findAndClick()` (suspend) | CONFIRM+ |
+| Click text element | `clickText()` | CONFIRM |
+| Type into focused field | `typeTextIntoFocused()` | CONFIRM |
+| Find and click with delay | `findAndClick()` (suspend) | STRONG_CONFIRM |
 
 All accessibility methods use **try/finally node recycling** to prevent `AccessibilityNodeInfo` memory leaks — `rootNode` and every child node are properly `recycle()`d.
 
@@ -233,12 +235,12 @@ AgentScreen mic button → VoiceModule.startRecording() → amplitude visualizat
 ### Background Path (VoiceService)
 
 ```
-VoiceService wake-word detection → VAD filtering → STT transcription → secure package-local broadcast → UnoOneApplication BroadcastReceiver → AgentOrchestrator.processCommand()
+VoiceService wake-word detection → VAD filtering → STT transcription → in-app SharedFlow → UnoOneApplication.collect() → AgentOrchestrator.processCommand()
 ```
 
-- **End-to-end wired**: Commands detected in the background service are broadcast with `RECEIVER_NOT_EXPORTED` and immediately dispatched to the orchestrator on the main thread
-- **Background activation**: Commands like *"activate blind aid"* received via broadcast will bring `MainActivity` to the foreground for camera binding
-- **Secure**: Intent is package-scoped (`setPackage(packageName)`) — no cross-app leakage
+- **End-to-end wired**: Commands detected in the background service are posted to an in-app `SharedFlow` (`commandFlow`) and collected by `UnoOneApplication`, then dispatched to the orchestrator. This avoids exposing transcribed speech in system logs via broadcast Intents.
+- **Background activation**: Commands like *"activate blind aid"* received via the flow will bring `MainActivity` to the foreground for camera binding
+- **Secure**: No cross-app `Intent` is used for command delivery — everything stays inside the app process
 
 ### Shared VoiceModule Architecture
 
@@ -246,7 +248,7 @@ A single `VoiceModule` instance is created in `UnoOneApplication` and shared acr
 
 | Consumer | VoiceModule Source |
 |---|---|
-| `UnoOneApplication` (broadcast receiver) | `app.sharedVoiceModule` → injected into orchestrator |
+| `UnoOneApplication` (SharedFlow collector) | `app.sharedVoiceModule` → injected into orchestrator |
 | `AgentViewModel` | Constructor parameter from `app.sharedVoiceModule` |
 | `FloatingAgentService` | `orchestrator.voiceModule` (same instance) |
 | `VoiceService` | Owns separate STT/TTS/keyword-spotting engines (by design — background lifecycle) |
@@ -272,7 +274,7 @@ The `RuleBasedParser` uses a priority-ordered `when` block that checks **domain-
 
 ### Test Coverage
 
-9 unit tests covering activation triggers, deactivation triggers, note creation (with and without colon), "remember to" stripping, compound commands, domain-specific preservation, long press, and activation/deactivation disambiguation — all passing.
+13+ unit tests covering activation triggers, deactivation triggers, note creation (with and without colon), "remember to" stripping, compound commands, domain-specific preservation, long press, activation/deactivation disambiguation, async Gemma fallback routing, safety-guard tool coverage, and prompt assembly — all passing.
 
 ---
 
@@ -282,9 +284,9 @@ Every command passes through a **4-tier risk classifier** before execution:
 
 | Risk Level | Behavior | Tools |
 |---|---|---|
-| **DIRECT** | Execute immediately, no confirmation | `create_note`, `search_notes`, `summarize_text`, `speak_response`, `open_chrome`, `open_app`, `deactivate_blind_aid` |
-| **CONFIRM** | Single confirmation dialog | `open_url`, `open_calendar_insert`, `open_dialer`, `share_text` |
-| **STRONG_CONFIRM** | Must type "confirm" to proceed | `delete_notes`, `delete_all_notes`, `export_data`, `detect_objects` |
+| **DIRECT** | Execute immediately, no confirmation | `create_note`, `search_notes`, `summarize_text`, `speak_response`, `open_chrome`, `open_app`, `deactivate_blind_aid`, `check_calendar` |
+| **CONFIRM** | Single confirmation dialog | `open_url`, `open_calendar_insert`, `open_dialer`, `share_text`, `read_screen`, `ocr_screen`, `open_camera`, `create_skill`, `click`, `type`, `long_press` |
+| **STRONG_CONFIRM** | Must type "confirm" to proceed | `delete_notes`, `delete_all_notes`, `export_data`, `detect_objects`, `draft_email`, `send_whatsapp`, `system_control`, `find_and_click`, `fill` |
 | **BLOCK** | Hard block — never executed | `send_message`, `make_payment`, `install_app`, `access_passwords`, `silent_control` |
 
 **Default**: Any unrecognized tool → `STRONG_CONFIRM`
@@ -356,30 +358,38 @@ UnoOne-Local-Agent/
 │   └── UnoOneAgent/
 │       ├── app/                        # Main app module
 │       │   └── src/main/java/com/unoone/agent/
-│       │       ├── UnoOneApplication.kt    # App entry, shared VoiceModule, BroadcastReceiver
-│       │       ├── AgentOrchestrator.kt     # 8-step command pipeline
-│       │       ├── AgentViewModel.kt        # ViewModel with shared VoiceModule
-│       │       ├── FloatingAgentService.kt  # 24/7 overlay, lifecycle-managed
-│       │       ├── MainActivity.kt          # Compose host
+│       │       ├── UnoOneApplication.kt       # App entry, shared VoiceModule, SharedFlow command collector
+│       │       ├── AgentOrchestrator.kt       # 8-step command pipeline
+│       │       ├── AgentViewModel.kt          # ViewModel with shared VoiceModule
+│       │       ├── FloatingAgentService.kt    # 24/7 overlay, lifecycle-managed
+│       │       ├── MainActivity.kt            # Compose host
+│       │       ├── screenshot/ScreenshotPermissionActivity.kt  # MediaProjection permission for OCR
 │       │       └── ui/
-│       │           ├── screens/AgentScreen.kt   # Main UI + BlindAidCameraPreview
+│       │           ├── screens/AgentScreen.kt # Main UI + BlindAidCameraPreview
 │       │           ├── viewmodel/AgentViewModel.kt
-│       │           ├── components/             # ConfirmationDialog, WaveformVisualizer
-│       │           └── theme/                  # Material 3 theme
+│       │           ├── components/           # ConfirmationDialog, WaveformVisualizer
+│       │           └── theme/                # Material 3 theme
 │       ├── voice/                       # Voice module
 │       │   └── src/main/java/com/unoone/agent/voice/
 │       │       ├── VoiceModule.kt           # Unified STT/TTS manager (shared singleton)
-│       │       ├── VoiceService.kt           # Background wake-word + broadcast routing
+│       │       ├── VoiceService.kt           # Background wake-word + SharedFlow routing
 │       │       └── stt/AndroidSttEngine.kt   # Multilingual STT with double-destroy guard
-│       ├── localbrain/                  # Parser module
-│       │   └── RuleBasedParser.kt           # Priority-ordered command parser
+│       ├── localbrain/                  # Parser / LLM module
+│       │   ├── RuleBasedParser.kt            # Priority-ordered command parser
+│       │   ├── GemmaPlanner.kt               # LiteRT-LM Engine + manual tool calling
+│       │   ├── UnoOneToolSet.kt              # Gemma tool schema declarations
+│       │   ├── ContextSnapshot.kt            # Context bundle for grounded planning
+│       │   ├── PromptBuilder.kt              # System/user prompt assembler
+│       │   └── LocalBrain.kt                 # Wrapper around GemmaPlanner
 │       ├── safetyguard/                 # Safety module
-│       │   └── SafetyGuard.kt               # 4-tier risk classifier
+│       │   └── SafetyGuard.kt                # 4-tier risk classifier
 │       ├── accessibilitycontrol/        # Accessibility module
-│       │   ├── UnoOneAccessibilityService.kt  # Node recycling, try/finally guards
-│       │   └── AccessibilityControl.kt       # suspend fun findAndClick, swipe, longPress
+│       │   ├── UnoOneAccessibilityService.kt   # Node recycling, try/finally guards
+│       │   └── AccessibilityControl.kt        # suspend fun findAndClick, swipe, longPress
 │       ├── phonecontrol/               # Phone control module
-│       │   └── BlindAidManager.kt           # CameraX + ML Kit analyzer (5 FPS)
+│       │   ├── BlindAidManager.kt           # CameraX + ML Kit analyzer (5 FPS)
+│       │   ├── OcrControl.kt                # ML Kit text recognition + screenshot OCR fallback
+│       │   └── ScreenshotCapture.kt         # MediaProjection screen capture helper
 │       └── ...                         # Remaining 8 modules
 └── .aiexclude                          # Excludes build/cache/model paths from AI scanning
 ```
@@ -394,7 +404,7 @@ UnoOne-Local-Agent/
 | 8-step orchestrator pipeline | ✅ Implemented | Parse → permission → safety → execute → verify → speak |
 | Accessibility deep control | ✅ Implemented & hardened | All nodes properly recycled, suspend `findAndClick()` |
 | Blind Aid live camera + analyzer | ✅ Implemented & live | CameraX, ML Kit, haptics + tones + spoken guidance |
-| Background voice routing | ✅ End-to-end | VoiceService → broadcast → orchestrator |
+| Background voice routing | ✅ End-to-end | VoiceService → SharedFlow → orchestrator |
 | Compound command parsing | ✅ Implemented | Domain-safe splitting with per-part safety checks |
 | Safety framework (4-tier) | ✅ Implemented | DIRECT, CONFIRM, STRONG_CONFIRM, BLOCK |
 | Parser unit tests | ✅ 13+ passing | Rule-based, async Gemma fallback, safety coverage, prompt assembly |
