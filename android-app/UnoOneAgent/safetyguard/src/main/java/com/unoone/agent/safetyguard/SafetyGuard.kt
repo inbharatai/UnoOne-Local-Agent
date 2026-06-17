@@ -25,6 +25,9 @@ class SafetyGuard {
         "ocr_screen" to RiskLevel.CONFIRM,
         "open_camera" to RiskLevel.CONFIRM,
         "create_skill" to RiskLevel.CONFIRM,
+        "long_press" to RiskLevel.CONFIRM,
+        "click" to RiskLevel.CONFIRM,
+        "type" to RiskLevel.CONFIRM,
 
         // Risk 2 — Strong confirmation (must type "confirm")
         "delete_notes" to RiskLevel.STRONG_CONFIRM,

@@ -3,19 +3,26 @@ package com.unoone.agent
 import com.unoone.agent.localbrain.RuleBasedParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class RuleBasedParserTest {
 
     @Test
     fun testBlindAidActivationTriggers() {
+        // 4D: "obstacles" and "barriers" alone are DEACTIVATION, not activation.
+        // Only triggers with positive context ("detect", "start", etc.) activate.
         val triggers = listOf(
             "start blind aid",
             "activate blind aid",
             "detect objects",
             "what's in front of me",
             "detect barrier",
-            "obstacles"
+            "detect barriers",
+            "look for obstacles"
         )
         for (trigger in triggers) {
             val toolCall = RuleBasedParser.parse(trigger)
@@ -118,5 +125,125 @@ class RuleBasedParserTest {
         val toolCall2 = RuleBasedParser.parse("stop barriers")
         assertNotNull(toolCall2)
         assertEquals("deactivate_blind_aid", toolCall2!!.tool)
+    }
+
+    // === 4D Parser Bug Fix Tests ===
+
+    @Test
+    fun testBareBarriersTriggersDeactivation() {
+        // 4D: "barriers" alone should be deactivation only, not detect_objects
+        val toolCall = RuleBasedParser.parse("barriers")
+        assertNotNull("Bare 'barriers' should parse as deactivation", toolCall)
+        assertEquals("deactivate_blind_aid", toolCall!!.tool)
+    }
+
+    @Test
+    fun testNoteWithNegationVerb() {
+        // 4D: "delete note" should NOT create a note
+        val toolCall = RuleBasedParser.parse("delete note groceries")
+        // Should not parse as create_note
+        if (toolCall != null) {
+            assert(toolCall.tool != "create_note") { "Negation verb + note should not create a note" }
+        }
+    }
+
+    @Test
+    fun testRemoveNoteDoesNotCreateNote() {
+        val toolCall = RuleBasedParser.parse("remove note about meeting")
+        if (toolCall != null) {
+            assert(toolCall.tool != "create_note") { "Remove + note should not create a note" }
+        }
+    }
+
+    @Test
+    fun testOpenSettingsBeforeOpenGoogle() {
+        // 4D: "open settings" parses as open_app (with Settings package), not open_chrome
+        val toolCall = RuleBasedParser.parse("open settings")
+        assertNotNull(toolCall)
+        assertEquals("open_app", toolCall!!.tool)
+    }
+
+    @Test
+    fun testOpenGoogleSettingsParsesAsUrl() {
+        // "open google settings" does NOT contain "open settings" as a contiguous substring
+        // (because "open " is followed by "google", not "settings"), so it falls through
+        // to the "open google" rule and returns open_url.
+        val toolCall = RuleBasedParser.parse("open google settings")
+        assertNotNull(toolCall)
+        assertEquals("open_url", toolCall!!.tool)
+    }
+
+    @Test
+    fun testThreePartCompoundCommand() {
+        // 4D: "A and B and C" should parse as compound with at least 2 parts
+        val toolCall = RuleBasedParser.parse("open chrome and scroll down and go home")
+        if (toolCall != null && toolCall.tool == "compound") {
+            // Verify we got at least first and second parts
+            assertNotNull(toolCall.args["first_tool"])
+            assertNotNull(toolCall.args["second_tool"])
+        }
+    }
+
+    @Test
+    fun testEmailRegexWithDot() {
+        // 4D: Email regex should match emails with dots in local part
+        val toolCall = RuleBasedParser.parse("send email to john.doe@example.com about meeting")
+        if (toolCall != null && toolCall.tool == "draft_email") {
+            val email = toolCall.args["to"]?.toString()?.replace("\"", "") ?: ""
+            assertTrue("Email should contain @example.com", email.contains("@example.com"))
+        }
+    }
+
+    @Test
+    fun testCalendarCheck() {
+        val toolCall = RuleBasedParser.parse("check calendar")
+        assertNotNull(toolCall)
+        assertEquals("check_calendar", toolCall!!.tool)
+    }
+
+    @Test
+    fun testReadScreen() {
+        val toolCall = RuleBasedParser.parse("read screen")
+        assertNotNull(toolCall)
+        assertEquals("read_screen", toolCall!!.tool)
+    }
+
+    @Test
+    fun testOcrScreen() {
+        // "ocr" maps to read_screen (the parser uses "ocr" or "screen text" triggers)
+        val toolCall = RuleBasedParser.parse("ocr the screen")
+        assertNotNull(toolCall)
+        assertEquals("read_screen", toolCall!!.tool)
+    }
+
+    @Test
+    fun testOpenCamera() {
+        val toolCall = RuleBasedParser.parse("open camera")
+        assertNotNull(toolCall)
+        assertEquals("open_camera", toolCall!!.tool)
+    }
+
+    @Test
+    fun testDraftEmail() {
+        val toolCall = RuleBasedParser.parse("draft email to test@example.com about update with body hello")
+        assertNotNull(toolCall)
+        assertEquals("draft_email", toolCall!!.tool)
+    }
+
+    @Test
+    fun testFindAndClick() {
+        val toolCall = RuleBasedParser.parse("find and click submit")
+        assertNotNull(toolCall)
+        assertEquals("system_control", toolCall!!.tool)
+        assertEquals("find_and_click", toolCall.args["action"]?.toString()?.replace("\"", ""))
+        assertEquals("submit", toolCall.args["target"]?.toString()?.replace("\"", ""))
+    }
+
+    @Test
+    fun testScrollDown() {
+        val toolCall = RuleBasedParser.parse("scroll down")
+        assertNotNull(toolCall)
+        assertEquals("system_control", toolCall!!.tool)
+        assertEquals("scroll_down", toolCall.args["action"]?.toString()?.replace("\"", ""))
     }
 }

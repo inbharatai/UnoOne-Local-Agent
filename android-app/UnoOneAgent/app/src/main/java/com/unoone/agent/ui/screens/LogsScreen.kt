@@ -12,17 +12,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.unoone.agent.storage.entity.ActionLogEntity
@@ -34,6 +38,8 @@ import java.util.Locale
 @Composable
 fun LogsScreen(viewModel: LogsViewModel) {
     val logs by viewModel.logs.collectAsState()
+    // 5F: Confirmation state for clearing logs
+    var showClearConfirmation by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -50,7 +56,7 @@ fun LogsScreen(viewModel: LogsViewModel) {
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold
             )
-            Button(onClick = viewModel::clearLogs) {
+            Button(onClick = { showClearConfirmation = true }) {
                 Text("Clear")
             }
         }
@@ -66,14 +72,40 @@ fun LogsScreen(viewModel: LogsViewModel) {
             }
         }
     }
+
+    // 5F: Confirmation dialog before clearing logs
+    if (showClearConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirmation = false },
+            title = { Text("Clear All Logs?") },
+            text = { Text("This will permanently delete all action logs. This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearLogs()
+                        showClearConfirmation = false
+                    }
+                ) {
+                    Text("Clear", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun LogCard(log: ActionLogEntity) {
+    // 5G: Replace hard-coded colors with MaterialTheme.colorScheme
     val statusColor = when (log.status) {
-        "success" -> Color(0xFF2ECC71)
-        "failed" -> Color(0xFFE74C3C)
-        "blocked" -> Color(0xFFE67E22)
+        "success" -> MaterialTheme.colorScheme.primary
+        "failed" -> MaterialTheme.colorScheme.error
+        "blocked" -> MaterialTheme.colorScheme.tertiary
+        "cancelled" -> MaterialTheme.colorScheme.outline
         else -> MaterialTheme.colorScheme.onSurface
     }
 
@@ -130,3 +162,5 @@ private fun formatTime(ms: Long): String {
     val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
     return sdf.format(Date(ms))
 }
+
+private fun String.ifBlank(default: String): String = if (isBlank()) default else this

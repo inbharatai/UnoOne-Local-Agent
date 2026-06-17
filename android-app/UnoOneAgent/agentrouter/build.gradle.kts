@@ -5,11 +5,11 @@ plugins {
 
 android {
     namespace = "com.unoone.agent.agentrouter"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 28
-        targetSdk = 34
+        targetSdk = 35
     }
 
     compileOptions {
@@ -27,6 +27,6 @@ dependencies {
     implementation(project(":safetyguard"))
     implementation(project(":phonecontrol"))
     implementation(project(":storage"))
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
 }

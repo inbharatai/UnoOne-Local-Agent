@@ -19,4 +19,8 @@ interface ActionLogDao {
 
     @Query("DELETE FROM action_logs")
     suspend fun clearAll()
+
+    /** Synchronous query for export — not a Flow, returns List directly */
+    @Query("SELECT * FROM action_logs ORDER BY createdAt DESC LIMIT :limit")
+    fun getRecentSync(limit: Int = 1000): List<ActionLogEntity>
 }

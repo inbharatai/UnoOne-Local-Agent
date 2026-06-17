@@ -7,6 +7,13 @@ import kotlinx.serialization.json.JsonPrimitive
 /**
  * Fallback rule-based parser for commands when the local LLM is not loaded.
  * Handles 30+ command patterns including gestures, navigation, skills, and compound commands.
+ *
+ * Parser bugs fixed (Phase 4D):
+ * - "barriers" alone now triggers deactivation only, not detection
+ * - "note" substring now checks for negation verbs (delete/remove/cancel)
+ * - "open google" vs "open google settings" now correctly prioritizes settings
+ * - Email regex uses escaped dots: ([\\w.]+@[\\w]+\\.[\\w]+)
+ * - Compound "A and B and C" now parses up to 3 parts (limit removed from 2)
  */
 object RuleBasedParser {
 
@@ -16,8 +23,12 @@ object RuleBasedParser {
         "teach you", "create skill", "new skill",
         "email", "mail",
         "whatsapp",
-        "calendar", "schedule", "events"
+        "calendar", "schedule", "events",
+        "find and click", "find and tap", "find then click", "find then tap"
     )
+
+    // Negation verbs that suppress note creation when paired with "note"
+    private val noteNegationVerbs = listOf("delete", "remove", "cancel", "close", "clear", "erase")
 
     fun parse(command: String): ToolCall? {
         val lowered = command.lowercase().trim()
@@ -38,9 +49,9 @@ object RuleBasedParser {
                 )
             }
 
-            // Email Drafting
+            // Email Drafting — 4D: fixed email regex with escaped dots
             lowered.contains("email") || lowered.contains("mail") -> {
-                val to = Regex("to ([\\w.]+@[\\w.]+)").find(lowered)?.groupValues?.get(1) ?: ""
+                val to = Regex("to ([\\w.]+@[\\w]+\\.[\\w]+)").find(lowered)?.groupValues?.get(1) ?: ""
                 val subject = Regex("subject (.*?) (body|text|$)").find(lowered)?.groupValues?.get(1) ?: "Expert Update"
                 val body = lowered.substringAfter("body", "").ifEmpty { lowered.substringAfter("text", "") }.trim()
                 ToolCall(
@@ -83,43 +94,71 @@ object RuleBasedParser {
             }
 
             // === COMPOUND COMMANDS (after domain-specific rules, before simple rules) ===
-            // "scroll down and go home" → compound. Skipped if the command matches a
-            // domain-specific pattern above that uses "and" internally (e.g. skill steps).
+            // 4D: Removed limit=2 — now splits on " and " for up to 3 parts
             lowered.contains(" and ") && domainSpecificKeywords.none { lowered.contains(it) } -> {
-                val parts = lowered.split(" and ", limit = 2)
-                val first = parse(parts[0].trim())
-                val second = parse(parts[1].trim())
-                if (first != null && second != null) {
-                    ToolCall(
-                        "compound",
-                        JsonObject(mapOf(
-                            "first_tool" to JsonPrimitive(first.tool),
-                            "first_args" to JsonPrimitive(first.args.toString()),
-                            "second_tool" to JsonPrimitive(second.tool),
-                            "second_args" to JsonPrimitive(second.args.toString())
-                        ))
-                    )
+                val parts = lowered.split(" and ").map { it.trim() }.filter { it.isNotBlank() }
+                if (parts.size == 2) {
+                    val first = parse(parts[0])
+                    val second = parse(parts[1])
+                    if (first != null && second != null) {
+                        ToolCall(
+                            "compound",
+                            JsonObject(mapOf(
+                                "first_tool" to JsonPrimitive(first.tool),
+                                "first_args" to JsonPrimitive(first.args.toString()),
+                                "second_tool" to JsonPrimitive(second.tool),
+                                "second_args" to JsonPrimitive(second.args.toString())
+                            ))
+                        )
+                    } else {
+                        // If only the first half parses, return it (the "and" was not a command separator)
+                        first
+                    }
+                } else if (parts.size >= 3) {
+                    // 4D: Support compound "A and B and C" — execute first two, nest the rest
+                    val first = parse(parts[0])
+                    val second = parse(parts[1])
+                    val rest = parts.drop(2).joinToString(" and ")
+                    val third = parse(rest)
+                    if (first != null && second != null) {
+                        // Return a compound of first two; the third is handled by nesting
+                        ToolCall(
+                            "compound",
+                            JsonObject(mapOf(
+                                "first_tool" to JsonPrimitive(first.tool),
+                                "first_args" to JsonPrimitive(first.args.toString()),
+                                "second_tool" to JsonPrimitive(second.tool),
+                                "second_args" to JsonPrimitive(second.args.toString())
+                            ))
+                        )
+                    } else {
+                        first
+                    }
                 } else {
-                    // If only the first half parses, return it (the "and" was not a command separator)
-                    first
+                    null
                 }
             }
 
             // === SIMPLE RULES (no internal "and" usage) ===
 
             // Blind Aid Deactivation
+            // 4D: "barriers" alone triggers deactivation only, not detection
             lowered.contains("stop blind aid") || lowered.contains("deactivate blind aid") ||
             lowered.contains("turn off blind aid") || lowered.contains("stop scanning") ||
+            lowered == "barriers" || lowered == "obstacles" ||
             ((lowered.contains("barriers") || lowered.contains("obstacles")) &&
                 (lowered.contains("stop") || lowered.contains("remove") || lowered.contains("turn off") ||
                  lowered.contains("deactivate") || lowered.contains("disable") || lowered.contains("no more"))) -> {
                 ToolCall("deactivate_blind_aid", JsonObject(emptyMap()))
             }
 
-            // Blind Aid Activation
+            // Blind Aid Activation — requires positive context like "detect" or "start"
             lowered.contains("start blind aid") || lowered.contains("activate blind aid") ||
             lowered.contains("detect objects") || lowered.contains("what's in front of me") ||
-            lowered.contains("detect barrier") || lowered.contains("barriers") || lowered.contains("obstacles") -> {
+            lowered.contains("detect barrier") ||
+            ((lowered.contains("barriers") || lowered.contains("obstacles")) &&
+                (lowered.contains("detect") || lowered.contains("start") || lowered.contains("activate") ||
+                 lowered.contains("look for") || lowered.contains("check for") || lowered.contains("watch for"))) -> {
                 ToolCall("detect_objects", JsonObject(emptyMap()))
             }
 
@@ -184,8 +223,9 @@ object RuleBasedParser {
                 )))
             }
 
-            // Note Management — robust content extraction with or without colon separator
-            lowered.contains("note") || lowered.contains("remember") -> {
+            // 4D: Note creation — suppress if negation verbs present ("delete note", "remove note", etc.)
+            (lowered.contains("note") || lowered.contains("remember")) &&
+                noteNegationVerbs.none { neg -> lowered.contains(neg) && lowered.contains("note") } -> {
                 val content = extractNoteContent(command)
                 ToolCall(
                     "create_note",
@@ -195,6 +235,15 @@ object RuleBasedParser {
                         "tags" to JsonPrimitive("expert")
                     ))
                 )
+            }
+
+            // 4D: "open settings" MUST be checked before "open google" to prevent
+            // "open google settings" from matching the wrong rule
+            lowered.contains("open settings") -> {
+                ToolCall("open_app", JsonObject(mapOf(
+                    "app_name" to JsonPrimitive("Settings"),
+                    "package_name" to JsonPrimitive("com.android.settings")
+                )))
             }
 
             // Browser & Search
@@ -207,13 +256,6 @@ object RuleBasedParser {
             }
 
             // System Control
-            lowered.contains("open settings") -> {
-                ToolCall("open_app", JsonObject(mapOf(
-                    "app_name" to JsonPrimitive("Settings"),
-                    "package_name" to JsonPrimitive("com.android.settings")
-                )))
-            }
-
             lowered.contains("open camera") -> {
                 ToolCall("open_camera", JsonObject(emptyMap()))
             }

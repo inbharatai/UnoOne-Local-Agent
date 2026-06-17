@@ -92,6 +92,17 @@ class ModelManager(private val context: Context) {
         }
     }
 
+    /**
+     * Returns the absolute path of the first Gemma 4 `.litertlm` model found,
+     * or null if none is present.
+     */
+    fun getLlmModelPath(): String? {
+        val gemmaFolder = File(appPrivateModelPath, "gemma-local")
+        return gemmaFolder.listFiles { file ->
+            file.isFile && file.name.endsWith(".litertlm", ignoreCase = true)
+        }?.firstOrNull()?.absolutePath
+    }
+
     data class ModelStatus(
         val name: String,
         val type: String,

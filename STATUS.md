@@ -1,7 +1,7 @@
 # UnoOne Build Status
 
-**Last updated:** 2026-05-28
-**Build:** `1.0.0-local` | **Target:** Android 14 (API 34) | **Min:** Android 9 (API 28)
+**Last updated:** 2026-06-15
+**Build:** `1.0.0-local` | **Target:** Android 14 (API 35) | **Min:** Android 9 (API 28)
 **Tested on:** Xiaomi 14, Samsung Galaxy S24, Pixel 8
 
 ---
@@ -14,7 +14,7 @@
 | 2 | `core` | **DONE** | Result, ToolCall, TimelineStep, RiskLevel, Logger |
 | 3 | `storage` | **DONE** | Room DB with 5 entities, 5 DAOs, migrations ready |
 | 4 | `modelmanager` | **DONE** | Model detection, checksum verification, storage usage |
-| 5 | `localbrain` | **DONE** | RuleBasedParser (20+ commands), PromptBuilder, LocalBrain ONNX shell |
+| 5 | `localbrain` | **DONE** | RuleBasedParser, PromptBuilder, GemmaPlanner (LiteRT-LM + Gemma 4 E2B), LocalBrain wrapper, manual tool calling |
 | 6 | `voice` | **DONE** | SherpaSttEngine, SherpaTtsEngine, KeywordSpotterEngine, AudioRecorder, AndroidSttEngine fallback |
 | 7 | `agentrouter` | **DONE** | Tool registry, 10+ built-in tools |
 | 8 | `safetyguard` | **DONE** | 4-tier risk classifier with confirmation dialogs |
@@ -85,9 +85,9 @@
 | Offline STT | Sherpa-ONNX ASR | ~70 MB | `adb push models/sherpa-asr/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-asr/` |
 | Offline TTS | Piper TTS | ~30-60 MB | `adb push models/sherpa-tts/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-tts/` |
 | Wake word | Keyword spotter | ~10-30 MB | `adb push models/vad/ /sdcard/Android/data/com.unoone.agent/files/models/vad/` |
-| LLM inference | Intent classifier or Gemma 2B | ~5 MB - 5 GB | `adb push models/gemma-local/ /sdcard/Android/data/com.unoone.agent/files/models/gemma-local/` |
+| LLM inference | Gemma 4 E2B `.litertlm` | ~2-5 GB | `adb push /path/to/gemma-4-e2b-it.litertlm /sdcard/Android/data/com.unoone.agent/files/models/gemma-local/` |
 
-Without models: STT falls back to Android SpeechRecognizer (needs internet), command parsing uses RuleBasedParser (works offline), no TTS output.
+Without models: STT falls back to Android SpeechRecognizer (needs internet), command parsing uses RuleBasedParser (works offline), no TTS output, no Gemma planning.
 
 ---
 
@@ -102,7 +102,7 @@ Without models: STT falls back to Android SpeechRecognizer (needs internet), com
 | 5 | Phone setup test | **DONE** |
 | 6 | Sherpa STT wrapper | **DONE** |
 | 7 | Sherpa TTS wrapper | **DONE** |
-| 8 | LocalBrain (rule-based + ONNX) | **DONE** |
+| 8 | LocalBrain (rule-based + Gemma 4 E2B via LiteRT-LM) | **DONE** |
 | 9 | ToolRouter | **DONE** |
 | 10 | SafetyGuard | **DONE** |
 | 11 | First tools (notes, Chrome, etc.) | **DONE** |
@@ -126,18 +126,16 @@ Without models: STT falls back to Android SpeechRecognizer (needs internet), com
 
 ## Known Limitations
 
-1. **Gemma 2B full inference** not yet implemented — requires SentencePiece tokenizer + KV-cache. Rule-based parser is the active NLU engine.
+1. **Gemma 4 E2B brain** is implemented via LiteRT-LM, but the `.litertlm` model file must be pushed manually. RuleBasedParser remains the fast offline fallback.
 2. **Sherpa-ONNX models** must be manually pushed via ADB — no in-app download yet.
-3. **Intent classifier** (small ONNX model for command classification) not yet trained — would need a Python training pipeline.
-4. **OcrControl** (ML Kit) is implemented but only reads accessibility tree text, not screenshot pixels. Screenshot-based OCR requires MediaProjection (needs user confirmation).
-5. **Skills screen** does not yet have a drag-and-drop step editor — steps are entered as text in a dialog.
+3. **Screenshot OCR** uses MediaProjection and requires a one-time user grant via a transparent permission activity.
+4. **Skills screen** does not yet have a drag-and-drop step editor — steps are entered as text in a dialog.
 
 ---
 
 ## Next Steps
 
-1. Push Sherpa models to device and test full voice pipeline end-to-end
-2. Train a small intent classifier ONNX model (~5 MB) for faster/more accurate command parsing
-3. Implement MediaProjection-based screenshot OCR for apps without accessibility labels
-4. Build drag-and-drop skill editor UI
-5. Test full flow on multiple devices (Xiaomi 14, Samsung Galaxy S24, Pixel 8) with all permissions granted
+1. Push Sherpa models and a Gemma 4 E2B `.litertlm` model to Xiaomi 14 and test the full voice + agent pipeline end-to-end.
+2. Verify Gemma-generated tool calls are correctly parsed, safety-classified, and executed.
+3. Build drag-and-drop skill editor UI.
+4. Test full flow on multiple devices (Xiaomi 14, Samsung Galaxy S24, Pixel 8) with all permissions granted.

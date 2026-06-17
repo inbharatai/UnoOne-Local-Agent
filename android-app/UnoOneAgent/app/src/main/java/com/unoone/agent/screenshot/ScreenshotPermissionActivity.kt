@@ -1,0 +1,51 @@
+package com.unoone.agent.screenshot
+
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.media.projection.MediaProjectionManager
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
+import com.unoone.agent.core.util.Logger
+import com.unoone.agent.phonecontrol.ScreenshotCapture
+
+/**
+ * Transparent one-shot Activity that requests the MediaProjection screen-capture permission.
+ *
+ * It is started by [com.unoone.agent.execution.ActionExecutor] when a screenshot OCR fallback
+ * is needed but no projection token is available. After the user grants or denies, the
+ * activity stores the result in [ScreenshotCapture.mediaProjection] and finishes immediately.
+ */
+class ScreenshotPermissionActivity : ComponentActivity() {
+
+    private val projectionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            ScreenshotCapture.mediaProjection = manager.getMediaProjection(result.resultCode, result.data!!)
+            Logger.i("ScreenshotPermissionActivity: MediaProjection granted")
+            ScreenshotCapture.permissionListener?.invoke(true)
+        } else {
+            Logger.w("ScreenshotPermissionActivity: MediaProjection denied")
+            ScreenshotCapture.permissionListener?.invoke(false)
+        }
+        finish()
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        projectionLauncher.launch(manager.createScreenCaptureIntent())
+    }
+
+    companion object {
+        fun launch(context: Context) {
+            val intent = Intent(context, ScreenshotPermissionActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        }
+    }
+}

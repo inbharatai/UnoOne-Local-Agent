@@ -7,13 +7,15 @@ import android.provider.Settings
 import androidx.core.content.ContextCompat
 import com.unoone.agent.accessibilitycontrol.AccessibilityControl
 import com.unoone.agent.agentrouter.AgentRouter
+import com.unoone.agent.core.interfaces.IActionExecutor
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.phonecontrol.CalendarControl
 import com.unoone.agent.phonecontrol.OcrControl
 import com.unoone.agent.phonecontrol.PhoneControl
-import com.unoone.agent.storage.dao.ActionLogDao
+import com.unoone.agent.phonecontrol.ScreenshotCapture
+import com.unoone.agent.screenshot.ScreenshotPermissionActivity
 import com.unoone.agent.storage.dao.NoteDao
 import com.unoone.agent.storage.dao.SkillDao
 import com.unoone.agent.storage.entity.NoteEntity
@@ -33,9 +35,9 @@ class ActionExecutor(
     private val ocrControl: OcrControl,
     private val accessibilityControl: AccessibilityControl,
     private val agentRouter: AgentRouter
-) {
+) : IActionExecutor {
 
-    suspend fun executeTool(toolCall: ToolCall): Result<String> {
+    override suspend fun executeTool(toolCall: ToolCall): Result<String> {
         return try {
             when (toolCall.tool) {
                 "create_note" -> {
@@ -56,12 +58,14 @@ class ActionExecutor(
                     val to = toolCall.args["to"]?.jsonPrimitive?.content ?: ""
                     val sub = toolCall.args["subject"]?.jsonPrimitive?.content ?: "Update"
                     val body = toolCall.args["body"]?.jsonPrimitive?.content ?: ""
-                    phoneControl.draftEmail(to, sub, body).map { "Email drafted." }
+                    phoneControl.draftEmail(to, sub, body)
+                        .map { "Email draft opened. Please review and press send." }
                 }
                 "send_whatsapp" -> {
                     val number = toolCall.args["number"]?.jsonPrimitive?.content ?: ""
                     val msg = toolCall.args["message"]?.jsonPrimitive?.content ?: ""
-                    phoneControl.sendWhatsAppMessage(number, msg).map { "WhatsApp prepared." }
+                    phoneControl.sendWhatsAppMessage(number, msg)
+                        .map { "WhatsApp draft opened. Please review and press send." }
                 }
                 "check_calendar" -> {
                     val now = System.currentTimeMillis()
@@ -75,12 +79,12 @@ class ActionExecutor(
                 "open_chrome" -> phoneControl.openChrome().map { "Chrome opened." }
                 "open_camera" -> phoneControl.openCamera().map { "Camera active." }
                 "system_control" -> executeSystemAction(toolCall)
-                "ocr_screen", "read_screen" -> accessibilityControl.captureScreenText()
+                "ocr_screen", "read_screen" -> readScreenWithOcrFallback()
                 "detect_objects" -> {
                     _setBlindAidActive?.invoke(true)
                     Result.Success("Blind Aid activated.")
                 }
-                "deactivate_blind_aid" -> {
+                "deactivate_blind_id" -> {
                     _setBlindAidActive?.invoke(false)
                     Result.Success("Blind Aid deactivated.")
                 }
@@ -95,7 +99,7 @@ class ActionExecutor(
         }
     }
 
-    fun getRequiredPermissionsForTool(tool: String): List<String> {
+    override fun getRequiredPermissionsForTool(tool: String): List<String> {
         return when (tool) {
             "create_note" -> emptyList()
             "draft_email" -> emptyList()
@@ -112,9 +116,33 @@ class ActionExecutor(
         }
     }
 
-    // Injected callbacks — set by OrchestratorCoordinator to avoid circular dependencies
+    // Injected callbacks — set by Orchestrator to avoid circular dependencies
     var _skillsModule: com.unoone.agent.skills.SkillsModule? = null
     var _setBlindAidActive: ((Boolean) -> Unit)? = null
+
+    private suspend fun readScreenWithOcrFallback(): Result<String> {
+        // 1. Try the lightweight accessibility tree first.
+        val accResult = accessibilityControl.captureScreenText()
+        if (accResult is Result.Success && accResult.data.isNotBlank()) {
+            return Result.Success(accResult.data)
+        }
+
+        // 2. Fall back to MediaProjection screenshot OCR if permission is available.
+        if (!ScreenshotCapture.hasPermission()) {
+            Logger.i("ActionExecutor: accessibility text empty; requesting MediaProjection")
+            ScreenshotPermissionActivity.launch(context)
+            return Result.Error("Screen text not available. Opening screenshot permission.")
+        }
+
+        return when (val ocrResult = ocrControl.recognizeScreen()) {
+            is Result.Success -> if (ocrResult.data.isNotBlank()) {
+                Result.Success(ocrResult.data)
+            } else {
+                Result.Error("No text found on screen")
+            }
+            is Result.Error -> Result.Error(ocrResult.message)
+        }
+    }
 
     private suspend fun executeCompoundPart(compound: ToolCall, which: String): Result<String> {
         val toolName = compound.args["${which}_tool"]?.jsonPrimitive?.content
@@ -128,7 +156,7 @@ class ActionExecutor(
         return executeTool(ToolCall(toolName, args))
     }
 
-    private fun executeSystemAction(toolCall: ToolCall): Result<String> {
+    private suspend fun executeSystemAction(toolCall: ToolCall): Result<String> {
         val action = toolCall.args["action"]?.jsonPrimitive?.content ?: ""
         val target = toolCall.args["target"]?.jsonPrimitive?.content ?: ""
         return when (action) {

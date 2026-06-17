@@ -48,6 +48,13 @@ class VoiceService : Service() {
         const val ACTION_VOICE_COMMAND = "com.unoone.agent.VOICE_COMMAND"
         const val EXTRA_COMMAND = "command"
 
+        /**
+         * Static callback for voice commands. Set by the Application layer
+         * to route transcribed commands without cross-module coupling.
+         * Replaces the direct UnoOneApplication reference for modularity.
+         */
+        var voiceCommandCallback: ((String) -> Unit)? = null
+
         fun start(context: Context) {
             val intent = Intent(context, VoiceService::class.java)
             context.startForegroundService(intent)
@@ -204,11 +211,11 @@ class VoiceService : Service() {
                             Logger.i("VoiceService: Command: '${transcript.data}'")
                             onCommandReceived?.invoke(transcript.data)
 
-                            // SECURITY: Use SharedFlow instead of broadcast Intent.
+                            // SECURITY: Use static callback instead of broadcast Intent.
                             // sendBroadcast() is visible in system logs even with setPackage(),
-                            // exposing the user's transcribed speech. SharedFlow keeps commands
-                            // in-process only.
-                            (applicationContext as? com.unoone.agent.UnoOneApplication)?.postVoiceCommand(transcript.data)
+                            // exposing the user's transcribed speech. The callback is set by the
+                            // Application layer, keeping commands in-process only.
+                            voiceCommandCallback?.invoke(transcript.data)
                         }
 
                         updateNotification("UnoOne is listening")

@@ -1,8 +1,12 @@
 package com.unoone.agent
 
 import android.app.Application
+import android.content.Context
 import com.unoone.agent.core.util.Logger
+import dagger.hilt.android.HiltAndroidApp
 import com.unoone.agent.di.DatabaseProvider
+import com.unoone.agent.modelmanager.ModelManager
+import com.unoone.agent.safety.AuditLogger
 import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceService
 import kotlinx.coroutines.CoroutineScope
@@ -13,6 +17,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
+@HiltAndroidApp
 class UnoOneApplication : Application() {
 
     // Expert: Master Orchestrator accessible from anywhere (Activity or Service)
@@ -53,6 +58,24 @@ class UnoOneApplication : Application() {
         )
         orchestrator.setVoiceModule(sharedVoiceModule)
 
+        // Initialize audit logger with the action log DAO
+        AuditLogger.initialize(db.actionLogDao())
+
+        // Auto-load Gemma 4 .litertlm brain if a model file is present
+        val modelManager = ModelManager(this)
+        modelManager.ensureModelDirectories()
+        val llmPath = modelManager.getLlmModelPath()
+        if (llmPath != null) {
+            appScope.launch {
+                val result = orchestrator.loadLlmModel(llmPath)
+                if (result is com.unoone.agent.core.model.Result.Success) {
+                    Logger.i("UnoOneApplication: Gemma brain loaded from $llmPath")
+                } else {
+                    Logger.w("UnoOneApplication: Gemma brain failed to load: ${(result as? com.unoone.agent.core.model.Result.Error)?.message}")
+                }
+            }
+        }
+
         // Collect voice commands from SharedFlow and dispatch to orchestrator
         appScope.launch {
             commandFlow.collect { command ->
@@ -64,6 +87,9 @@ class UnoOneApplication : Application() {
         }
 
         // Expert: Start background services for hands-free and floating assistant
+        // Wire VoiceService static callback to route commands through SharedFlow
+        VoiceService.voiceCommandCallback = { command -> postVoiceCommand(command) }
+
         try {
             VoiceService.start(this)
         } catch (e: Exception) {

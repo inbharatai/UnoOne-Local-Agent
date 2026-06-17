@@ -63,6 +63,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Transparent activity used to obtain MediaProjection permission for screenshot OCR -->
+        <activity
+            android:name=".screenshot.ScreenshotPermissionActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
+
         <!-- Floating Agent Bubble — foreground service to prevent system kill -->
         <service
             android:name=".FloatingAgentService"

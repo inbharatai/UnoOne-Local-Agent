@@ -28,7 +28,8 @@ fun ConfirmationDialog(
     level: ConfirmationLevel = ConfirmationLevel.CONFIRM,
     onResult: (Boolean) -> Unit
 ) {
-    var confirmText by remember { mutableStateOf("") }
+    // 5J: Use message as key so confirmText resets when a new confirmation arrives
+    var confirmText by remember(message) { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = { onResult(false) },

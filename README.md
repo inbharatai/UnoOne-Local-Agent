@@ -68,13 +68,14 @@
 
 ## 🏗️ About UnoOne
 
-UnoOne is a **modular, offline-first Android AI agent** that transforms a smartphone into a fully voice-controllable, accessibility-powered, spatially-aware companion — with zero cloud dependency. Built on 13 independent Gradle modules, it combines:
+UnoOne is a **modular, offline-first Android AI agent** that transforms a smartphone into a fully voice-controllable, accessibility-powered, spatially-aware companion — with zero cloud dependency. Built on 13 independent Gradle modules and powered by **Gemma 4 E2B via LiteRT-LM**, it combines:
 
 - **Privacy-first command execution** — every action runs locally, no data leaves the device
+- **On-device LLM planning** — Gemma 4 E2B plans complex actions through LiteRT-LM manual tool calling
 - **Accessibility-based deep UI control** — tap, type, fill, swipe, long-press, read any screen through Android's AccessibilityService
 - **Live camera-aided sensory navigation** — real-time object detection with haptic, tonal, and spoken guidance for blind and low-vision users
 - **End-to-end background voice routing** — wake-word detection to command dispatch, entirely offline
-- **Safety-gated automation** — a 4-tier risk classifier prevents destructive actions without explicit user confirmation
+- **Safety-gated automation** — a 4-tier risk classifier prevents destructive actions without explicit user confirmation; the LLM proposes, the app validates and executes
 - **Compound command intelligence** — natural language chains like *"scroll down and go home"* are parsed and executed as atomic sequences with per-part safety checks
 
 The entire system shares a **single VoiceModule instance** across the Application, Orchestrator, ViewModel, and FloatingAgentService — eliminating resource conflicts and ensuring unified TTS/STT lifecycle management.
@@ -96,7 +97,7 @@ flowchart TB
     Entry --> ORCH
 
     subgraph Core["AgentOrchestrator"]
-        ORCH --> PARSER["RuleBasedParser / LocalBrain"]
+        ORCH --> PARSER["RuleBasedParser / GemmaPlanner (LiteRT-LM)"]
         PARSER -->|ToolCall| SAFETY["SafetyGuard"]
         SAFETY -->|Risk classified| PERM["Permission Check"]
         PERM --> EXEC["Tool Execution"]
@@ -129,7 +130,7 @@ flowchart TB
 | `:core` | Shared models (`Result`, `ToolCall`, `AgentStatus`, `TimelineStep`) and logging | `Result.kt`, `ToolCall.kt`, `Logger.kt` |
 | `:storage` | Room DB — notes, skills, memory entities and DAOs | `UnoOneDatabase.kt` |
 | `:modelmanager` | Model folder detection, checksum verification, storage usage | `ModelManager.kt` |
-| `:localbrain` | Parser, prompt helpers, ONNX wrapper, RAG utility layer | `RuleBasedParser.kt`, `LocalBrain.kt` |
+| `:localbrain` | Parser, prompt builder, Gemma 4 / LiteRT-LM planner, manual tool calling, RAG utility | `RuleBasedParser.kt`, `GemmaPlanner.kt`, `LocalBrain.kt`, `UnoOneToolSet.kt` |
 | `:voice` | Recorder, STT/TTS engines, foreground voice service, broadcast routing | `VoiceModule.kt`, `AndroidSttEngine.kt`, `VoiceService.kt` |
 | `:agentrouter` | Tool registration and fallback routing | `AgentRouter.kt` |
 | `:safetyguard` | 4-tier risk classification policy | `SafetyGuard.kt` |
@@ -266,7 +267,8 @@ The `RuleBasedParser` uses a priority-ordered `when` block that checks **domain-
 | Compound commands | Splits on `" and "` — only when no domain-specific keywords present |
 | Long press | `"long press on X"` → extracts target text |
 | Fill fields | Regex handles `"with"`, `":"`, and single-space separators |
-| Fallback | Unrecognized input → `LocalBrain.runInference()` (currently returns mock JSON) |
+| Fast fallback | Simple commands are handled offline by `RuleBasedParser` |
+| LLM fallback | Complex / unknown input → `GemmaPlanner` via LiteRT-LM with `automaticToolCalling = false`; every generated tool call is routed through `SafetyGuard` before execution |
 
 ### Test Coverage
 
@@ -324,7 +326,7 @@ Every command passes through a **4-tier risk classifier** before execution:
 |---|---|---|
 | **Baseline** | Android 9+ (API 28), ARM64, 4 GB RAM, 1 GB storage, microphone | Voice commands, text input, accessibility control |
 | **Recommended** | Android 12+, 6–8 GB RAM, rear camera, vibration motor, 2+ GB storage | Full blind-aid + voice UX |
-| **Expert** | 8+ GB RAM (12+ preferred), NPU-capable chipset, multi-GB model storage | Local LLM inference via ONNX |
+| **Expert** | 8+ GB RAM (12+ preferred), NPU/GPU-capable chipset, 4+ GB model storage | Gemma 4 E2B local LLM inference via LiteRT-LM |
 
 ---
 
@@ -395,17 +397,56 @@ UnoOne-Local-Agent/
 | Background voice routing | ✅ End-to-end | VoiceService → broadcast → orchestrator |
 | Compound command parsing | ✅ Implemented | Domain-safe splitting with per-part safety checks |
 | Safety framework (4-tier) | ✅ Implemented | DIRECT, CONFIRM, STRONG_CONFIRM, BLOCK |
-| Parser unit tests | ✅ 9/9 passing | Activation, deactivation, notes, compound, long press |
+| Parser unit tests | ✅ 13+ passing | Rule-based, async Gemma fallback, safety coverage, prompt assembly |
 | Shared VoiceModule architecture | ✅ Implemented | Single instance across Application, ViewModel, Orchestrator, Overlay |
-| LocalBrain inference | 🔧 Scaffold | `runInference()` returns mock JSON placeholder |
+| SafetyGuard tool coverage | ✅ Verified | Every Gemma-emit tool mapped to DIRECT/CONFIRM/STRONG_CONFIRM/BLOCK |
+| Gemma 4 E2B brain via LiteRT-LM | ✅ Implemented | `GemmaPlanner`, `UnoOneToolSet`, manual tool calling, auto-load |
+| LocalBrain inference | ✅ Implemented | LiteRT-LM `.litertlm` loader with rule-based fallback |
 | RAG integration | 🔧 Scaffold | `RAGManager` exists, not wired into runtime |
 | Custom bounding-box overlay | 🔧 Planned | Detection results computed but no Compose overlay drawn |
+
+---
+
+## 🧪 Accuracy & Verification
+
+### Automated checks in this repo
+
+```bash
+# Unit tests (run on JVM — no device or model required)
+./gradlew.bat :app:testDebugUnitTest
+./gradlew.bat :localbrain:testDebugUnitTest
+
+# Lint (pre-existing issues baselined; new issues fail the build)
+./gradlew.bat :app:lintDebug
+
+# Full debug APK build
+./gradlew.bat :app:assembleDebug
+
+# Instrumented accuracy test — requires a device/emulator AND a .litertlm model
+adb push /path/to/gemma-4-e2b-it.litertlm \
+  /sdcard/Android/data/com.unoone.agent/files/models/gemma-local/
+./gradlew.bat :app:connectedDebugAndroidTest
+```
+
+### What is verified today
+
+- **Build & packaging**: `compileDebugKotlin`, `lintDebug`, `assembleDebug`, and unit tests all pass.
+- **Rule-based parser**: 13+ unit tests cover activation, deactivation, notes, compound commands, long press, async routing.
+- **Safety coverage**: `SafetyGuardToolCoverageTest` confirms every tool `GemmaPlanner` can emit has an explicit risk tier, and destructive tools require `STRONG_CONFIRM`/`BLOCK`.
+- **Prompt correctness**: `PromptBuilderTest` verifies all tool names appear in the system prompt and that the model is explicitly told never to send/pay silently.
+- **Manual tool calling**: `GemmaPlanner` initializes LiteRT-LM with `automaticToolCalling = false`, so the model proposes and the app validates/executes every call.
+
+### What requires a real model + device
+
+- End-to-end Gemma inference accuracy (which tool the model chooses for a given command) is tested by `GemmaPlannerAccuracyTest`, an instrumented test that loads the first `.litertlm` file it finds and runs real commands through LiteRT-LM. It skips automatically if no model is present.
+- Real screenshot OCR requires granting MediaProjection once via the transparent `ScreenshotPermissionActivity`.
 
 ---
 
 ## 📄 Documentation
 
 - **Root overview** (this file)
+- **Upgrade plan**: [`PLAN-Gemma4-LiteRT-LM-Upgrade.md`](PLAN-Gemma4-LiteRT-LM-Upgrade.md)
 - **Android technical implementation**: [`android-app/UnoOneAgent/README.md`](android-app/UnoOneAgent/README.md)
 
 ---

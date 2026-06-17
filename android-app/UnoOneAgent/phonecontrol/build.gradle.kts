@@ -5,11 +5,11 @@ plugins {
 
 android {
     namespace = "com.unoone.agent.phonecontrol"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 28
-        targetSdk = 34
+        targetSdk = 35
     }
 
     compileOptions {
@@ -24,7 +24,7 @@ android {
 
 dependencies {
     implementation(project(":core"))
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     
     // World-class on-device OCR
     implementation("com.google.mlkit:text-recognition:16.0.0")

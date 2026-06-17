@@ -56,9 +56,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,12 +90,14 @@ import com.unoone.agent.ui.viewmodel.AgentViewModel
 
 @Composable
 fun AgentScreen(viewModel: AgentViewModel) {
-    var textInput by remember { mutableStateOf("") }
+    // 5B: rememberSaveable preserves text across configuration changes (rotation)
+    var textInput by rememberSaveable { mutableStateOf("") }
     val timeline by viewModel.timelineSteps.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
     val isBlindAidActive by viewModel.isBlindAidActive.collectAsState()
     val amplitude by viewModel.amplitude.collectAsState()
     val pendingConfirmation by viewModel.pendingConfirmation.collectAsState()
+    val isListening by viewModel.isListening.collectAsState()
     val context = LocalContext.current
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
@@ -189,9 +193,16 @@ fun AgentScreen(viewModel: AgentViewModel) {
             }
         }
 
-        // Progress indicator
+        // Progress indicator — 5C: derivedStateOf avoids recomputing every frame
+        val progress by remember {
+            derivedStateOf {
+                if (isProcessing) {
+                    // Don't assume exactly 7 steps — scale to AgentStatus.DONE as the terminal state
+                    (timeline.size.toFloat() / AgentStatus.entries.size).coerceIn(0f, 1f)
+                } else 0f
+            }
+        }
         if (isProcessing) {
-            val progress = calculateProgress(timeline)
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier
@@ -207,7 +218,7 @@ fun AgentScreen(viewModel: AgentViewModel) {
         // Waveform visualizer
         WaveformVisualizer(
             amplitude = amplitude,
-            isActive = viewModel.isListening,
+            isActive = isListening,
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -220,7 +231,7 @@ fun AgentScreen(viewModel: AgentViewModel) {
         ) {
             FloatingActionButton(
                 onClick = {
-                    if (viewModel.isListening) {
+                    if (isListening) {
                         viewModel.stopListening()
                     } else {
                         // Check if permission is already granted before launching system dialog
@@ -234,15 +245,15 @@ fun AgentScreen(viewModel: AgentViewModel) {
                     }
                 },
                 shape = CircleShape,
-                containerColor = if (viewModel.isListening) ListeningRed else MaterialTheme.colorScheme.primary,
+                containerColor = if (isListening) ListeningRed else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(80.dp)
             ) {
-                if (isProcessing && !viewModel.isListening) {
+                if (isProcessing && !isListening) {
                     CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp))
                 } else {
                     Icon(
-                        imageVector = if (viewModel.isListening) Icons.Default.Stop else Icons.Default.Mic,
-                        contentDescription = if (viewModel.isListening) "Stop" else "Speak",
+                        imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
+                        contentDescription = if (isListening) "Stop" else "Speak",
                         modifier = Modifier.size(36.dp),
                         tint = Color.White
                     )

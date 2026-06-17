@@ -1,5 +1,8 @@
 package com.unoone.agent.ui.screens
 
+import android.content.Context
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,16 +18,18 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -33,16 +38,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.unoone.agent.ui.viewmodel.SettingsViewModel
 
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel) {
+fun SettingsScreen(viewModel: SettingsViewModel, onNavigateToPrivacy: () -> Unit = {}) {
     val modelStatuses by viewModel.modelStatuses.collectAsState()
     val storageUsageMb by viewModel.storageUsageMb.collectAsState()
-    var darkMode by remember { mutableStateOf(false) }
+    val darkMode by viewModel.darkMode.collectAsState()
+    var showClearConfirmation by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -62,7 +69,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             title = "Model Status",
             action = {
                 IconButton(onClick = viewModel::refresh) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh model status")
                 }
             }
         ) {
@@ -77,15 +84,22 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Voice Tests
+        // 5E: Functional Voice Tests
         SettingsSection(title = "Voice Tests") {
-            Button(onClick = { /* STT test */ }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Mic, contentDescription = null)
+            Button(
+                onClick = { viewModel.testStt(context) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Mic, contentDescription = "STT test")
                 Text("Run STT Test", modifier = Modifier.padding(start = 8.dp))
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = { /* TTS test */ }, modifier = Modifier.fillMaxWidth()) {
-                Text("Run TTS Test")
+            Button(
+                onClick = { viewModel.testTts(context) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.VolumeUp, contentDescription = "TTS test")
+                Text("Run TTS Test", modifier = Modifier.padding(start = 8.dp))
             }
         }
 
@@ -102,13 +116,33 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 Text("$storageUsageMb MB", fontWeight = FontWeight.SemiBold)
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = { /* clear logs */ }, modifier = Modifier.fillMaxWidth()) {
+            // 5F: Clear logs with confirmation dialog
+            Button(onClick = { showClearConfirmation = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("Clear Local Logs")
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = { /* export logs */ }, modifier = Modifier.fillMaxWidth()) {
+            // 5E: Export logs to Downloads
+            Button(onClick = { viewModel.exportLogs(context) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Export Logs")
             }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 4E: Privacy Settings link
+        SettingsSection(title = "Privacy") {
+            Button(
+                onClick = onNavigateToPrivacy,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Privacy Settings")
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Control online services and data sharing",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -123,7 +157,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Appearance
+        // 5D: Dark mode toggle wired to AppCompatDelegate + DataStore
         SettingsSection(title = "Appearance") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -131,7 +165,16 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Dark mode")
-                Switch(checked = darkMode, onCheckedChange = { darkMode = it })
+                Switch(
+                    checked = darkMode,
+                    onCheckedChange = { enabled ->
+                        viewModel.setDarkMode(enabled)
+                        AppCompatDelegate.setDefaultNightMode(
+                            if (enabled) AppCompatDelegate.MODE_NIGHT_YES
+                            else AppCompatDelegate.MODE_NIGHT_NO
+                        )
+                    }
+                )
             }
         }
 
@@ -141,6 +184,31 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             text = "UnoOne v1.0.0-local",
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+        )
+    }
+
+    // Clear logs confirmation dialog
+    if (showClearConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirmation = false },
+            title = { Text("Clear All Logs?") },
+            text = { Text("This will permanently delete all action logs. This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearLogs()
+                        showClearConfirmation = false
+                        Toast.makeText(context, "Logs cleared", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Clear", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 }
@@ -200,8 +268,8 @@ private fun StatusRow(label: String, present: Boolean, sizeMb: Long = 0) {
             }
             Icon(
                 imageVector = if (present) Icons.Default.CheckCircle else Icons.Default.Error,
-                contentDescription = if (present) "Present" else "Missing",
-                tint = if (present) Color(0xFF2ECC71) else Color(0xFFE74C3C)
+                contentDescription = if (present) "Model present" else "Model missing",
+                tint = if (present) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
             )
         }
     }

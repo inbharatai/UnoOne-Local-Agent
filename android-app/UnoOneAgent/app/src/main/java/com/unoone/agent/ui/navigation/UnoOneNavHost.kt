@@ -30,11 +30,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.unoone.agent.ui.screens.AgentScreen
 import com.unoone.agent.ui.screens.LogsScreen
 import com.unoone.agent.ui.screens.NotesScreen
+import com.unoone.agent.ui.screens.PrivacySettingsScreen
 import com.unoone.agent.ui.screens.SettingsScreen
 import com.unoone.agent.ui.screens.SkillsScreen
 import com.unoone.agent.ui.viewmodel.AgentViewModel
 import com.unoone.agent.ui.viewmodel.LogsViewModel
 import com.unoone.agent.ui.viewmodel.NotesViewModel
+import com.unoone.agent.ui.viewmodel.PrivacySettingsViewModel
 import com.unoone.agent.ui.viewmodel.SettingsViewModel
 import com.unoone.agent.ui.viewmodel.SkillsViewModel
 
@@ -46,7 +48,8 @@ fun UnoOneNavHost(
     notesViewModel: NotesViewModel,
     logsViewModel: LogsViewModel,
     skillsViewModel: SkillsViewModel,
-    settingsViewModel: SettingsViewModel
+    settingsViewModel: SettingsViewModel,
+    privacySettingsViewModel: PrivacySettingsViewModel
 ) {
     Scaffold(
         bottomBar = {
@@ -83,7 +86,8 @@ fun UnoOneNavHost(
             composable(Screen.Notes.route) { NotesScreen(viewModel = notesViewModel) }
             composable(Screen.Skills.route) { SkillsScreen(viewModel = skillsViewModel) }
             composable(Screen.Logs.route) { LogsScreen(viewModel = logsViewModel) }
-            composable(Screen.Settings.route) { SettingsScreen(viewModel = settingsViewModel) }
+            composable(Screen.Settings.route) { SettingsScreen(viewModel = settingsViewModel, onNavigateToPrivacy = { navController.navigate(Screen.PrivacySettings.route) }) }
+            composable(Screen.PrivacySettings.route) { PrivacySettingsScreen(viewModel = privacySettingsViewModel, onBack = { navController.popBackStack() }) }
         }
     }
 }
@@ -95,6 +99,7 @@ private val Screen.selectedIcon: ImageVector
         Screen.Skills -> Icons.Filled.Build
         Screen.Logs -> Icons.Filled.List
         Screen.Settings -> Icons.Filled.Settings
+        Screen.PrivacySettings -> Icons.Filled.Settings
     }
 
 private val Screen.unselectedIcon: ImageVector
@@ -104,4 +109,5 @@ private val Screen.unselectedIcon: ImageVector
         Screen.Skills -> Icons.Outlined.Build
         Screen.Logs -> Icons.Outlined.List
         Screen.Settings -> Icons.Outlined.Settings
+        Screen.PrivacySettings -> Icons.Outlined.Settings
     }

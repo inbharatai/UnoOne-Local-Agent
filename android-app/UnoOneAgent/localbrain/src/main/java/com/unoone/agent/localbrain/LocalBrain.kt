@@ -1,7 +1,5 @@
 package com.unoone.agent.localbrain
 
-import ai.onnxruntime.OrtEnvironment
-import ai.onnxruntime.OrtSession
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
 import com.unoone.agent.core.util.Logger
@@ -10,75 +8,40 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+/**
+ * Local LLM brain for UnoOne.
+ *
+ * This class is a thin wrapper around [GemmaPlanner], which loads a Gemma 4
+ * `.litertlm` model via LiteRT-LM and performs manual tool calling.
+ *
+ * The old ONNX shell has been removed. RuleBasedParser remains the fast offline
+ * fallback when no model is loaded.
+ */
 class LocalBrain {
 
     private val json = Json { ignoreUnknownKeys = true }
-    private var isLoaded = false
+    internal val planner = GemmaPlanner()
 
-    private var env: OrtEnvironment? = null
-    private var session: OrtSession? = null
+    fun isModelLoaded(): Boolean = planner.isLoaded()
 
-    fun isModelLoaded(): Boolean = isLoaded
-
-    fun loadModel(modelPath: String): Result<Unit> {
-        return try {
-            Logger.i("Loading model from $modelPath via ONNX Runtime")
-            env = OrtEnvironment.getEnvironment()
-            val options = OrtSession.SessionOptions()
-
-            // Try NNAPI hardware acceleration — works on most modern Android devices
-            // with dedicated NPUs (Snapdragon, Exynos, Dimensity, Tensor).
-            // Gracefully falls back to CPU if NNAPI is unavailable or fails.
-            try {
-                options.addNnapi()
-                Logger.i("NNAPI hardware acceleration enabled")
-            } catch (e: Exception) {
-                Logger.w("NNAPI not available on this device, using CPU inference: ${e.message}")
-            }
-
-            session = env?.createSession(modelPath, options)
-            isLoaded = true
-            Result.Success(Unit)
-        } catch (e: Exception) {
-            Logger.e("Failed to load model", e)
-            Result.Error("Model load failed: ${e.message}", e)
-        }
-    }
+    suspend fun loadModel(modelPath: String): Result<Unit> = planner.load(modelPath)
 
     fun unloadModel() {
-        Logger.i("Unloading local LLM")
-        session?.close()
-        env?.close()
-        session = null
-        env = null
-        isLoaded = false
+        Logger.i("LocalBrain: unloading Gemma model")
+        planner.close()
     }
 
-    fun runInference(prompt: String): Result<ToolCall> {
-        if (!isLoaded || session == null || env == null) {
-            return Result.Error("Local model not loaded")
-        }
-
-        return try {
-            Logger.d("Running inference for: $prompt")
-
-            // Pro-level implementation:
-            // 1. Tokenize (requires a separate tokenizer module or native implementation)
-            // 2. Run session
-            // 3. De-tokenize
-            //
-            // For now, since tokenizer is complex to implement from scratch in Kotlin without libraries,
-            // we keep the placeholder but structure it for the actual ONNX session.
-            // RuleBasedParser handles all commands until a real tokenizer + KV-cache is integrated.
-
-            val mockJsonOutput = "{\"tool\": \"create_note\", \"args\": {\"title\": \"Gemma Note\", \"content\": \"$prompt\"}}"
-            parseToolCall(mockJsonOutput)
-        } catch (e: Exception) {
-            Logger.e("Inference failed", e)
-            Result.Error("Inference failed: ${e.message}")
-        }
+    /**
+     * Run inference with a full context snapshot.
+     */
+    suspend fun runInference(prompt: String, context: ContextSnapshot): Result<ToolCall> {
+        return planner.plan(prompt, context)
     }
 
+    /**
+     * Parses a raw JSON tool call string into a [ToolCall].
+     * Kept as a defensive fallback for string output from any future model path.
+     */
     fun parseToolCall(output: String): Result<ToolCall> {
         return try {
             val start = output.indexOf('{')
