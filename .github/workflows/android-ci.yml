@@ -39,7 +39,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run Lint
-        run: ./gradlew lintDebug 2>& || true
+        run: ./gradlew lintDebug 2>/dev/null || true
         # Don't fail the build on lint yet — track and fix incrementally
 
       - name: Run Unit Tests
