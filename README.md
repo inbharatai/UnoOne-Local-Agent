@@ -1,17 +1,5 @@
 <div align="center">
 
-<br/>
-
-<img src="https://img.shields.io/badge/🔒 CONFIDENTIAL—FOR AUTHORIZED REVIEW ONLY-red?style=for-the-badge&logo=shield&logoColor=white" alt="Confidential">
-
-<br/>
-
-> **Investor & Competition Note**
->
-> UnoOne is a **pre-launch, patent-pending** on-device AI platform. The architecture, safety-gate design, compound-command parsing, manifest-driven model lifecycle, and blind-aid navigation pipeline described below represent novel, defensible intellectual property. This repository contains proprietary source code and trade secrets. Distribution, reverse engineering, or public disclosure without written authorization is prohibited. For partnership, investment, or competition review inquiries, contact the founding team directly.
-
-<br/>
-
 # 🧠 UnoOne Agent
 
 ### *Your Phone. Your Intelligence. Your Privacy.*
