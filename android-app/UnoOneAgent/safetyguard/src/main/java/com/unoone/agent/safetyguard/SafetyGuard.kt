@@ -28,6 +28,9 @@ class SafetyGuard {
         "long_press" to RiskLevel.CONFIRM,
         "click" to RiskLevel.CONFIRM,
         "type" to RiskLevel.CONFIRM,
+        // Mic capture + online lookup both touch privacy-sensitive surfaces → single confirmation.
+        "voice_recording" to RiskLevel.CONFIRM,
+        "web_search" to RiskLevel.CONFIRM,
 
         // Risk 2 — Strong confirmation (must type "confirm")
         "delete_notes" to RiskLevel.STRONG_CONFIRM,

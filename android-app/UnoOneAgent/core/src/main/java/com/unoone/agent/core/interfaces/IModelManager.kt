@@ -8,7 +8,7 @@ package com.unoone.agent.core.interfaces
 interface IModelManager {
     data class ModelStatusInfo(val name: String, val present: Boolean, val sizeMb: Long)
 
-    fun detectModels(): List<ModelStatusInfo>
+    suspend fun detectModels(): List<ModelStatusInfo>
     fun getStorageUsageMb(): Long
     fun ensureModelDirectories()
 }

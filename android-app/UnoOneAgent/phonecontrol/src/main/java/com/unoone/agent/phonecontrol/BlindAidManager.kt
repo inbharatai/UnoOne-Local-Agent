@@ -16,9 +16,27 @@ import com.google.mlkit.vision.objects.ObjectDetection
 import com.google.mlkit.vision.objects.custom.CustomObjectDetectorOptions
 import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
 import com.unoone.agent.core.util.Logger
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import android.graphics.RectF
 import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+
+/**
+ * One detected object's bounding box, normalized to [0,1] in the **upright** image's coordinate
+ * space (left/top/right/bottom). Upright = the image after [ImageProxy.imageInfo.rotationDegrees]
+ * is applied, which is what ML Kit returns boxes in and what the preview displays. Consumed by
+ * [com.unoone.agent.ui.screens.BlindAidCameraPreview] to draw a Compose overlay.
+ */
+data class DetectedBox(val label: String, val rect: RectF)
+
+/**
+ * A frame's worth of detections for the overlay: the boxes plus the upright image aspect ratio
+ * (width/height) the boxes are normalized against, so the overlay can apply FILL_CENTER mapping.
+ */
+data class DetectionOverlay(val boxes: List<DetectedBox>, val aspectRatio: Float)
 
 /**
  * World-Class Blind Aid Navigation System.
@@ -32,6 +50,12 @@ class BlindAidManager(
 ) {
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+
+    // Live detection overlay state published from the analyzer thread. Collected by
+    // BlindAidCameraPreview to draw bounding boxes over the camera preview. StateFlow is
+    // thread-safe; updates at ~5 FPS (the analyzer throttle) drive Compose recomposition.
+    private val _overlay = MutableStateFlow(DetectionOverlay(emptyList(), 1f))
+    val overlay: StateFlow<DetectionOverlay> = _overlay.asStateFlow()
 
     @SuppressLint("ServiceCast")
     private val vibrator: Vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -100,10 +124,19 @@ class BlindAidManager(
 
                 val mediaImage = imageProxy.image
                 if (mediaImage != null) {
-                    val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                    val rotation = imageProxy.imageInfo.rotationDegrees
+                    val image = InputImage.fromMediaImage(mediaImage, rotation)
+                    // ML Kit returns boxes in the upright (rotated) image's coordinate space.
+                    // For 90°/270° rotations the upright dimensions swap vs. the raw sensor dims.
+                    val uprightW = if (rotation == 90 || rotation == 270) imageProxy.height else imageProxy.width
+                    val uprightH = if (rotation == 90 || rotation == 270) imageProxy.width else imageProxy.height
                     detector.process(image)
                         .addOnSuccessListener { objects ->
-                            processDetections(objects, imageProxy.width, imageProxy.height)
+                            if (objects.isEmpty()) {
+                                _overlay.value = DetectionOverlay(emptyList(), uprightW.toFloat() / uprightH.toFloat())
+                            } else {
+                                processDetections(objects, uprightW, uprightH)
+                            }
                         }
                         .addOnFailureListener { e ->
                             Logger.e("BlindAidManager: Real-time analysis failed", e)
@@ -119,10 +152,28 @@ class BlindAidManager(
     }
 
     /**
-     * Option B: Processes local detections to generate real-time haptic & audio beeping feedback.
+     * Option B: Processes local detections to generate real-time haptic & audio beeping feedback,
+     * and publishes the full set of bounding boxes to [overlay] for the Compose camera preview.
      */
-    private fun processDetections(objects: List<DetectedObject>, width: Int, height: Int) {
+    private fun processDetections(objects: List<DetectedObject>, uprightW: Int, uprightH: Int) {
         if (objects.isEmpty()) return
+
+        // Publish normalized boxes for every detected object so the overlay shows them all.
+        val aspectRatio = uprightW.toFloat() / uprightH.toFloat()
+        val boxes = objects.map { obj ->
+            val b = obj.boundingBox
+            val label = obj.labels.firstOrNull()?.text ?: "Obstacle"
+            DetectedBox(
+                label = label,
+                rect = RectF(
+                    b.left.toFloat() / uprightW,
+                    b.top.toFloat() / uprightH,
+                    b.right.toFloat() / uprightW,
+                    b.bottom.toFloat() / uprightH
+                )
+            )
+        }
+        _overlay.value = DetectionOverlay(boxes, aspectRatio)
 
         var closestObject: DetectedObject? = null
         var maxArea = 0
@@ -142,7 +193,7 @@ class BlindAidManager(
         val targetArea = bounds.width() * bounds.height()
 
         // Bounding box size as a proxy for distance (larger box = closer to camera)
-        val screenArea = width * height
+        val screenArea = uprightW * uprightH
         val fillRatio = targetArea.toFloat() / screenArea
 
         // Calculate feedback dynamic frequency based on proximity
@@ -186,6 +237,8 @@ class BlindAidManager(
     fun release() {
         // 0C-5: Proper executor shutdown with awaitTermination
         executor.shutdown()
+        // Clear any stale boxes so a re-activation doesn't briefly show the last frame.
+        _overlay.value = DetectionOverlay(emptyList(), 1f)
         try {
             if (!executor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
                 Logger.w("BlindAidManager: Executor did not terminate in 2s, forcing shutdown")

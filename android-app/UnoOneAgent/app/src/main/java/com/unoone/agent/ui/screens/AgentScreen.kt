@@ -17,6 +17,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,6 +67,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -419,6 +422,47 @@ fun BlindAidCameraPreview(
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Live bounding-box overlay — draws ML Kit detections over the preview. Boxes are
+        // normalized to the upright image; FILL_CENTER maps them into this view (center-crop).
+        val overlay by blindAidManager.overlay.collectAsState()
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val boxes = overlay.boxes
+            if (boxes.isEmpty()) return@Canvas
+            val viewW = size.width
+            val viewH = size.height
+            val ar = overlay.aspectRatio
+            if (ar <= 0f) return@Canvas
+            val scale = maxOf(viewW / ar, viewH)
+            val scaledW = ar * scale
+            val scaledH = scale
+            val offsetX = (viewW - scaledW) / 2f
+            val offsetY = (viewH - scaledH) / 2f
+            val boxPaint = android.graphics.Paint().apply {
+                color = 0xFFFF6B00.toInt() // SafetyOrange
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = 5f
+                isAntiAlias = true
+            }
+            val labelPaint = android.graphics.Paint().apply {
+                color = android.graphics.Color.WHITE
+                textSize = 30f
+                isAntiAlias = true
+                setShadowLayer(6f, 1f, 1f, android.graphics.Color.BLACK)
+            }
+            drawIntoCanvas { canvas ->
+                for (box in boxes) {
+                    val left = offsetX + box.rect.left * scaledW
+                    val top = offsetY + box.rect.top * scaledH
+                    val right = offsetX + box.rect.right * scaledW
+                    val bottom = offsetY + box.rect.bottom * scaledH
+                    canvas.nativeCanvas.drawRect(left, top, right, bottom, boxPaint)
+                    if (box.label.isNotBlank()) {
+                        canvas.nativeCanvas.drawText(box.label, left, (top - 8f).coerceAtLeast(labelPaint.textSize), labelPaint)
+                    }
+                }
+            }
+        }
 
         // Overlay Close Button
         IconButton(

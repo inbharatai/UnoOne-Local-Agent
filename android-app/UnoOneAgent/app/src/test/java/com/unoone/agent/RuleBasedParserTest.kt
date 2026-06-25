@@ -98,6 +98,47 @@ class RuleBasedParserTest {
     }
 
     @Test
+    fun testSearchForOpensGoogleSearch() {
+        // "search for cats" → open_url with a Google search URL (URL-encoded query).
+        val toolCall = RuleBasedParser.parse("search for cats")
+        assertNotNull(toolCall)
+        assertEquals("open_url", toolCall!!.tool)
+        val url = toolCall.args["url"]?.jsonPrimitive?.content ?: ""
+        assertTrue("URL must be a google search", url.startsWith("https://www.google.com/search?q="))
+        assertTrue("Query must be encoded", url.endsWith("cats"))
+    }
+
+    @Test
+    fun testCompoundOpenChromeAndSearchForCats() {
+        // README compound example: "open chrome and search for cats" → compound([open_chrome,
+        // open_url(google search "cats")]). Both halves parse, so a 2-step compound is produced.
+        val toolCall = RuleBasedParser.parse("open chrome and search for cats")
+        assertNotNull(toolCall)
+        assertEquals("compound", toolCall!!.tool)
+        val steps = toolCall.compoundSteps()
+        assertEquals("Compound must expand to 2 ordered steps", 2, steps.size)
+        assertEquals("open_chrome", steps[0].tool)
+        assertEquals("open_url", steps[1].tool)
+        val url = steps[1].args["url"]?.jsonPrimitive?.content ?: ""
+        assertTrue("Second step must be a google search for cats", url.contains("search?q=") && url.endsWith("cats"))
+    }
+
+    @Test
+    fun testSearchDoesNotHijackNoteSearch() {
+        // "search my notes for milk" must NOT route to open_url — note search is left for the
+        // LLM/search_notes path. The "note" guard excludes it from the web-search rule.
+        val toolCall = RuleBasedParser.parse("search my notes for milk")
+        // It may parse to null (no note-search rule offline) or to a non-open_url tool, but never
+        // open_url with a google search.
+        if (toolCall != null) {
+            assertTrue(
+                "Note search must not be hijacked into open_url",
+                toolCall.tool != "open_url" || !(toolCall.args["url"]?.jsonPrimitive?.content ?: "").contains("search?q=")
+            )
+        }
+    }
+
+    @Test
     fun testCompoundCommandDoesNotBreakSkillSteps() {
         // "create skill called greeting to say hello and wave goodbye" — the skill rule
         // must match as a whole (not split on "and"), with both steps preserved.

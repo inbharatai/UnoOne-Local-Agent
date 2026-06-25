@@ -1,7 +1,7 @@
 package com.unoone.agent.localbrain
 
 /**
- * Prompt assembler for Gemma 4 via LiteRT-LM.
+ * Prompt assembler for Gemma 3n E4B via LiteRT-LM.
  *
  * Provides an offline-first persona and a concise context block so the model can
  * choose the right UnoOne tool without leaking full Android objects into the prompt.

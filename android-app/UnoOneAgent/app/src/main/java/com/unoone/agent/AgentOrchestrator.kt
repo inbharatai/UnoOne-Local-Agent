@@ -103,6 +103,7 @@ class AgentOrchestrator(
         actionExecutor._skillsModule = skillsModule
         actionExecutor._setBlindAidActive = { active -> setBlindAidActive(active) }
         actionExecutor._speak = { text -> speakText(text) }
+        actionExecutor._recordVoiceNote = { durationSeconds -> recordVoiceNote(durationSeconds) }
     }
 
     /** Speaks text via the shared VoiceModule, used by the speak_response tool. */
@@ -112,6 +113,22 @@ class AgentOrchestrator(
                 .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: speak_response failed: $msg") }
         } catch (e: Exception) {
             Logger.e("Orchestrator: speak_response exception", e)
+        }
+    }
+
+    /**
+     * Records a voice memo for [durationSeconds] via the shared VoiceModule and returns the
+     * offline STT transcription. Drives the `voice_recording` tool. RECORD_AUDIO is checked by
+     * the safety pipeline before the tool executes, so the mic permission is granted here.
+     */
+    private suspend fun recordVoiceNote(durationSeconds: Int): Result<String> {
+        return try {
+            val start = voiceModule.startRecording(context, scope)
+            if (start is Result.Error) return start
+            kotlinx.coroutines.delay(durationSeconds * 1000L)
+            voiceModule.stopAndTranscribe()
+        } catch (e: Exception) {
+            Result.Error("Voice recording failed: ${e.message}")
         }
     }
 
@@ -155,7 +172,7 @@ class AgentOrchestrator(
     }
 
     /**
-     * Loads a Gemma 4 `.litertlm` model into the command parser's LiteRT-LM brain.
+     * Loads a Gemma 3n E4B `.litertlm` model into the command parser's LiteRT-LM brain.
      * Should be called from a coroutine (engine init is slow).
      */
     suspend fun loadLlmModel(modelPath: String): com.unoone.agent.core.model.Result<Unit> {
@@ -555,7 +572,11 @@ class AgentOrchestrator(
 
         // 4. Execute
         addStep(AgentStatus.EXECUTING, "Agent Active", "Executing ${toolCall.tool}...")
+        val execStart = System.currentTimeMillis()
         val result = actionExecutor.executeTool(toolCall)
+        com.unoone.agent.observability.Diagnostics.recordToolExecution(
+            toolCall.tool, System.currentTimeMillis() - execStart, result is Result.Success
+        )
         if (result is Result.Error) {
             addStep(AgentStatus.FAILED, "Execution Error", result.message)
         } else {

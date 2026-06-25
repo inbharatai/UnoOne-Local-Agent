@@ -42,7 +42,9 @@ class SafetyGuardToolCoverageTest {
             "delete_all_notes" to RiskLevel.STRONG_CONFIRM,
             "export_data" to RiskLevel.STRONG_CONFIRM,
             "detect_objects" to RiskLevel.STRONG_CONFIRM,
-            "deactivate_blind_aid" to RiskLevel.DIRECT
+            "deactivate_blind_aid" to RiskLevel.DIRECT,
+            "voice_recording" to RiskLevel.CONFIRM,   // mic capture → single confirmation
+            "web_search" to RiskLevel.CONFIRM          // online lookup → single confirmation
         )
 
         for ((tool, expectedLevel) in expected) {

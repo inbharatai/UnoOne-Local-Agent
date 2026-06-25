@@ -154,7 +154,11 @@ class ActionExecutorToolCoverageTest {
         "delete_all_notes" to JsonObject(emptyMap()),
         "export_data" to JsonObject(emptyMap()),
         "detect_objects" to JsonObject(emptyMap()),
-        "deactivate_blind_aid" to JsonObject(emptyMap())
+        "deactivate_blind_aid" to JsonObject(emptyMap()),
+        // voice_recording with no _recordVoiceNote wired returns a handled Result.Error (not a
+        // router fallback); web_search in Robolectric (no network) returns the offline message.
+        "voice_recording" to obj { put("duration_seconds", 2) },
+        "web_search" to obj { put("query", "weather") }
     )
 
     private fun obj(build: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit): JsonObject =

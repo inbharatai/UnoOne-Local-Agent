@@ -171,6 +171,41 @@ class ActionExecutor(
                     _setBlindAidActive?.invoke(false)
                     Result.Success("Blind Aid deactivated.")
                 }
+                "voice_recording" -> {
+                    // Record a short memo via the shared VoiceModule, transcribe it offline with
+                    // Sherpa STT, and persist the transcription as a note. RECORD_AUDIO is gated
+                    // by the safety pipeline before this branch runs.
+                    val duration = (toolCall.args["duration_seconds"]?.jsonPrimitive?.content?.toIntOrNull() ?: 5)
+                        .coerceIn(1, 30)
+                    val title = toolCall.args["title"]?.jsonPrimitive?.content
+                    val recorder = _recordVoiceNote
+                        ?: return Result.Error("Voice recording is not available (no voice module).")
+                    when (val res = recorder(duration)) {
+                        is Result.Success -> {
+                            val content = res.data.trim()
+                            if (content.isBlank()) Result.Error("Voice memo was empty — nothing transcribed.")
+                            else {
+                                val noteTitle = title?.takeIf { it.isNotBlank() } ?: content.take(40)
+                                noteDao.insert(NoteEntity(title = noteTitle, content = content, tags = "voice"))
+                                Result.Success("Voice memo saved: $content")
+                            }
+                        }
+                        is Result.Error -> Result.Error("Voice recording failed: ${res.message}")
+                    }
+                }
+                "web_search" -> {
+                    // Opt-in, safety-gated online lookup via RAGManager's DuckDuckGo HTML scrape.
+                    // Offline-first: returns an explicit offline message when there is no network,
+                    // and never auto-opens links. Snippets are returned as text for the agent to speak.
+                    val query = toolCall.args["query"]?.jsonPrimitive?.content ?: ""
+                    if (query.isBlank()) Result.Error("web_search requires a query")
+                    else if (!isOnline()) Result.Success("Offline — web search is unavailable. Connect to the internet and try again.")
+                    else {
+                        val snippets = com.unoone.agent.localbrain.RAGManager.fetchOnlineContext(query)
+                        if (snippets.isBlank()) Result.Success("No web results found for '$query'.")
+                        else Result.Success("Web results for '$query':\n$snippets")
+                    }
+                }
                 // "compound" is expanded into ordered sub-calls by AgentOrchestrator and never
                 // reaches executeTool; fall through to the plugin router for anything unrecognized.
                 else -> agentRouter.route(toolCall)
@@ -191,6 +226,27 @@ class ActionExecutor(
     var _setBlindAidActive: ((Boolean) -> Unit)? = null
     /** Speak text via the shared VoiceModule (TTS). Lets speak_response force audio in any input mode. */
     var _speak: ((String) -> Unit)? = null
+    /**
+     * Record a voice memo for [durationSeconds] and return the offline STT transcription.
+     * Set by the Orchestrator, which owns the shared VoiceModule + coroutine scope. The
+     * RECORD_AUDIO runtime permission is checked by the safety pipeline before this runs.
+     */
+    var _recordVoiceNote: (suspend (durationSeconds: Int) -> Result<String>)? = null
+
+    /**
+     * True when the device has an active internet connection. Used by [web_search] so the
+     * offline-first agent answers immediately instead of waiting on a 5s socket timeout when
+     * the user is offline. minSdk 28 → `activeNetwork` / `getNetworkCapabilities` are available.
+     */
+    private fun isOnline(): Boolean = try {
+        val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+            as? android.net.ConnectivityManager ?: return false
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    } catch (_: Exception) {
+        false
+    }
 
     /**
      * Parses an ISO-8601 time string (Instant / offset / local) to epoch millis, or null if absent

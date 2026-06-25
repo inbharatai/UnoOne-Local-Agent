@@ -71,4 +71,12 @@ class ToolPermissionRegistryTest {
     fun unknownToolDefaultsToNone() {
         assertEquals(listOf(PermissionRequirement.None), ToolPermissionRegistry.requirementsFor("does_not_exist"))
     }
+
+    @Test
+    fun webSearchNeedsNoRuntimePermission() {
+        // INTERNET is a normal (manifest) permission, not a runtime one. The offline-first guard
+        // (ConnectivityManager check) lives in ActionExecutor, not in the permission table.
+        assertEquals(listOf(PermissionRequirement.None), ToolPermissionRegistry.requirementsFor("web_search"))
+        assertTrue(ToolPermissionRegistry.runtimePermissionsFor("web_search").isEmpty())
+    }
 }

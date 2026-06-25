@@ -72,7 +72,7 @@ class UnoOneApplication : Application() {
         // Initialize audit logger with the action log DAO
         AuditLogger.initialize(db.actionLogDao())
 
-        // Auto-load Gemma 4 .litertlm brain if a model file is present
+        // Auto-load Gemma 3n E4B .litertlm brain if a model file is present
         val modelManager = ModelManager(this, db.modelMetadataDao())
         modelManager.ensureModelDirectories()
         val llmPath = modelManager.getLlmModelPath()

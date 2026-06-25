@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/LiteRT--LM-0.13.1-0B7285?style=flat-square" alt="LiteRT-LM 0.13.1">
   <img src="https://img.shields.io/badge/Safety-4%20Tier%20Policy-EF4444?style=flat-square" alt="Safety levels">
   <img src="https://img.shields.io/badge/Voice-Sherpa--ONNX%20offline-0B7285?style=flat-square" alt="Sherpa-ONNX">
-  <img src="https://img.shields.io/badge/Tests-172%20passing-22C55E?style=flat-square" alt="172 tests passing">
+  <img src="https://img.shields.io/badge/Tests-191%20passing-22C55E?style=flat-square" alt="191 tests passing">
 </p>
 
 </div>
@@ -250,7 +250,7 @@ The parser splits compound commands into an ordered `steps[]` JSON array (up to 
 |---|---|---|
 | *"scroll down and go home"* | `compound(steps: [system_control(scroll_down), system_control(go_home)])` | Both halves are simple navigation |
 | *create skill called greeting to say hello and wave goodbye* | `create_skill(steps: ["say hello", "wave goodbye"])` | `"and"` inside skill steps is preserved, not split |
-| *"open chrome and search for cats"* | `compound(steps: [open_chrome, system_control])` | Two distinct tools |
+| *"open chrome and search for cats"* | `compound(steps: [open_chrome, open_url(google search "cats")])` | `"search for X"` → Google search URL via `open_url` |
 | *"remember to buy milk"* | `create_note(content: "buy milk")` | `"to"` after "remember" is stripped |
 
 Domain-specific keywords (`teach you`, `create skill`, `email`, `whatsapp`, `calendar`) are checked **before** compound splitting to prevent semantic destruction. `ToolCall.compoundSteps()` expands a compound call into `List<ToolCall>` for the orchestrator.
@@ -271,11 +271,12 @@ Domain-specific keywords (`teach you`, `create skill`, `email`, `whatsapp`, `cal
 2. **Parser** maps these to `detect_objects` (safety tier: **STRONG_CONFIRM**)
 3. **Orchestrator** toggles blind-aid state, speaks confirmation, and brings the app to the foreground if needed (works from the background `SharedFlow` path too)
 4. **UI** mounts `BlindAidCameraPreview` with live camera feed
-5. **BlindAidManager** analyzes frames at ~5 FPS using ML Kit object detection
-6. **Feedback** arrives via three simultaneous channels:
+5. **BlindAidManager** analyzes frames at ~5 FPS using ML Kit object detection and publishes normalized bounding boxes + the upright image aspect ratio to a `StateFlow`
+6. **Feedback** arrives via four simultaneous channels:
    - 📳 **Haptics** — vibration intensity scales with obstacle proximity
    - 🔊 **Tone beeps** — dynamic rate audio cues for distance
    - 🗣️ **Spoken guidance** — throttled voice announcements ("obstacle 2 meters ahead")
+   - 🟧 **Bounding-box overlay** — `BlindAidCameraPreview` draws a Compose `Canvas` over the live preview, mapping each detected object's normalized box through FILL_CENTER so boxes track objects on screen
 
 ### Deactivation
 
@@ -379,7 +380,7 @@ The `RuleBasedParser` uses a priority-ordered `when` block that checks **domain-
 
 ### Test Coverage
 
-172 unit tests across 16 test files covering activation/deactivation triggers, note creation/deletion, compound `steps[]` serialization, domain-specific preservation, long press, async Gemma fallback routing, safety-guard tool coverage, **skill safety routing** (a `delete_all_notes` step → STRONG_CONFIRM), **compound per-step safety**, the **permission registry** mapping, the **model manifest** (parse, checksum, health-on-truncation, resume-from-partial, empty-file guard, complete-`.part` commit), prompt assembly, input sanitization, and the `Result`/`RiskAssessment`/`CallbackMulticast` primitives — all passing.
+191 unit tests across 18 test files covering activation/deactivation triggers, note creation/deletion, compound `steps[]` serialization, domain-specific preservation, long press, async Gemma fallback routing, safety-guard tool coverage, **skill safety routing** (a `delete_all_notes` step → STRONG_CONFIRM), **compound per-step safety**, the **permission registry** mapping, the **model manifest** (parse, checksum, health-on-truncation, resume-from-partial, empty-file guard, complete-`.part` commit), prompt assembly, input sanitization, the `Result`/`RiskAssessment`/`CallbackMulticast` primitives, and the new `web_search`/`voice_recording` tool + parser rules — all passing.
 
 ---
 
@@ -390,7 +391,7 @@ Every command (and every step of a compound/skill) passes through a **4-tier ris
 | Risk Level | Behavior | Tools |
 |---|---|---|
 | **DIRECT** | Execute immediately, no confirmation | `create_note`, `search_notes`, `summarize_text`, `speak_response`, `open_chrome`, `open_app`, `deactivate_blind_aid`, `check_calendar` |
-| **CONFIRM** | Single confirmation dialog | `open_url`, `open_calendar_insert`, `open_dialer`, `share_text`, `read_screen`, `ocr_screen`, `open_camera`, `create_skill`, `long_press`, `click`, `type` |
+| **CONFIRM** | Single confirmation dialog | `open_url`, `open_calendar_insert`, `open_dialer`, `share_text`, `read_screen`, `ocr_screen`, `open_camera`, `create_skill`, `long_press`, `click`, `type`, `voice_recording`, `web_search` |
 | **STRONG_CONFIRM** | Must type "confirm" to proceed | `delete_notes`, `delete_all_notes`, `export_data`, `detect_objects`, `draft_email`, `send_whatsapp`, `system_control`, `find_and_click`, `fill` |
 | **BLOCK** | Hard block — never executed | `send_message`, `make_payment`, `install_app`, `access_passwords`, `silent_control` |
 
@@ -418,7 +419,8 @@ A **single source of truth** — `core/safety/ToolPermissionRegistry` — is con
 | `ocr_screen` | **MediaProjection** (not overlay; camera not required) | Screenshot OCR needs a capture token |
 | `open_camera` | `CAMERA` | |
 | `detect_objects` | `CAMERA` + **Accessibility** | Camera preview + accessibility context |
-| `voice_recording` | `RECORD_AUDIO` | |
+| `voice_recording` | `RECORD_AUDIO` | Record a memo → offline STT → saved as a note |
+| `web_search` | `None` (INTERNET is a normal manifest permission) | Online DuckDuckGo lookup via `RAGManager`; offline-first guard in `ActionExecutor` |
 | `check_calendar` / `open_calendar_insert` | `READ_CALENDAR` / `WRITE_CALENDAR` | |
 | `open_dialer`, `share_text`, `open_url`, `open_app`, `open_chrome`, notes/skills/email/whatsapp | `None` | Intent-launched or local-only |
 
@@ -462,7 +464,7 @@ Toolchain: AGP 8.10.0, Kotlin 2.2.21, Gradle 8.11.1, JDK 17, Compose BOM 2025.12
 # Full debug APK build
 ./gradlew assembleDebug
 
-# All unit tests (172 tests, 16 files)
+# All unit tests (191 tests, 18 files)
 ./gradlew test
 
 # Lint (abortOnError + warningsAsErrors; new issues fail the build)
@@ -563,11 +565,15 @@ UnoOne-Local-Agent/
 | Gemma 3n E4B brain via LiteRT-LM | ✅ Implemented | `GemmaPlanner`, `UnoOneToolSet`, manual tool calling, GPU→CPU fallback |
 | Crash-safe brain lifecycle | ✅ Implemented | Mutex load, createConversation-failure cleanup, onTrimMemory unload + onResume reload |
 | Enriched ContextSnapshot | ✅ Implemented | recent notes/skills/OCR/recent-commands/last-result/userMemory |
-| Unit tests | ✅ 172 passing | 16 test files: parser, safety, skills, compounds, permissions, manifest/installer, prompt, primitives |
+| Unit tests | ✅ 191 passing | 18 test files: parser, safety, skills, compounds, permissions, manifest/installer, prompt, primitives |
 | Lint | ✅ Clean | 0 new issues; 39 baselined staleness advisories; 0 StaticFieldLeak |
 | Manifest model URLs + integrity fields | ✅ Done (7 languages) | `sherpa-asr-en`/`sherpa-asr-whisper`/`sherpa-tts-{en,hin,ben,tam,tel,kan,mal}`/`vad` filled with verified HF/GitHub URLs + stream-computed SHA-256/size; espeak-ng-data bundled as app asset; `gemma-local`/`punctuation` URLs only. ASR for hi/bn/ta/te/kn/ml uses shared multilingual whisper-tiny int8; TTS uses per-language MMS VITS. Wake word (`vad`) stays English |
-| RAG integration | 🔧 Scaffold | `RAGManager` exists, not wired into runtime |
-| Custom bounding-box overlay | 🔧 Planned | Detection results computed but no Compose overlay drawn |
+| RAG / web search | ✅ Implemented | `RAGManager` wired as the safety-gated `web_search` tool (`UnoOneToolSet` + `ActionExecutor` + `SafetyGuard` CONFIRM + `ToolPermissionRegistry`); offline-first guard returns an explicit offline message, never auto-opens links |
+| Bounding-box overlay | ✅ Implemented | `BlindAidManager` publishes normalized boxes + aspect ratio to a `StateFlow`; `BlindAidCameraPreview` draws a Compose `Canvas` overlay with FILL_CENTER mapping |
+| `voice_recording` tool | ✅ Implemented | Declared to Gemma in `UnoOneToolSet`; `ActionExecutor` records via `VoiceModule`, transcribes offline, saves as a note; `SafetyGuard` CONFIRM; `RECORD_AUDIO` gated by the safety pipeline |
+| `ObjectDetectionControl` | ✅ Removed | Dead single-image detector deleted; `BlindAidManager` owns its own ML Kit detector |
+| `Diagnostics` instrumentation | ✅ Implemented | Tool execution latency + success/failure (orchestrator), STT/TTS latency (`VoiceModule`), model-load time (`GemmaPlanner`) recorded via `Diagnostics` |
+| Blocking I/O in model discovery | ✅ Fixed | `detectModels`/`modelHealth` are now `suspend` and dispatch file I/O on `Dispatchers.IO` |
 
 ---
 
@@ -593,7 +599,7 @@ adb push /path/to/gemma-3n-e4b.litertlm \
 
 ### What is verified today
 
-- **Build & packaging**: `compileDebugKotlin`, `lint`, `assembleDebug`, and all unit tests pass (172 tests).
+- **Build & packaging**: `compileDebugKotlin`, `lint`, `assembleDebug`, and all unit tests pass (191 tests).
 - **Rule-based parser**: activation, deactivation, notes (create + delete), compound `steps[]`, long press, async routing, domain preservation.
 - **Safety coverage**: `SafetyGuardToolCoverageTest` confirms every tool `GemmaPlanner` can emit has an explicit risk tier, and destructive tools require `STRONG_CONFIRM`/`BLOCK`.
 - **Skill & compound safety routing**: a `delete_all_notes` step requires STRONG_CONFIRM; a blocked tool blocks the skill/compound.
@@ -616,12 +622,12 @@ Honest, current limitations (not papered over):
 
 | Gap | Detail |
 |---|---|
-| **RAG not wired** | `RAGManager` exists but is not wired into the orchestrator runtime flow. |
-| **Bounding-box overlay** | Detection results are computed but no Compose overlay is drawn over the camera preview. |
-| **`ObjectDetectionControl`** | Single-image detector is dead code — `BlindAidManager` is used instead. |
-| **`Diagnostics`** | Helpers exist but are not broadly instrumented across execution paths. |
-| **Blocking I/O in model discovery** | `detectModels`/`modelHealth` do file I/O on the caller's thread (typically IO via the UI VM, but not enforced). |
-| **`voice_recording` has no executor** | The tool is permission-mapped (`RECORD_AUDIO`) but has no `ActionExecutor` branch. |
+| **On-device inference not verified in CI** | Native Sherpa (Whisper/MMS) + LiteRT-LM (Gemma 3n E4B) inference can't run in this repo's host environment (no device/emulator with models). API signatures are confirmed against v1.13.3 bytecode and degrade gracefully (`Result.Error`, never crashes); on-device verification is the final manual step via Settings → Voice Test / Model Status. |
+| **Wake word is English-only** | No public Indic keyword-spotter transducer exists; KWS stays on the English `vad` model. The *command* can be Indic; only the wake phrase is English. |
+| **Bhashini online fallback is separately scaffolded** | A `KEY_BHASHINI_TTS` privacy toggle exists but the online Bhashini path is out of the offline scope described here. |
+| **`lifecycle` 2.11 advisories baselined** | A handful of androidx.lifecycle 2.11.x lint advisories need AGP 9 to resolve and are baselined per the repo convention; all other lint issues are fixed in code (0 `StaticFieldLeak`). |
+
+> Previously-listed gaps — RAG not wired, bounding-box overlay, `ObjectDetectionControl` dead code, `Diagnostics` instrumentation, blocking I/O in model discovery, and the `voice_recording` executor — are all resolved (see the implementation-status table above).
 
 ---
 

@@ -248,6 +248,25 @@ object RuleBasedParser {
                 ToolCall("open_url", JsonObject(mapOf("url" to JsonPrimitive("https://www.google.com"))))
             }
 
+            // Web search — open a Google search for the query in the browser. Matches
+            // "search for cats", "search cats", and "google cats". Excludes anything mentioning
+            // "note" so "search my notes for X" is not hijacked into a browser open (note search
+            // is handled by the LLM/web_search path). URL-encodes the query.
+            (lowered.contains("search for") ||
+                (lowered.startsWith("search ") && !lowered.contains("note")) ||
+                lowered.startsWith("google ")) && !lowered.contains("note") -> {
+                val query = lowered
+                    .substringAfter("search for")
+                    .substringAfter("search")
+                    .substringAfter("google")
+                    .trim()
+                val encoded = try { java.net.URLEncoder.encode(query, "UTF-8") } catch (_: Exception) { query }
+                ToolCall(
+                    "open_url",
+                    JsonObject(mapOf("url" to JsonPrimitive("https://www.google.com/search?q=$encoded")))
+                )
+            }
+
             // System Control
             lowered.contains("open camera") -> {
                 ToolCall("open_camera", JsonObject(emptyMap()))

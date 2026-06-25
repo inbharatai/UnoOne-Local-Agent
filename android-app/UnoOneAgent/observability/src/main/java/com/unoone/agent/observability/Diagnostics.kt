@@ -27,6 +27,19 @@ object Diagnostics {
         Logger.i("Action $tool: ${if (success) "success" else "failure"}")
     }
 
+    /**
+     * Records one tool execution end-to-end: the wall-clock duration of the executor call plus the
+     * success/failure counter (via [recordActionResult]). Called from
+     * [com.unoone.agent.AgentOrchestrator.runValidatedToolCall] so every validated tool — including
+     * each step of a compound/skill — is instrumented.
+     */
+    fun recordToolExecution(tool: String, durationMs: Long, success: Boolean) {
+        metrics["tool_${tool}_last_ms"] = durationMs
+        val totalKey = "tool_${tool}_total_ms"
+        metrics[totalKey] = (metrics[totalKey] ?: 0) + durationMs
+        recordActionResult(tool, success)
+    }
+
     fun getAllMetrics(): Map<String, Long> = metrics.toMap()
 
     fun reset() {

@@ -11,7 +11,7 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * Local LLM brain for UnoOne.
  *
- * This class is a thin wrapper around [GemmaPlanner], which loads a Gemma 4
+ * This class is a thin wrapper around [GemmaPlanner], which loads a Gemma 3n E4B
  * `.litertlm` model via LiteRT-LM and performs manual tool calling.
  *
  * The old ONNX shell has been removed. RuleBasedParser remains the fast offline

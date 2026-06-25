@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Min%20SDK-28-success?style=for-the-badge" alt="Min SDK 28">
   <img src="https://img.shields.io/badge/Modules-13-0ea5e9?style=for-the-badge" alt="13 Modules">
   <img src="https://img.shields.io/badge/Voice-Sherpa--ONNX%20offline-0b7285?style=for-the-badge" alt="Sherpa-ONNX">
-  <img src="https://img.shields.io/badge/Tests-172%20passing-22c55e?style=for-the-badge" alt="172 Tests">
+  <img src="https://img.shields.io/badge/Tests-191%20passing-22c55e?style=for-the-badge" alt="191 Tests">
 </p>
 
 </div>
@@ -59,7 +59,7 @@
 | New Settings screens | ✅ Implemented | Model Status, Voice Test, Audit Viewer — reachable from Settings |
 | Gemma 3n E4B via LiteRT-LM | ✅ Implemented | `GemmaPlanner`, manual tool calling, GPU→CPU fallback, Mutex load, onTrimMemory unload + onResume reload |
 | Parser blind-aid fixes | ✅ Implemented & verified | Activation/deactivation disambiguation, negative-intent patterns |
-| Parser unit tests | ✅ 172 passing across 16 files | See [Validation Commands](#validation-commands) |
+| Parser unit tests | ✅ 191 passing across 18 files | See [Validation Commands](#validation-commands) |
 | Safety framework | ✅ Implemented | 4-tier: DIRECT, CONFIRM, STRONG_CONFIRM, BLOCK (per-step for compounds & skills) |
 | Lint | ✅ Clean | 0 new issues; 39 baselined staleness advisories; 0 StaticFieldLeak |
 
@@ -77,7 +77,7 @@
 | `:voice` | recorder, Sherpa STT/TTS (default), Android fallback (opt-in), voice service, SharedFlow routing | `VoiceModule.kt`, `VoiceService.kt`, `stt/SherpaSttEngine.kt`, `tts/SherpaTtsEngine.kt`, `stt/KeywordSpotter.kt`, `recorder/AudioRecorder.kt` |
 | `:agentrouter` | tool registry and plugin routing | `AgentRouter.kt` |
 | `:safetyguard` | 4-tier risk classification policy | `SafetyGuard.kt` |
-| `:phonecontrol` | intents, OCR, object detection, blind aid analyzer | `PhoneControl.kt`, `OcrControl.kt`, `ObjectDetectionControl.kt`, `BlindAidManager.kt` |
+| `:phonecontrol` | intents, OCR, object detection, blind aid analyzer | `PhoneControl.kt`, `OcrControl.kt`, `BlindAidManager.kt` |
 | `:memory` | preference/correction/pattern memory | `MemoryModule.kt` |
 | `:skills` | skill CRUD and trigger execution | `SkillsModule.kt` |
 | `:observability` | local diagnostics helper | `Diagnostics.kt` |
@@ -218,9 +218,9 @@ No cross-app `Intent` broadcast is used — transcribed speech never leaves the 
 | `detect_objects` (activate blind aid) | STRONG_CONFIRM | Continuous camera + microphone access requires explicit consent |
 | `deactivate_blind_aid` | DIRECT | Instant stop — no confirmation hurdles for accessibility |
 
-### Current visual limitation
+### Bounding-box overlay
 
-No Compose-rendered bounding-box overlay is drawn over the camera preview. Detection results feed haptic, tonal, and spoken channels only.
+`BlindAidManager` publishes each frame's detected objects as normalized bounding boxes (in the upright image's coordinate space) plus the upright image aspect ratio to a `StateFlow<DetectionOverlay>`. `BlindAidCameraPreview` collects it and draws a Compose `Canvas` over the live `PreviewView`, mapping each box through FILL_CENTER (center-crop) so the boxes track objects on screen. Boxes are cleared on deactivation/release. Detection results also feed haptic, tonal, and spoken channels.
 
 ---
 
@@ -323,7 +323,7 @@ Compound commands serialize as a single `steps` JSON array of `{tool, args}` obj
 
 ### Test coverage
 
-172 unit tests across 16 files. Parser-relevant tests cover: 6 activation phrases → `detect_objects`; 8 deactivation phrases → `deactivate_blind_aid`; note creation with/without colon; "remember to" stripping; compound `steps[]` (2- and 3-part); domain-specific preservation (skill steps, email, whatsapp, calendar); long press target extraction; activation/deactivation disambiguation; note deletion routing.
+191 unit tests across 18 files. Parser-relevant tests cover: 6 activation phrases → `detect_objects`; 8 deactivation phrases → `deactivate_blind_aid`; note creation with/without colon; "remember to" stripping; compound `steps[]` (2- and 3-part); domain-specific preservation (skill steps, email, whatsapp, calendar); long press target extraction; activation/deactivation disambiguation; note deletion routing; "search for X" → `open_url` Google search; compound `open chrome and search for cats`.
 
 ---
 
@@ -358,7 +358,8 @@ Compound commands serialize as a single `steps` JSON array of `{tool, args}` obj
 | `ocr_screen` | **MediaProjection** | was wrongly `SYSTEM_ALERT_WINDOW`; camera not required for screenshots |
 | `open_camera` | `CAMERA` | |
 | `detect_objects` | `CAMERA` + **Accessibility** | |
-| `voice_recording` | `RECORD_AUDIO` | (no executor branch yet — see Known Gaps) |
+| `voice_recording` | `RECORD_AUDIO` | records a memo → offline STT → saved as a note |
+| `web_search` | `None` | INTERNET is a normal manifest permission; offline-first guard in `ActionExecutor` |
 | `check_calendar` / `open_calendar_insert` | `READ_CALENDAR` / `WRITE_CALENDAR` | |
 | `open_dialer`, `share_text`, `open_url`, `open_app`, `open_chrome`, notes/skills/email/whatsapp | `None` | intent-launched or local-only |
 | `compound` | `None` | expanded into real steps before execution; checked per-step |
@@ -435,7 +436,7 @@ Installable from the **Model Status** screen or dropped in manually.
 Run from this directory (`android-app/UnoOneAgent`):
 
 ```bash
-# All unit tests (172 tests across 16 files)
+# All unit tests (191 tests across 18 files)
 ./gradlew test
 
 # Full debug APK build
@@ -478,12 +479,6 @@ These are honest, current limitations (not papered over):
 | Component | Status | Detail |
 |---|---|---|
 | Manifest model URLs + integrity fields | ✅ Done (7 languages) | `sherpa-asr-en`/`sherpa-asr-whisper`/`sherpa-tts-{en,hin,ben,tam,tel,kan,mal}`/`vad` filled with verified HF/GitHub URLs + stream-computed SHA-256/size; espeak-ng-data bundled as app asset; `gemma-local`/`punctuation` URLs only. ASR for hi/bn/ta/te/kn/ml uses shared multilingual whisper-tiny int8 (language selected at runtime); TTS uses per-language MMS VITS. Wake word (`vad`) stays English. |
-| `RAGManager` | 🔧 Scaffold | Exists but not wired into orchestrator runtime flow |
-| `Diagnostics` | 🔧 Scaffold | Helpers exist but not broadly instrumented across execution paths |
-| `ObjectDetectionControl` | 🔧 Dead code | Single-image detector never invoked (BlindAidManager is used) |
-| Bounding-box overlay | 🔧 Planned | Detection results computed but no Compose overlay drawn over camera preview |
-| `voice_recording` executor | 🔧 Missing | Tool is permission-mapped (`RECORD_AUDIO`) but has no `ActionExecutor` branch |
-| Blocking I/O in `detectModels`/`modelHealth` | ⚠️ Minor | File I/O on caller's thread (typically IO via UI VM, not enforced) |
 | `ttsState` before `initTts` | ⚠️ Minor | State reported before init fully completes |
 
 **Fully resolved** (previously listed as gaps):
@@ -504,5 +499,11 @@ These are honest, current limitations (not papered over):
 | Brain load crash-safety | ❌ Concurrent-load engine leak | ✅ Mutex load + createConversation-failure cleanup + onTrimMemory/onResume lifecycle |
 | `create_skill` result handling | ❌ Operated on `Unit?` (saveSkill returns Unit) | ✅ try/catch returning Success/Error; `steps` accepts array or `\|`-string |
 | Confirmation flow | ❌ Indefinite hang | ✅ 60s timeout + pendingCommand stash before lock release |
+| `RAGManager` / web search | 🔧 Scaffold (not wired) | ✅ Wired as safety-gated `web_search` tool (`UnoOneToolSet` + `ActionExecutor` + `SafetyGuard` CONFIRM + `ToolPermissionRegistry`); offline-first guard, never auto-opens links |
+| Bounding-box overlay | 🔧 Planned | ✅ `BlindAidManager` publishes normalized boxes + aspect ratio to a `StateFlow`; `BlindAidCameraPreview` draws a Compose `Canvas` overlay (FILL_CENTER mapping) |
+| `ObjectDetectionControl` | 🔧 Dead code | ✅ Removed; `BlindAidManager` owns its own ML Kit detector |
+| `Diagnostics` instrumentation | 🔧 Scaffold | ✅ Tool-execution latency + success/failure (orchestrator), STT/TTS latency (`VoiceModule`), model-load time (`GemmaPlanner`) |
+| `voice_recording` executor | 🔧 Missing | ✅ Declared in `UnoOneToolSet`; `ActionExecutor` records via `VoiceModule` → offline STT → note; `SafetyGuard` CONFIRM; `RECORD_AUDIO` gated by safety pipeline |
+| Blocking I/O in `detectModels`/`modelHealth` | ⚠️ Minor | ✅ Both now `suspend` and dispatch file I/O on `Dispatchers.IO` |
 
 This README is intentionally explicit about remaining gaps to keep architecture and hardware guidance accurate.

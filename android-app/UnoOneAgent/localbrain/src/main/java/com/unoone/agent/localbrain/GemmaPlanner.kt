@@ -21,7 +21,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * LiteRT-LM wrapper for Gemma 4 E2B/E4B.
+ * LiteRT-LM wrapper for Gemma 3n E4B.
  *
  * - Loads a `.litertlm` model once and keeps a reusable [Conversation].
  * - Registers [UnoOneToolSet] so Gemma can plan phone actions.
@@ -59,6 +59,7 @@ class GemmaPlanner {
      * still loads instead of hard-failing. Must be called from a coroutine (initialization is slow).
      */
     suspend fun load(modelPath: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val loadStart = System.currentTimeMillis()
         // Guard against concurrent loads: two callers could both pass the isLoaded check, both
         // close the existing engine, and both initialize — leaking one native engine.
         loadMutex.withLock {
@@ -96,6 +97,7 @@ class GemmaPlanner {
                 activeBackend = backend
                 isLoaded = true
                 Logger.i("GemmaPlanner: model loaded on $backend backend, conversation ready")
+                com.unoone.agent.observability.Diagnostics.recordModelLoadTime(System.currentTimeMillis() - loadStart)
                 Result.Success(Unit)
             } catch (e: Exception) {
                 Logger.e("GemmaPlanner: failed to load model", e)

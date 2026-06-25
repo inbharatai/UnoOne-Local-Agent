@@ -43,9 +43,9 @@ class ModelManager(
      * (if any), and match its declared SHA-256 (if any). Missing/mismatched files are reported so the
      * UI can offer a re-install.
      */
-    fun modelHealth(id: String): HealthResult {
+    suspend fun modelHealth(id: String): HealthResult = withContext(Dispatchers.IO) {
         val descriptor = findModel(id)
-            ?: return HealthResult(id, healthy = false, missing = emptyList(), sizeMismatch = emptyList(), checksumMismatch = emptyList(), "Unknown model id")
+            ?: return@withContext HealthResult(id, healthy = false, missing = emptyList(), sizeMismatch = emptyList(), checksumMismatch = emptyList(), "Unknown model id")
         val folder = File(appPrivateModelPath, descriptor.folder)
         val missing = mutableListOf<String>()
         val sizeMismatch = mutableListOf<String>()
@@ -80,7 +80,7 @@ class ModelManager(
             if (file.sha256.isNotBlank() && computeSha256(target.absolutePath) != file.sha256.lowercase()) checksumMismatch.add(file.name)
         }
         val healthy = missing.isEmpty() && sizeMismatch.isEmpty() && checksumMismatch.isEmpty()
-        return HealthResult(id, healthy, missing, sizeMismatch, checksumMismatch, if (healthy) "OK" else "Needs repair")
+        HealthResult(id, healthy, missing, sizeMismatch, checksumMismatch, if (healthy) "OK" else "Needs repair")
     }
 
     /** Downloads and verifies a model, streaming progress to [onProgress]. */
@@ -114,7 +114,7 @@ class ModelManager(
         Logger.i("ModelManager: uninstalled $id")
     }
 
-    fun detectModels(): List<ModelStatus> {
+    suspend fun detectModels(): List<ModelStatus> = withContext(Dispatchers.IO) {
         val models = mutableListOf<ModelStatus>()
         val base = File(appPrivateModelPath)
         if (!base.exists()) base.mkdirs()
@@ -166,7 +166,7 @@ class ModelManager(
         }
 
         Logger.d("Detected ${models.count { it.present }} models present out of ${models.size}")
-        return models
+        models
     }
 
     suspend fun verifyChecksum(path: String, expected: String): Boolean = withContext(Dispatchers.IO) {
@@ -227,7 +227,7 @@ class ModelManager(
     }
 
     /**
-     * Returns the absolute path of the first Gemma 4 `.litertlm` model found,
+     * Returns the absolute path of the first Gemma 3n E4B `.litertlm` model found,
      * or null if none is present.
      */
     fun getLlmModelPath(): String? {

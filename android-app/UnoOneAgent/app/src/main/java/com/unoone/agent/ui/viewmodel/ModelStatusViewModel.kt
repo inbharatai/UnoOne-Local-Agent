@@ -125,7 +125,7 @@ class ModelStatusViewModel(
 
     fun consumeResultMessage() { _resultMessage.value = null }
 
-    private fun buildRows(): List<ModelRow> {
+    private suspend fun buildRows(): List<ModelRow> {
         val manifest = modelManager.loadManifest()
         val statuses = modelManager.detectModels().associateBy { it.name } // keyed by folder
         return manifest.models.map { descriptor ->

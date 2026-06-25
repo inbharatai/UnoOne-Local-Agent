@@ -56,6 +56,11 @@ object ToolPermissionRegistry {
         // Voice capture.
         "voice_recording" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.RECORD_AUDIO)),
 
+        // Web search — online lookup via RAGManager. INTERNET is a normal (non-runtime) permission
+        // declared in the manifest, so no runtime request is needed; the offline-first guard
+        // (ConnectivityManager check) lives in ActionExecutor.
+        "web_search" to listOf(PermissionRequirement.None),
+
         // Blind aid — camera + accessibility (uses camera preview + accessibility for context).
         "detect_objects" to listOf(
             PermissionRequirement.RuntimePerm(Manifest.permission.CAMERA),

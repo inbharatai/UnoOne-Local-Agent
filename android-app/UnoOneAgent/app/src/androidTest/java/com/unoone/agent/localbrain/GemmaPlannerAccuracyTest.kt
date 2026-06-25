@@ -9,7 +9,7 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Real accuracy test for the Gemma 4 E2B brain.
+ * Real accuracy test for the Gemma 3n E4B brain.
  *
  * This test only runs when a `.litertlm` model file is present on the device.
  * It loads the model, sends a set of known commands, and verifies that the

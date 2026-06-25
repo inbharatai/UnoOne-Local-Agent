@@ -200,7 +200,9 @@ class VoiceModule(private val context: Context) {
                 ?: return Result.Error("Offline STT model not installed. Install the Sherpa ASR model or enable the system fallback in Settings.")
             val pcm = recorder.stop()
             if (pcm.isEmpty()) return Result.Error("No audio captured")
+            val sttStart = System.currentTimeMillis()
             val res = engine.transcribe(pcm)
+            com.unoone.agent.observability.Diagnostics.recordSttLatency(System.currentTimeMillis() - sttStart)
             lastSttConfidence = if (res is Result.Success) engine.lastConfidence else 0f
             res
         }
@@ -232,7 +234,10 @@ class VoiceModule(private val context: Context) {
     fun speak(text: String, languageCode: String = "en-IN"): Result<Unit> {
         val engine = ttsEngine
         if (engine != null && engine.isInitialized()) {
-            return engine.speak(text)
+            val ttsStart = System.currentTimeMillis()
+            val res = engine.speak(text)
+            com.unoone.agent.observability.Diagnostics.recordTtsLatency(System.currentTimeMillis() - ttsStart)
+            return res
         }
         // Emergency Android TTS fallback — explicitly logged, not the default production path.
         Logger.i("VoiceModule: Sherpa TTS not available, synthesizing via Android TTS fallback: '$text'")

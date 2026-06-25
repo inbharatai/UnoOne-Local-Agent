@@ -5,7 +5,7 @@ import com.google.ai.edge.litertlm.ToolParam
 import com.google.ai.edge.litertlm.ToolSet
 
 /**
- * Declares every capability UnoOne exposes to Gemma 4 via LiteRT-LM manual tool calling.
+ * Declares every capability UnoOne exposes to Gemma 3n E4B via LiteRT-LM manual tool calling.
  *
  * The function bodies are stubs: with [automaticToolCalling = false] the model only uses
  * these signatures to generate tool-call JSON. Real execution always routes through
@@ -34,6 +34,17 @@ class UnoOneToolSet : ToolSet {
     fun speak_response(
         @ToolParam(description = "Text to speak") text: String
     ): String = text
+
+    @Tool(description = "Record a short voice memo, transcribe it offline, and save it as a note")
+    fun voice_recording(
+        @ToolParam(description = "Max recording duration in seconds (1-30, default 5)") duration_seconds: Int? = null,
+        @ToolParam(description = "Optional note title; defaults to the start of the transcription") title: String? = null
+    ): String = "Voice memo recorded and saved."
+
+    @Tool(description = "Search the web for an answer (online only; returns nothing offline). Uses a privacy-respecting scrape, never auto-opens links")
+    fun web_search(
+        @ToolParam(description = "Search query") query: String
+    ): String = "Searching the web for '$query'."
 
     @Tool(description = "Open the Chrome browser")
     fun open_chrome(): String = "Chrome opened."
