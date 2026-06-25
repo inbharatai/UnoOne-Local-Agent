@@ -31,7 +31,7 @@ The `voice` module handles all audio I/O: microphone recording, Voice Activity D
 
 ```kotlin
 // In voice/build.gradle.kts
-implementation("com.github.k2-fsa:sherpa-onnx-android:1.10.0")
+implementation("com.github.k2-fsa:sherpa-onnx:v1.13.3")  // Kotlin bindings (com.k2fsa.sherpa.onnx.*)
 ```
 
 ## Step 1: Audio Recording
@@ -97,11 +97,13 @@ class SherpaSttEngine(modelPath: String) {
 }
 ```
 
-**Model files needed:**
-- `sherpa-asr/tokens.txt`
-- `sherpa-asr/encoder.onnx`
-- `sherpa-asr/decoder.onnx`
-- `sherpa-asr/joiner.onnx`
+**Model files needed (English — `sherpa-asr-en/`):**
+- `sherpa-asr-en/tokens.txt`
+- `sherpa-asr-en/encoder.onnx`
+- `sherpa-asr-en/decoder.onnx`
+- `sherpa-asr-en/joiner.onnx`
+
+> Indic languages (hi/bn/ta/te/kn/ml) use `sherpa-asr-whisper/` instead — a shared multilingual whisper-tiny int8 model extracted to `sherpa-asr-whisper/sherpa-onnx-whisper-tiny/tiny-{encoder,decoder}.int8.onnx` + `tiny-tokens.txt`, decoded one-shot via Sherpa's offline-Whisper path with the `language` field selecting the language. See `SherpaSttEngine.kt` (`SttMode.WHISPER`).
 
 **Testing:**
 - Push model via ADB.
@@ -139,9 +141,12 @@ class SherpaTtsEngine(modelPath: String) {
 - Convert FloatArray to PCM 16-bit.
 - Write to `AudioTrack` for playback.
 
-**Model files needed:**
-- `sherpa-tts/model.onnx`
-- `sherpa-tts/tokens.txt` (if applicable)
+**Model files needed (English — `sherpa-tts-en/`):**
+- `sherpa-tts-en/model.onnx`
+- `sherpa-tts-en/tokens.txt`
+- `sherpa-tts-en/espeak-ng-data/` (phoneme table, bundled as an app asset)
+
+> Indic languages use `sherpa-tts-hin/` (and `-ben`/`-tam`/`-tel`/`-kan`/`-mal`) — MMS VITS `model.onnx` + `tokens.txt` each, character frontend (no espeak). `SherpaTtsEngine` auto-detects the frontend from the presence of `espeak-ng-data/`.
 
 **Testing:**
 - Tap TTS test in Settings.

@@ -25,8 +25,10 @@ echo
 # 2. Create directories
 echo "[2/8] Creating model directories on device..."
 adb shell mkdir -p "${DEVICE_MODEL_PATH}/gemma-local"
-adb shell mkdir -p "${DEVICE_MODEL_PATH}/sherpa-asr"
-adb shell mkdir -p "${DEVICE_MODEL_PATH}/sherpa-tts"
+adb shell mkdir -p "${DEVICE_MODEL_PATH}/sherpa-asr-en"
+adb shell mkdir -p "${DEVICE_MODEL_PATH}/sherpa-asr-whisper"
+adb shell mkdir -p "${DEVICE_MODEL_PATH}/sherpa-tts-en"
+for L in hin ben tam tel kan mal; do adb shell mkdir -p "${DEVICE_MODEL_PATH}/sherpa-tts-${L}"; done
 adb shell mkdir -p "${DEVICE_MODEL_PATH}/vad"
 adb shell mkdir -p "${DEVICE_MODEL_PATH}/punctuation"
 adb shell mkdir -p "${DEVICE_MODEL_PATH}/ocr-optional"
@@ -43,24 +45,36 @@ else
 fi
 echo
 
-# 4. Push Sherpa ASR
-echo "[4/8] Pushing Sherpa ASR model..."
-if [ -d "${LOCAL_MODELS_ROOT}/sherpa-asr" ]; then
-    adb push "${LOCAL_MODELS_ROOT}/sherpa-asr" "${DEVICE_MODEL_PATH}/sherpa-asr"
-    echo "OK: ASR pushed."
+# 4. Push Sherpa ASR (English transducer + shared Indic whisper)
+echo "[4/8] Pushing Sherpa ASR models..."
+if [ -d "${LOCAL_MODELS_ROOT}/sherpa-asr-en" ]; then
+    adb push "${LOCAL_MODELS_ROOT}/sherpa-asr-en" "${DEVICE_MODEL_PATH}/sherpa-asr-en"
+    echo "OK: English ASR pushed."
 else
-    echo "WARN: sherpa-asr folder not found locally. Skipping."
+    echo "WARN: sherpa-asr-en folder not found locally. Skipping."
+fi
+if [ -d "${LOCAL_MODELS_ROOT}/sherpa-asr-whisper" ]; then
+    adb push "${LOCAL_MODELS_ROOT}/sherpa-asr-whisper" "${DEVICE_MODEL_PATH}/sherpa-asr-whisper"
+    echo "OK: Indic ASR (whisper-tiny) pushed."
+else
+    echo "WARN: sherpa-asr-whisper folder not found locally. Skipping."
 fi
 echo
 
-# 5. Push Sherpa TTS
-echo "[5/8] Pushing Sherpa TTS model..."
-if [ -d "${LOCAL_MODELS_ROOT}/sherpa-tts" ]; then
-    adb push "${LOCAL_MODELS_ROOT}/sherpa-tts" "${DEVICE_MODEL_PATH}/sherpa-tts"
-    echo "OK: TTS pushed."
+# 5. Push Sherpa TTS (English Coqui + per-language MMS)
+echo "[5/8] Pushing Sherpa TTS models..."
+if [ -d "${LOCAL_MODELS_ROOT}/sherpa-tts-en" ]; then
+    adb push "${LOCAL_MODELS_ROOT}/sherpa-tts-en" "${DEVICE_MODEL_PATH}/sherpa-tts-en"
+    echo "OK: English TTS pushed."
 else
-    echo "WARN: sherpa-tts folder not found locally. Skipping."
+    echo "WARN: sherpa-tts-en folder not found locally. Skipping."
 fi
+for L in hin ben tam tel kan mal; do
+    if [ -d "${LOCAL_MODELS_ROOT}/sherpa-tts-${L}" ]; then
+        adb push "${LOCAL_MODELS_ROOT}/sherpa-tts-${L}" "${DEVICE_MODEL_PATH}/sherpa-tts-${L}"
+        echo "OK: TTS ${L} pushed."
+    fi
+done
 echo
 
 # 6. Push VAD

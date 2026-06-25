@@ -36,9 +36,11 @@ harmless (Gradle deduplicates), but the AAR takes precedence on the compile clas
 The AAR provides the native runtime only. The actual model files go in the device's
 `Android/data/com.unoone.agent/files/models/`:
 
-- `sherpa-asr/` — `encoder.onnx`, `decoder.onnx`, `joiner.onnx`, `tokens.txt` (transducer ASR)
-- `sherpa-tts/` — `model.onnx`, `tokens.txt`, `espeak-ng-data/` (VITS TTS)
-- `vad/` — `encoder.onnx`, `decoder.onnx`, `joiner.onnx`, `tokens.txt` (online transducer KWS)
+- `sherpa-asr-en/` — `encoder.onnx`, `decoder.onnx`, `joiner.onnx`, `tokens.txt` (English streaming zipformer transducer ASR, int8)
+- `sherpa-asr-whisper/` — `sherpa-onnx-whisper-tiny/tiny-encoder.int8.onnx`, `tiny-decoder.int8.onnx`, `tiny-tokens.txt` (multilingual whisper-tiny int8 ASR, shared by hi/bn/ta/te/kn/ml — the `language` field selects the language)
+- `sherpa-tts-en/` — `model.onnx`, `tokens.txt`, `espeak-ng-data/` (Coqui VITS TTS, English, espeak frontend)
+- `sherpa-tts-hin/` / `sherpa-tts-ben/` / `sherpa-tts-tam/` / `sherpa-tts-tel/` / `sherpa-tts-kan/` / `sherpa-tts-mal/` — `model.onnx`, `tokens.txt` each (MMS VITS TTS, character frontend, no espeak)
+- `vad/` — `encoder.onnx`, `decoder.onnx`, `joiner.onnx`, `tokens.txt` (English online transducer KWS / wake-word — always English; no Indic KWS model exists)
 
 Download models from the sherpa-onnx model zoo. The app's **Model Status** screen verifies each
 file's SHA-256 against `models_manifest.json` and reports health/missing state.

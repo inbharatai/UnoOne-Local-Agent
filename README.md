@@ -577,7 +577,7 @@ UnoOne-Local-Agent/
 | Enriched ContextSnapshot | ✅ Implemented | recent notes/skills/OCR/recent-commands/last-result/userMemory |
 | Unit tests | ✅ 172 passing | 16 test files: parser, safety, skills, compounds, permissions, manifest/installer, prompt, primitives |
 | Lint | ✅ Clean | 0 new issues; 39 baselined staleness advisories; 0 StaticFieldLeak |
-| Manifest model URLs + integrity fields | ✅ Done (English) | sherpa-asr/tts/vad filled with verified HF URLs + SHA-256/size; espeak-ng-data bundled as app asset; gemma-local/punctuation URLs only |
+| Manifest model URLs + integrity fields | ✅ Done (7 languages) | `sherpa-asr-en`/`sherpa-asr-whisper`/`sherpa-tts-{en,hin,ben,tam,tel,kan,mal}`/`vad` filled with verified HF/GitHub URLs + stream-computed SHA-256/size; espeak-ng-data bundled as app asset; `gemma-local`/`punctuation` URLs only. ASR for hi/bn/ta/te/kn/ml uses shared multilingual whisper-tiny int8; TTS uses per-language MMS VITS. Wake word (`vad`) stays English |
 | RAG integration | 🔧 Scaffold | `RAGManager` exists, not wired into runtime |
 | Custom bounding-box overlay | 🔧 Planned | Detection results computed but no Compose overlay drawn |
 
@@ -617,7 +617,7 @@ adb push /path/to/gemma-3n-e4b.litertlm \
 ### What requires a real model + device
 
 - End-to-end Gemma inference accuracy (which tool the model chooses for a given command) is tested by `GemmaPlannerAccuracyTest`, an instrumented test that loads the first `.litertlm` file it finds and runs real commands through LiteRT-LM. It skips automatically if no model is present.
-- Real Sherpa STT/TTS inference requires the matching Sherpa models under `models/sherpa-asr/`, `sherpa-tts/`, `vad/` (installable from the Model Status screen or dropped in manually).
+- Real Sherpa STT/TTS inference requires the matching Sherpa models under `models/` — `sherpa-asr-en` (English) or `sherpa-asr-whisper` (Indic, shared multilingual whisper-tiny), `sherpa-tts-en` (English) or `sherpa-tts-<hin|ben|tam|tel|kan|mal>` (Indic MMS), and `vad/` (English wake-word) — installable from the Model Status screen or dropped in manually. The active STT/TTS language is chosen in Settings → Voice language.
 - Real screenshot OCR requires granting MediaProjection once via the transparent `ScreenshotPermissionActivity`.
 
 ---

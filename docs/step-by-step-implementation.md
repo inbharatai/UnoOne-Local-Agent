@@ -45,14 +45,14 @@
 
 1. Download Sherpa-ONNX ASR model (e.g., Whisper tiny) from:
    `https://github.com/k2-fsa/sherpa-onnx/releases`
-2. Download Sherpa-ONNX TTS model (e.g., Piper en_US-lessac-medium).
-3. Place them in `models/sherpa-asr/` and `models/sherpa-tts/`.
+2. Download Sherpa-ONNX TTS model (e.g., Coqui en-ljspeech VITS for English, or MMS VITS for Indic languages).
+3. Place them in the per-language model folders: `models/sherpa-asr-en/` (English ASR) or `models/sherpa-asr-whisper/` (Indic ASR), and `models/sherpa-tts-en/` (English TTS) or `models/sherpa-tts-hin/` (Indic TTS — also `-ben`/`-tam`/`-tel`/`-kan`/`-mal`). See `models_manifest.json` for the exact files each folder expects.
 4. Run `scripts/adb-push-models/push-models.bat`.
 5. Add Sherpa-ONNX AAR to `voice/build.gradle.kts`:
    ```kotlin
-   implementation("com.github.k2-fsa:sherpa-onnx-android:1.10.0")
+   implementation("com.github.k2-fsa:sherpa-onnx:v1.13.3")
    ```
-6. Uncomment the JNI calls in `SherpaSttEngine.kt` and `SherpaTtsEngine.kt`.
+6. The Kotlin bindings (`com.k2fsa.sherpa.onnx.*`) are already wired in `SherpaSttEngine.kt` and `SherpaTtsEngine.kt` — no JNI code to uncomment.
 7. Rebuild and test voice commands.
 
 ### Option C: Add Gemma local LLM for real inference

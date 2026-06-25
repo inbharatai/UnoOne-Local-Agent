@@ -65,17 +65,20 @@
 
 ## Step 5: Push Models (Optional)
 1. Download Sherpa ASR + TTS models.
-2. Place them in:
+2. Place them in (per-language folders):
    ```
-   models/sherpa-asr/
-   models/sherpa-tts/
+   models/sherpa-asr-en/        # English ASR (streaming zipformer transducer int8)
+   models/sherpa-asr-whisper/   # Indic ASR (multilingual whisper-tiny int8; shared by hi/bn/ta/te/kn/ml)
+   models/sherpa-tts-en/        # English TTS (Coqui VITS + espeak-ng-data)
+   models/sherpa-tts-hin/       # Hindi TTS (MMS VITS) — also -ben/-tam/-tel/-kan/-mal
+   models/vad/                  # English wake-word (keyword spotter)
    ```
 3. Run:
    ```powershell
    .\scripts\adb-push-models\push-models.bat
    ```
 4. In the app, go to **Settings** → refresh.
-5. Models should show as **Present**.
+5. Models should show as **Present**. Pick the active STT/TTS language in **Settings → Voice language**.
 
 ## Troubleshooting
 

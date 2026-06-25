@@ -14,7 +14,7 @@
 | 2 | `core` | **DONE** | Result, ToolCall, TimelineStep, RiskLevel, Logger |
 | 3 | `storage` | **DONE** | Room DB with 5 entities, 5 DAOs, migrations ready |
 | 4 | `modelmanager` | **DONE** | Model detection, checksum verification, storage usage |
-| 5 | `localbrain` | **DONE** | RuleBasedParser, PromptBuilder, GemmaPlanner (LiteRT-LM + Gemma 4 E2B), LocalBrain wrapper, manual tool calling |
+| 5 | `localbrain` | **DONE** | RuleBasedParser, PromptBuilder, GemmaPlanner (LiteRT-LM + Gemma 3n E4B), LocalBrain wrapper, manual tool calling |
 | 6 | `voice` | **DONE** | SherpaSttEngine, SherpaTtsEngine, KeywordSpotterEngine, AudioRecorder, AndroidSttEngine fallback |
 | 7 | `agentrouter` | **DONE** | Tool registry, 10+ built-in tools |
 | 8 | `safetyguard` | **DONE** | 4-tier risk classifier with confirmation dialogs |
@@ -46,9 +46,9 @@
 - "Morning" → triggers saved skill
 
 ### Voice Input (with models pushed)
-- Sherpa-ONNX STT for offline transcription
-- Sherpa-ONNX Piper TTS for offline speech output
-- Keyword spotting for "UnoOne" wake word
+- Sherpa-ONNX STT for offline transcription (English streaming transducer; Indic whisper-tiny int8)
+- Sherpa-ONNX VITS TTS for offline speech output (English Coqui; Indic MMS — 7 languages total)
+- Keyword spotting for "UnoOne" wake word (English)
 - Android SpeechRecognizer fallback (requires internet)
 
 ### UI
@@ -82,10 +82,12 @@
 
 | Feature | Model Needed | Size | Push Command |
 |---------|-------------|------|-------------|
-| Offline STT | Sherpa-ONNX ASR | ~70 MB | `adb push models/sherpa-asr/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-asr/` |
-| Offline TTS | Piper TTS | ~30-60 MB | `adb push models/sherpa-tts/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-tts/` |
-| Wake word | Keyword spotter | ~10-30 MB | `adb push models/vad/ /sdcard/Android/data/com.unoone.agent/files/models/vad/` |
-| LLM inference | Gemma 4 E2B `.litertlm` | ~2-5 GB | `adb push /path/to/gemma-4-e2b-it.litertlm /sdcard/Android/data/com.unoone.agent/files/models/gemma-local/` |
+| Offline STT (English) | Sherpa streaming-zipformer transducer int8 | ~70 MB | `adb push models/sherpa-asr-en/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-asr-en/` |
+| Offline STT (Indic: hi/bn/ta/te/kn/ml) | Sherpa whisper-tiny int8 (shared, multilingual) | ~111 MB | `adb push models/sherpa-asr-whisper/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-asr-whisper/` |
+| Offline TTS (English) | Sherpa VITS Coqui en-ljspeech + espeak-ng-data | ~110 MB | `adb push models/sherpa-tts-en/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-tts-en/` |
+| Offline TTS (Indic, per language) | Sherpa MMS VITS (one per language) | ~109 MB each | `adb push models/sherpa-tts-hin/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-tts-hin/` (and `-ben`/`-tam`/`-tel`/`-kan`/`-mal`) |
+| Wake word | Keyword spotter (English) | ~70 MB | `adb push models/vad/ /sdcard/Android/data/com.unoone.agent/files/models/vad/` |
+| LLM inference | Gemma 3n E4B `.litertlm` | ~2-5 GB | `adb push /path/to/gemma-3n-e4b.litertlm /sdcard/Android/data/com.unoone.agent/files/models/gemma-local/` |
 
 Without models: STT falls back to Android SpeechRecognizer (needs internet), command parsing uses RuleBasedParser (works offline), no TTS output, no Gemma planning.
 
@@ -102,7 +104,7 @@ Without models: STT falls back to Android SpeechRecognizer (needs internet), com
 | 5 | Phone setup test | **DONE** |
 | 6 | Sherpa STT wrapper | **DONE** |
 | 7 | Sherpa TTS wrapper | **DONE** |
-| 8 | LocalBrain (rule-based + Gemma 4 E2B via LiteRT-LM) | **DONE** |
+| 8 | LocalBrain (rule-based + Gemma 3n E4B via LiteRT-LM) | **DONE** |
 | 9 | ToolRouter | **DONE** |
 | 10 | SafetyGuard | **DONE** |
 | 11 | First tools (notes, Chrome, etc.) | **DONE** |
@@ -126,8 +128,8 @@ Without models: STT falls back to Android SpeechRecognizer (needs internet), com
 
 ## Known Limitations
 
-1. **Gemma 4 E2B brain** is implemented via LiteRT-LM, but the `.litertlm` model file must be pushed manually. RuleBasedParser remains the fast offline fallback.
-2. **Sherpa-ONNX models** must be manually pushed via ADB — no in-app download yet.
+1. **Gemma 3n E4B brain** is implemented via LiteRT-LM, but the `.litertlm` model file must be pushed manually. RuleBasedParser remains the fast offline fallback.
+2. **Sherpa-ONNX models** install in-app from `models_manifest.json` (verified URLs + SHA-256; the Model Status screen downloads and integrity-checks them) or can be pushed manually via ADB.
 3. **Screenshot OCR** uses MediaProjection and requires a one-time user grant via a transparent permission activity.
 4. **Skills screen** does not yet have a drag-and-drop step editor — steps are entered as text in a dialog.
 
@@ -135,7 +137,7 @@ Without models: STT falls back to Android SpeechRecognizer (needs internet), com
 
 ## Next Steps
 
-1. Push Sherpa models and a Gemma 4 E2B `.litertlm` model to Xiaomi 14 and test the full voice + agent pipeline end-to-end.
+1. Push Sherpa models and a Gemma 3n E4B `.litertlm` model to Xiaomi 14 and test the full voice + agent pipeline end-to-end (7 languages: English + Hindi/Bengali/Tamil/Telugu/Kannada/Malayalam).
 2. Verify Gemma-generated tool calls are correctly parsed, safety-classified, and executed.
 3. Build drag-and-drop skill editor UI.
 4. Test full flow on multiple devices (Xiaomi 14, Samsung Galaxy S24, Pixel 8) with all permissions granted.
