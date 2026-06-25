@@ -175,7 +175,7 @@ No cross-app `Intent` broadcast is used — transcribed speech never leaves the 
 - `detectModels()` merges manifest info into `ModelStatus` (version, expected vs actual size/checksum, `healthy`)
 - `getLlmModelPath()` finds the first `.litertlm`
 
-**⚠️ Manifest caveat:** `sherpa-asr`/`sherpa-tts`/`vad` currently point at **Chinese** model artifacts while declaring `defaultLanguage: "en"`, and every file has empty `sha256`/`sizeBytes`. Integrity verification is a no-op until real hashes/sizes are filled (empty-file + HTTP-completeness guards still catch truncation). Repoint to English Sherpa variants + fill hashes before an English-first ship. The Model Status screen surfaces all of this in the UI.
+**⚠️ Manifest caveat:** `sherpa-asr`/`sherpa-tts`/`vad` ship with their download URLs left **blank** (user-supplied), and every file has empty `sha256`/`sizeBytes`. Integrity verification is a no-op until real hashes/sizes are filled (empty-file + HTTP-completeness guards still catch truncation). Point the descriptors at the Sherpa model variants you want to ship + fill hashes before shipping. The Model Status screen surfaces all of this in the UI.
 
 ---
 
@@ -472,7 +472,7 @@ These are honest, current limitations (not papered over):
 
 | Component | Status | Detail |
 |---|---|---|
-| Manifest English models + integrity fields | ⚠️ Action required | `sherpa-asr`/`sherpa-tts`/`vad` point at Chinese models; all `sha256`/`sizeBytes` empty. Repoint + fill before English-first ship. |
+| Manifest model URLs + integrity fields | ⚠️ Action required | `sherpa-asr`/`sherpa-tts`/`vad` URLs left blank (user-supplied); all `sha256`/`sizeBytes` empty. Point at the Sherpa variants you want to ship + fill before shipping. |
 | `RAGManager` | 🔧 Scaffold | Exists but not wired into orchestrator runtime flow |
 | `Diagnostics` | 🔧 Scaffold | Helpers exist but not broadly instrumented across execution paths |
 | `ObjectDetectionControl` | 🔧 Dead code | Single-image detector never invoked (BlindAidManager is used) |

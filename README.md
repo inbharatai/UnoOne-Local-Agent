@@ -194,12 +194,12 @@ Real, dependency-free (plain `HttpURLConnection`):
 - `detectModels()` — merges manifest info (version, expected vs actual size/checksum, health) into `ModelStatus`
 - `getLlmModelPath()` — finds the first `.litertlm` under `gemma-local/`
 
-### ⚠️ Honest manifest caveat (action required for an English-first build)
+### ⚠️ Honest manifest caveat (action required before shipping)
 
-The shipped manifest points `sherpa-asr`, `sherpa-tts`, and `vad` at **Chinese** model artifacts (`multi-zh-hans`, `vits-zh-hf-fem`, `kws-zh`) while declaring `defaultLanguage: "en"`, and every file ships with `sha256=""` / `sizeBytes: 0`. Consequences:
+The shipped manifest leaves the `sherpa-asr`, `sherpa-tts`, and `vad` download URLs **blank** (user-supplied), and every file ships with `sha256=""` / `sizeBytes: 0`. Consequences:
 
 - **Integrity verification is effectively a no-op** until real SHA-256 hashes + sizes are filled in (mitigated by the empty-file and HTTP-completeness guards, so truncated downloads are still caught — but a *wrong* valid file wouldn't be).
-- **Offline English speech is not real yet** until those three descriptors are repointed at English Sherpa model variants.
+- **Offline speech is not installable from the manifest yet** — point those three descriptors at the Sherpa model variants you want to ship (URLs + hashes/sizes) and the installer will fetch and verify them.
 
 This is a content/configuration task (real model URLs + hashes), not a code task — the installer and health system are real and will enforce integrity the moment the fields are populated. Do not ship to end-users without filling these in.
 
@@ -423,7 +423,7 @@ A **single source of truth** — `core/safety/ToolPermissionRegistry` — is con
 
 The offline speech language is determined by **which Sherpa model is installed**, not a hard-coded locale list:
 
-- **Offline STT/TTS language = the installed `sherpa-asr` / `sherpa-tts` model's language.** The shipped manifest currently points those at **Chinese** artifacts (see the manifest caveat above); for an English-first experience, repoint the descriptors at English Sherpa model variants and fill in their hashes/sizes.
+- **Offline STT/TTS language = the installed `sherpa-asr` / `sherpa-tts` model's language.** The shipped manifest leaves those download URLs blank (see the manifest caveat above); point the descriptors at the Sherpa model variants for the language you want to ship and fill in their hashes/sizes.
 - **Punctuation model** (`punctuation`) is English.
 - **Emergency Android fallback**, when opted in, follows the device's system locales (commonly `en-IN`, `hi-IN`, `ta-IN`, `te-IN`, `kn-IN`, `ml-IN`, `bn-IN`).
 - **Gemma 3n E4B** is multilingual for planning; the system/user prompts are English-oriented.
@@ -553,7 +553,7 @@ UnoOne-Local-Agent/
 | Enriched ContextSnapshot | ✅ Implemented | recent notes/skills/OCR/recent-commands/last-result/userMemory |
 | Unit tests | ✅ 172 passing | 16 test files: parser, safety, skills, compounds, permissions, manifest/installer, prompt, primitives |
 | Lint | ✅ Clean | 0 new issues; 39 baselined staleness advisories; 0 StaticFieldLeak |
-| Manifest English models + integrity fields | ⚠️ Action required | sherpa-asr/tts/vad point at Chinese models; all sha256/sizeBytes empty |
+| Manifest model URLs + integrity fields | ⚠️ Action required | sherpa-asr/tts/vad URLs left blank (user-supplied); all sha256/sizeBytes empty |
 | RAG integration | 🔧 Scaffold | `RAGManager` exists, not wired into runtime |
 | Custom bounding-box overlay | 🔧 Planned | Detection results computed but no Compose overlay drawn |
 
@@ -604,7 +604,7 @@ Honest, current limitations (not papered over):
 
 | Gap | Detail |
 |---|---|
-| **Manifest English models + integrity fields** | `sherpa-asr`/`sherpa-tts`/`vad` ship pointing at Chinese models with empty `sha256`/`sizeBytes`. Repoint to English variants + fill hashes/sizes before an English-first offline ship. Installer/health code is real and will enforce integrity once populated. |
+| **Manifest model URLs + integrity fields** | `sherpa-asr`/`sherpa-tts`/`vad` ship with download URLs left blank (user-supplied) and empty `sha256`/`sizeBytes`. Point the descriptors at the Sherpa model variants you want to ship + fill hashes/sizes before shipping. Installer/health code is real and will enforce integrity once populated. |
 | **RAG not wired** | `RAGManager` exists but is not wired into the orchestrator runtime flow. |
 | **Bounding-box overlay** | Detection results are computed but no Compose overlay is drawn over the camera preview. |
 | **`ObjectDetectionControl`** | Single-image detector is dead code — `BlindAidManager` is used instead. |
