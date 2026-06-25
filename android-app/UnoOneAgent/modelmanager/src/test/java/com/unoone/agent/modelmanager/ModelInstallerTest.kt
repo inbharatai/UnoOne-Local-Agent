@@ -9,6 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.BufferedReader
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
@@ -203,6 +204,108 @@ class ModelInstallerTest {
         assertTrue(result is ModelInstaller.InstallResult.Success)
         assertArrayEquals(content, File(modelDir, "m/done.bin").readBytes())
         assertFalse(File(modelDir, "m/done.bin.part").exists())
+    }
+
+    @Test
+    fun installsArchiveFromAssetAndExtracts() {
+        // An asset-backed archive (espeak-ng-data.zip pattern): copied from the asset reader, then
+        // extracted into the model folder, then the zip deleted. No HTTP server is started — if the
+        // asset path weren't used the test would fail to find the bytes.
+        val zipBytes = ByteArrayOutputStream().also { baos ->
+            ZipOutputStream(baos).use { zos ->
+                zos.putNextEntry(ZipEntry("espeak-ng-data/af_dict"))
+                zos.write("af-data".toByteArray())
+                zos.closeEntry()
+                zos.putNextEntry(ZipEntry("espeak-ng-data/phondata"))
+                zos.write("phon".toByteArray())
+                zos.closeEntry()
+            }
+        }.toByteArray()
+        val assets = mapOf("espeak-ng-data.zip" to zipBytes)
+        val assetInstaller = ModelInstaller(modelDir, dao = null) { name ->
+            assets[name]?.let { ByteArrayInputStream(it) }
+        }
+        val descriptor = ModelDescriptor(
+            id = "tts", folder = "tts", type = ModelType.tts, version = "v",
+            minRamMb = 0, backend = ModelBackend.cpu, defaultLanguage = "en",
+            files = listOf(
+                ModelFile(
+                    "espeak-ng-data.zip", url = "", sha256 = "", sizeBytes = zipBytes.size.toLong(),
+                    archive = true, asset = "espeak-ng-data.zip"
+                )
+            )
+        )
+        val result = runBlocking { assetInstaller.install(descriptor) }
+        assertTrue(result is ModelInstaller.InstallResult.Success)
+        // Archive deleted after extraction.
+        assertFalse(File(modelDir, "tts/espeak-ng-data.zip").exists())
+        // Extracted directory present with contents (rooted at espeak-ng-data/).
+        assertTrue(File(modelDir, "tts/espeak-ng-data").isDirectory)
+        assertEquals("af-data", File(modelDir, "tts/espeak-ng-data/af_dict").readText())
+        assertEquals("phon", File(modelDir, "tts/espeak-ng-data/phondata").readText())
+    }
+
+    @Test
+    fun installsPlainFileFromAssetWithChecksum() {
+        val content = "asset payload".toByteArray()
+        val sha = sha256(content)
+        val assets = mapOf("payload.bin" to content)
+        val assetInstaller = ModelInstaller(modelDir, dao = null) { name ->
+            assets[name]?.let { ByteArrayInputStream(it) }
+        }
+        val descriptor = ModelDescriptor(
+            id = "m", folder = "m", type = ModelType.llm, version = "v",
+            minRamMb = 0, backend = ModelBackend.cpu, defaultLanguage = "en",
+            files = listOf(
+                ModelFile(
+                    "payload.bin", url = "", sha256 = sha, sizeBytes = content.size.toLong(),
+                    archive = false, asset = "payload.bin"
+                )
+            )
+        )
+        val result = runBlocking { assetInstaller.install(descriptor) }
+        assertTrue(result is ModelInstaller.InstallResult.Success)
+        assertArrayEquals(content, File(modelDir, "m/payload.bin").readBytes())
+    }
+
+    @Test
+    fun failsWhenAssetMissing() {
+        // An asset-backed file whose asset is absent must fail cleanly (not crash, not silently skip).
+        val assetInstaller = ModelInstaller(modelDir, dao = null) { _ -> null }
+        val descriptor = ModelDescriptor(
+            id = "m", folder = "m", type = ModelType.llm, version = "v",
+            minRamMb = 0, backend = ModelBackend.cpu, defaultLanguage = "en",
+            files = listOf(
+                ModelFile("payload.bin", url = "", sha256 = "", sizeBytes = 0, archive = false, asset = "payload.bin")
+            )
+        )
+        val result = runBlocking { assetInstaller.install(descriptor) }
+        assertTrue(result is ModelInstaller.InstallResult.Failure)
+        assertFalse(File(modelDir, "m/payload.bin").exists())
+    }
+
+    @Test
+    fun skipsAssetArchiveWhenAlreadyExtracted() {
+        // Idempotent: a previously extracted archive directory means no asset copy is needed and the
+        // asset reader is never invoked.
+        File(modelDir, "tts/espeak-ng-data").mkdirs()
+        File(modelDir, "tts/espeak-ng-data/phondata").writeText("already")
+        var reads = 0
+        val assetInstaller = ModelInstaller(modelDir, dao = null) { _ ->
+            reads++
+            ByteArrayInputStream("should-not-be-used".toByteArray())
+        }
+        val descriptor = ModelDescriptor(
+            id = "tts", folder = "tts", type = ModelType.tts, version = "v",
+            minRamMb = 0, backend = ModelBackend.cpu, defaultLanguage = "en",
+            files = listOf(
+                ModelFile("espeak-ng-data.zip", url = "", sha256 = "", sizeBytes = 0, archive = true, asset = "espeak-ng-data.zip")
+            )
+        )
+        val result = runBlocking { assetInstaller.install(descriptor) }
+        assertTrue(result is ModelInstaller.InstallResult.Success)
+        assertEquals(0, reads) // asset reader never invoked
+        assertEquals("already", File(modelDir, "tts/espeak-ng-data/phondata").readText())
     }
 
     // ---- helpers ----

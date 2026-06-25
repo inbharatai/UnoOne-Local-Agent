@@ -15,7 +15,13 @@ class ModelManager(
 ) {
 
     private val manifestLoader = ModelManifestLoader()
-    private val installer: ModelInstaller by lazy { ModelInstaller(appPrivateModelPath, modelMetadataDao) }
+    private val installer: ModelInstaller by lazy {
+        ModelInstaller(appPrivateModelPath, modelMetadataDao) { name ->
+            // Resolves a bundled asset; null (not an exception) when absent so the installer can
+            // emit a clear "asset not found" failure instead of crashing on install.
+            runCatching { context.assets.open(name) }.getOrNull()
+        }
+    }
 
     private val modelBasePath: String
         get() = Environment.getExternalStorageDirectory()
@@ -45,6 +51,16 @@ class ModelManager(
         val sizeMismatch = mutableListOf<String>()
         val checksumMismatch = mutableListOf<String>()
         for (file in descriptor.files) {
+            // Archives are deleted after extraction, so health verifies the extracted directory
+            // (by the `<dir>.zip` → `<dir>/` convention) rather than the zip file itself. Without
+            // this, a successfully installed archive would always be reported missing.
+            if (file.archive) {
+                val extracted = File(folder, file.name.substringBeforeLast('.'))
+                if (!extracted.exists() || !extracted.isDirectory || extracted.listFiles().isNullOrEmpty()) {
+                    missing.add(file.name)
+                }
+                continue
+            }
             val target = File(folder, file.name)
             if (!target.exists()) {
                 missing.add(file.name)

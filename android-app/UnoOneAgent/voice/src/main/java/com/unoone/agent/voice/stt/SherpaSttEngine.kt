@@ -2,10 +2,11 @@ package com.unoone.agent.voice.stt
 
 import android.content.Context
 import com.k2fsa.sherpa.onnx.FeatureConfig
-import com.k2fsa.sherpa.onnx.OfflineModelConfig
-import com.k2fsa.sherpa.onnx.OfflineRecognizer
-import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
-import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
+import com.k2fsa.sherpa.onnx.OnlineModelConfig
+import com.k2fsa.sherpa.onnx.OnlineRecognizer
+import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OnlineStream
+import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
 import java.io.File
@@ -13,7 +14,16 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Production offline STT using Sherpa-ONNX (transducer models: encoder/decoder/joiner + tokens).
+ * Production offline STT using Sherpa-ONNX **streaming** transducer models
+ * (encoder/decoder/joiner + tokens).
+ *
+ * Uses the Online (streaming) recognizer rather than the Offline one because the only public,
+ * ungated English transducer on Hugging Face is the streaming zipformer int8
+ * (`csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26`). The offline English transducer
+ * repos are gated. A streaming recognizer fed a whole utterance at once and drained with
+ * `while (isReady) decode` behaves as a single-shot transcriber and preserves this engine's
+ * `transcribe(pcmBytes) -> Result<String>` contract. The wake-word [KeywordSpotterEngine] uses the
+ * same Online model family, so STT and KWS share one model install.
  *
  * Real direct-API implementation (no reflection). The native AAR is pulled in via the
  * `com.github.k2-fsa:sherpa-onnx` Maven coordinate declared in :voice/build.gradle.kts, or a
@@ -24,12 +34,12 @@ import java.nio.ByteOrder
 class SherpaSttEngine(private val context: Context, private val modelDir: String) {
 
     @Volatile
-    private var recognizer: OfflineRecognizer? = null
+    private var recognizer: OnlineRecognizer? = null
     @Volatile
     private var initialized = false
 
     /**
-     * Best-effort confidence for the last transcription. Sherpa offline transducer results do not
+     * Best-effort confidence for the last transcription. Sherpa streaming transducer results do not
      * expose a confidence score, so this is 1.0 when text is produced and 0.0 when empty — enough
      * to drive the orchestrator's low-confidence retry prompt.
      */
@@ -50,8 +60,8 @@ class SherpaSttEngine(private val context: Context, private val modelDir: String
                 return Result.Error("Sherpa STT model files missing. Please download models to: $modelDir")
             }
 
-            val offlineModelConfig = OfflineModelConfig().apply {
-                transducer = OfflineTransducerModelConfig(
+            val onlineModelConfig = OnlineModelConfig().apply {
+                transducer = OnlineTransducerModelConfig(
                     encoder.absolutePath,
                     decoder.absolutePath,
                     joiner.absolutePath
@@ -60,14 +70,17 @@ class SherpaSttEngine(private val context: Context, private val modelDir: String
                 numThreads = 4
             }
 
-            val config = OfflineRecognizerConfig().apply {
+            val config = OnlineRecognizerConfig().apply {
                 featConfig = FeatureConfig(16000, 80, 0f)
-                this.modelConfig = offlineModelConfig
+                this.modelConfig = onlineModelConfig
+                // We transcribe whole utterances, not a live mic feed, so endpoint detection is not
+                // useful here; disable it so the recognizer does not cut off mid-utterance.
+                enableEndpoint = false
             }
 
-            recognizer = OfflineRecognizer(context.assets, config)
+            recognizer = OnlineRecognizer(context.assets, config)
             initialized = true
-            Logger.i("SherpaSttEngine: Offline STT initialized (transducer, 4 threads)")
+            Logger.i("SherpaSttEngine: Online STT initialized (streaming transducer, 4 threads)")
             Result.Success(Unit)
         } catch (e: Throwable) {
             // UnsatisfiedLinkError (native .so missing/incompatible) is an Error, not Exception.
@@ -89,12 +102,17 @@ class SherpaSttEngine(private val context: Context, private val modelDir: String
             return Result.Error("No audio captured")
         }
 
-        var stream: com.k2fsa.sherpa.onnx.OfflineStream? = null
+        var stream: OnlineStream? = null
         return try {
             val samples = pcmToFloat(pcmBytes)
             stream = rec.createStream()
             stream.acceptWaveform(samples, 16000)
-            rec.decode(stream)
+            // Drain the streaming decoder: feed the whole utterance at once, then keep decoding
+            // while frames remain queued. This turns the streaming recognizer into a single-shot
+            // transcriber (equivalent to offline decoding) for a complete captured clip.
+            while (rec.isReady(stream)) {
+                rec.decode(stream)
+            }
             val result = rec.getResult(stream)
             val text = result.text.trim()
             lastConfidence = if (text.isNotBlank()) 1f else 0f

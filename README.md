@@ -161,15 +161,15 @@ UnoOne replaced loose "does this folder exist?" model detection with a **real ma
 
 ### Manifest schema
 
-Each model descriptor declares `id, folder, type, version, minRamMb, backend, defaultLanguage, files[]`. Each file declares `name, url, sha256, sizeBytes, archive`.
+Each model descriptor declares `id, folder, type, version, minRamMb, backend, defaultLanguage, files[]`. Each file declares `name, url, sha256, sizeBytes, archive, asset?`. `asset` (optional) names a file bundled in the app's `assets/` — when set, the installer copies it from the APK instead of downloading `url` (used for the espeak-ng-data phoneme table).
 
 | Model id | Type | Backend | What it is |
 |---|---|---|---|
 | `gemma-local` | llm | any (GPU→CPU) | Gemma 3n E4B `.litertlm` — the planning brain |
-| `sherpa-asr` | asr | cpu | Streaming zipper-transducer ASR |
-| `sherpa-tts` | tts | cpu | VITS neural TTS |
-| `vad` | vad | cpu | Online-transducer keyword spotting / VAD |
-| `punctuation` | punctuation | cpu | Punctuation restoration model |
+| `sherpa-asr` | asr | cpu | Streaming zipformer-transducer **int8** ASR (English) — `csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26` |
+| `sherpa-tts` | tts | cpu | VITS Coqui **en-ljspeech** neural TTS (English) — `csukuangfj/vits-coqui-en-ljspeech` + bundled espeak-ng-data |
+| `vad` | vad | cpu | Streaming zipformer-transducer **int8** keyword spotting / VAD (English, same model family as `sherpa-asr`) |
+| `punctuation` | punctuation | cpu | Punctuation restoration model (English) |
 | `ocr-optional` | ocr | cpu | Optional OCR model (URL left blank) |
 
 ### Installer capabilities (`ModelInstaller`)
@@ -179,6 +179,8 @@ Real, dependency-free (plain `HttpURLConnection`):
 - **Resume** — sends `Range: bytes=N-` against an existing `.part`; appends on `206`, restarts cleanly on `200`.
 - **Atomic commit** — downloads to `name.part` then renames to the final name, so a crash never leaves a half-written final file.
 - **Integrity verification** — SHA-256 + size check, but only when the manifest actually declares them.
+- **Asset-backed files** — a file with an `asset` field is copied from the bundled APK `assets/` (not downloaded), then verified and (for archives) extracted. This ships the espeak-ng-data phoneme table (~9 MB, language-independent, stable) inside the APK so offline English TTS installs with **no network and no 355 individual downloads**.
+- **Archive health** — archives are deleted after extraction, so health and install-skip verify the *extracted directory* (by the `<dir>.zip` → `<dir>/` convention) rather than the (deleted) zip — a successfully installed archive is not falsely reported missing.
 - **Empty-file guard** — a 0-byte file with no declared integrity is **not** trusted as valid (forces re-download instead of silently skipping).
 - **Corrupt recovery** — on size/checksum mismatch, deletes the bad file and retries exactly once.
 - **HTTP 416 recovery** — if a prior run finished downloading but crashed before the `.part→final` rename, the installer commits directly without the network (otherwise a "Range Not Satisfiable" response would make re-install fail forever).
@@ -194,14 +196,19 @@ Real, dependency-free (plain `HttpURLConnection`):
 - `detectModels()` — merges manifest info (version, expected vs actual size/checksum, health) into `ModelStatus`
 - `getLlmModelPath()` — finds the first `.litertlm` under `gemma-local/`
 
-### ⚠️ Honest manifest caveat (action required before shipping)
+### ✅ Shipped English models (verified, integrity-checked)
 
-The shipped manifest leaves the `sherpa-asr`, `sherpa-tts`, and `vad` download URLs **blank** (user-supplied), and every file ships with `sha256=""` / `sizeBytes: 0`. Consequences:
+The shipped manifest is filled with **real, verified English model URLs + SHA-256 hashes + byte sizes** — offline English STT/TTS/wake-word install and verify end-to-end with no manual configuration:
 
-- **Integrity verification is effectively a no-op** until real SHA-256 hashes + sizes are filled in (mitigated by the empty-file and HTTP-completeness guards, so truncated downloads are still caught — but a *wrong* valid file wouldn't be).
-- **Offline speech is not installable from the manifest yet** — point those three descriptors at the Sherpa model variants you want to ship (URLs + hashes/sizes) and the installer will fetch and verify them.
+- **`sherpa-asr`** and **`vad`** share the public streaming-zipformer English int8 transducer (`encoder`/`decoder`/`joiner`/`tokens` from `csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26`). STT uses Sherpa's **Online (streaming) recognizer** drained single-shot (`while (isReady) decode`) — the only public, ungated English transducer on Hugging Face is the streaming one; the offline English transducer repos are gated. The wake-word `KeywordSpotter` uses the same Online model family, so STT and KWS share one model install.
+- **`sherpa-tts`** is the Coqui en-ljspeech VITS model (`model.onnx` + `tokens.txt` from `csukuangfj/vits-coqui-en-ljspeech`) plus the **espeak-ng-data phoneme table bundled as an app asset** (`espeak-ng-data.zip`, ~9 MB) — extracted at install time, so the engine's `espeak-ng-data/` directory is populated with no network and no 355 individual HTTP downloads.
 
-This is a content/configuration task (real model URLs + hashes), not a code task — the installer and health system are real and will enforce integrity the moment the fields are populated. Do not ship to end-users without filling these in.
+What is **not** pre-filled (by design — content, not code):
+
+- **`gemma-local`** and **`punctuation`** carry their real Hugging Face URLs but leave `sha256`/`sizeBytes` empty (the installer still validates download completeness via the HTTP response). Fill the hashes to enable strict integrity checking for the exact Gemma variant you ship.
+- **`ocr-optional`** has no URL (OCR is optional and not wired into the default tool set).
+
+To ship a **different language**, repoint the `sherpa-asr`/`sherpa-tts`/`vad` descriptors at the Sherpa model variants for that language (URLs + hashes/sizes) and, for VITS TTS, ensure the matching phoneme data is available (as an `asset` or a download). The installer and health system enforce integrity the moment the fields are populated.
 
 The **Model Status & Install** screen (Settings → Model Status) surfaces every model's version, size, health, backend, and install/uninstall with a live progress bar, so this is operable from the UI.
 
@@ -299,6 +306,8 @@ The voice layer is **Sherpa-ONNX** for both STT and TTS. A `VoiceRuntimeState` m
 | `UNAVAILABLE` | No STT model and fallback disabled | **NO MODEL** (red) |
 
 Android system speech is gated behind `allowSystemSttFallback` (default **false**). When Sherpa is unavailable and the fallback is off, the voice layer returns an explicit `Result.Error("Offline STT model not installed…")` so the UI surfaces "install model" — it never silently routes speech to a cloud-dependent system service. The fallback follows the device's system locales when enabled.
+
+**STT engine:** `SherpaSttEngine` uses Sherpa's **Online (streaming) recognizer** with the streaming-zipformer English int8 transducer. A whole captured utterance is fed to a fresh `OnlineStream` and the decoder is drained (`while (isReady(stream)) decode(stream)`) so the streaming model behaves as a single-shot transcriber — preserving the engine's `transcribe(pcmBytes) -> Result<String>` contract. The wake-word `KeywordSpotterEngine` uses the same Online model family (encoder/decoder/joiner/tokens), so STT and KWS install the same model. If the native `.so` fails to load on a device, init degrades gracefully (`Result.Error`) — never crashes.
 
 ### STT confidence + retry
 
@@ -423,7 +432,7 @@ A **single source of truth** — `core/safety/ToolPermissionRegistry` — is con
 
 The offline speech language is determined by **which Sherpa model is installed**, not a hard-coded locale list:
 
-- **Offline STT/TTS language = the installed `sherpa-asr` / `sherpa-tts` model's language.** The shipped manifest leaves those download URLs blank (see the manifest caveat above); point the descriptors at the Sherpa model variants for the language you want to ship and fill in their hashes/sizes.
+- **Offline STT/TTS language = the installed `sherpa-asr` / `sherpa-tts` model's language.** The shipped manifest is configured for **English** (streaming-zipformer int8 ASR/KWS + Coqui en-ljspeech VITS TTS + bundled espeak-ng-data). To ship another language, repoint those descriptors at the Sherpa model variants for that language (URLs + hashes/sizes) and ensure the matching VITS phoneme data is available.
 - **Punctuation model** (`punctuation`) is English.
 - **Emergency Android fallback**, when opted in, follows the device's system locales (commonly `en-IN`, `hi-IN`, `ta-IN`, `te-IN`, `kn-IN`, `ml-IN`, `bn-IN`).
 - **Gemma 3n E4B** is multilingual for planning; the system/user prompts are English-oriented.
@@ -553,7 +562,7 @@ UnoOne-Local-Agent/
 | Enriched ContextSnapshot | ✅ Implemented | recent notes/skills/OCR/recent-commands/last-result/userMemory |
 | Unit tests | ✅ 172 passing | 16 test files: parser, safety, skills, compounds, permissions, manifest/installer, prompt, primitives |
 | Lint | ✅ Clean | 0 new issues; 39 baselined staleness advisories; 0 StaticFieldLeak |
-| Manifest model URLs + integrity fields | ⚠️ Action required | sherpa-asr/tts/vad URLs left blank (user-supplied); all sha256/sizeBytes empty |
+| Manifest model URLs + integrity fields | ✅ Done (English) | sherpa-asr/tts/vad filled with verified HF URLs + SHA-256/size; espeak-ng-data bundled as app asset; gemma-local/punctuation URLs only |
 | RAG integration | 🔧 Scaffold | `RAGManager` exists, not wired into runtime |
 | Custom bounding-box overlay | 🔧 Planned | Detection results computed but no Compose overlay drawn |
 
@@ -604,7 +613,6 @@ Honest, current limitations (not papered over):
 
 | Gap | Detail |
 |---|---|
-| **Manifest model URLs + integrity fields** | `sherpa-asr`/`sherpa-tts`/`vad` ship with download URLs left blank (user-supplied) and empty `sha256`/`sizeBytes`. Point the descriptors at the Sherpa model variants you want to ship + fill hashes/sizes before shipping. Installer/health code is real and will enforce integrity once populated. |
 | **RAG not wired** | `RAGManager` exists but is not wired into the orchestrator runtime flow. |
 | **Bounding-box overlay** | Detection results are computed but no Compose overlay is drawn over the camera preview. |
 | **`ObjectDetectionControl`** | Single-image detector is dead code — `BlindAidManager` is used instead. |

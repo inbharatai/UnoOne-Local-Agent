@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "_comment": "UnoOne offline model manifest. downloadUrl fields point at the official Sherpa-ONNX / Hugging Face artifact hosts. sha256 and sizeBytes are left empty when the exact variant is user-selected; the installer verifies them only when non-empty, and always validates download completeness via the HTTP response and (for archives) extraction success. Replace any url with the exact file URL for the model variant you ship, and fill sha256/sizeBytes for strict integrity checking.",
+  "_comment": "UnoOne offline model manifest. URLs point at the official Sherpa-ONNX / Hugging Face artifact hosts. For the English variants shipped here (sherpa-asr, sherpa-tts, vad) the sha256 + sizeBytes are filled with verified values so the installer performs strict integrity checking; gemma-local / punctuation carry URLs only (size/sha left empty — the installer still validates download completeness via the HTTP response and extraction success). The espeak-ng-data phoneme table ships as a bundled app asset (asset field) instead of a download — language-independent, ~9 MB, stable — so offline English TTS installs with no network and no 355 individual downloads. STT and the wake-word (vad) share the same public streaming-zipformer-int8 English transducer (encoder/decoder/joiner/tokens).",
   "models": [
     {
       "id": "gemma-local",
@@ -24,44 +24,111 @@
       "id": "sherpa-asr",
       "folder": "sherpa-asr",
       "type": "asr",
-      "version": "streaming-zipper-transducer",
+      "version": "streaming-zipformer-transducer-int8",
       "minRamMb": 512,
       "backend": "cpu",
       "defaultLanguage": "en",
       "files": [
-        { "name": "encoder.onnx", "url": "", "sha256": "", "sizeBytes": 0, "archive": false },
-        { "name": "decoder.onnx", "url": "", "sha256": "", "sizeBytes": 0, "archive": false },
-        { "name": "joiner.onnx", "url": "", "sha256": "", "sizeBytes": 0, "archive": false },
-        { "name": "tokens.txt", "url": "", "sha256": "", "sizeBytes": 0, "archive": false }
+        {
+          "name": "encoder.onnx",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main/encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+          "sha256": "563fde436d16cf7607cf408cd6b30909819d03162652ef389c2450ced3f45ac1",
+          "sizeBytes": 71083163,
+          "archive": false
+        },
+        {
+          "name": "decoder.onnx",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main/decoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+          "sha256": "98da299f471e38bb4e1a8df579b8cc9122d6039576a77e357b3c60f17dd83b02",
+          "sizeBytes": 1307236,
+          "archive": false
+        },
+        {
+          "name": "joiner.onnx",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main/joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+          "sha256": "d944208d660d67c8d72cd2acaeac971fa5ceb8c80e76c1968148846fedd6e297",
+          "sizeBytes": 259335,
+          "archive": false
+        },
+        {
+          "name": "tokens.txt",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main/tokens.txt",
+          "sha256": "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb",
+          "sizeBytes": 5048,
+          "archive": false
+        }
       ]
     },
     {
       "id": "sherpa-tts",
       "folder": "sherpa-tts",
       "type": "tts",
-      "version": "vits",
+      "version": "vits-coqui-en-ljspeech",
       "minRamMb": 512,
       "backend": "cpu",
       "defaultLanguage": "en",
       "files": [
-        { "name": "model.onnx", "url": "", "sha256": "", "sizeBytes": 0, "archive": false },
-        { "name": "tokens.txt", "url": "", "sha256": "", "sizeBytes": 0, "archive": false },
-        { "name": "espeak-ng-data.zip", "url": "", "sha256": "", "sizeBytes": 0, "archive": true }
+        {
+          "name": "model.onnx",
+          "url": "https://huggingface.co/csukuangfj/vits-coqui-en-ljspeech/resolve/main/model.onnx",
+          "sha256": "3c4468add71e72431dec810545dcb44639b0b1fa117994d72dad0864f95ee9fd",
+          "sizeBytes": 114358757,
+          "archive": false
+        },
+        {
+          "name": "tokens.txt",
+          "url": "https://huggingface.co/csukuangfj/vits-coqui-en-ljspeech/resolve/main/tokens.txt",
+          "sha256": "32f1406ff39d355bc7c44b55c23f6efe4cd5e81fc2c2d7518cc61571b3e9082a",
+          "sizeBytes": 1089,
+          "archive": false
+        },
+        {
+          "name": "espeak-ng-data.zip",
+          "url": "",
+          "sha256": "289db3099d0b8d074d00578c277220410b0d89880481338f538c0d1bbdea673d",
+          "sizeBytes": 9014002,
+          "archive": true,
+          "asset": "espeak-ng-data.zip"
+        }
       ]
     },
     {
       "id": "vad",
       "folder": "vad",
       "type": "vad",
-      "version": "online-transducer-kws",
+      "version": "streaming-zipformer-kws-int8",
       "minRamMb": 256,
       "backend": "cpu",
       "defaultLanguage": "en",
       "files": [
-        { "name": "encoder.onnx", "url": "", "sha256": "", "sizeBytes": 0, "archive": false },
-        { "name": "decoder.onnx", "url": "", "sha256": "", "sizeBytes": 0, "archive": false },
-        { "name": "joiner.onnx", "url": "", "sha256": "", "sizeBytes": 0, "archive": false },
-        { "name": "tokens.txt", "url": "", "sha256": "", "sizeBytes": 0, "archive": false }
+        {
+          "name": "encoder.onnx",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main/encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+          "sha256": "563fde436d16cf7607cf408cd6b30909819d03162652ef389c2450ced3f45ac1",
+          "sizeBytes": 71083163,
+          "archive": false
+        },
+        {
+          "name": "decoder.onnx",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main/decoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+          "sha256": "98da299f471e38bb4e1a8df579b8cc9122d6039576a77e357b3c60f17dd83b02",
+          "sizeBytes": 1307236,
+          "archive": false
+        },
+        {
+          "name": "joiner.onnx",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main/joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+          "sha256": "d944208d660d67c8d72cd2acaeac971fa5ceb8c80e76c1968148846fedd6e297",
+          "sizeBytes": 259335,
+          "archive": false
+        },
+        {
+          "name": "tokens.txt",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main/tokens.txt",
+          "sha256": "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb",
+          "sizeBytes": 5048,
+          "archive": false
+        }
       ]
     },
     {
@@ -73,8 +140,20 @@
       "backend": "cpu",
       "defaultLanguage": "en",
       "files": [
-        { "name": "model.onnx", "url": "https://huggingface.co/csukuangfj/sherpa-onnx-punctuation-en/resolve/main/model.int8.onnx", "sha256": "", "sizeBytes": 0, "archive": false },
-        { "name": "tokens.txt", "url": "https://huggingface.co/csukuangfj/sherpa-onnx-punctuation-en/resolve/main/tokens.txt", "sha256": "", "sizeBytes": 0, "archive": false }
+        {
+          "name": "model.onnx",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-punctuation-en/resolve/main/model.int8.onnx",
+          "sha256": "",
+          "sizeBytes": 0,
+          "archive": false
+        },
+        {
+          "name": "tokens.txt",
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-punctuation-en/resolve/main/tokens.txt",
+          "sha256": "",
+          "sizeBytes": 0,
+          "archive": false
+        }
       ]
     },
     {
@@ -86,7 +165,13 @@
       "backend": "cpu",
       "defaultLanguage": "en",
       "files": [
-        { "name": "model.onnx", "url": "", "sha256": "", "sizeBytes": 0, "archive": false }
+        {
+          "name": "model.onnx",
+          "url": "",
+          "sha256": "",
+          "sizeBytes": 0,
+          "archive": false
+        }
       ]
     }
   ]

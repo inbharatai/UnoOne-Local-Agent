@@ -158,16 +158,18 @@ No cross-app `Intent` broadcast is used — transcribed speech never leaves the 
 
 `modelmanager` ships a real manifest + installer replacing loose folder detection.
 
-**Manifest** (`src/main/assets/models_manifest.json`): array of model descriptors (`id, folder, type, version, minRamMb, backend, defaultLanguage, files[]`), each file `{name, url, sha256, sizeBytes, archive}`. Six models: `gemma-local` (LLM), `sherpa-asr`, `sherpa-tts`, `vad`, `punctuation`, `ocr-optional`.
+**Manifest** (`src/main/assets/models_manifest.json`): array of model descriptors (`id, folder, type, version, minRamMb, backend, defaultLanguage, files[]`), each file `{name, url, sha256, sizeBytes, archive, asset?}`. `asset` names a file bundled in the app's `assets/` (copied from the APK instead of downloaded). Six models: `gemma-local` (LLM), `sherpa-asr`, `sherpa-tts`, `vad`, `punctuation`, `ocr-optional`.
 
 **`ModelInstaller`** (plain `HttpURLConnection`, no deps):
 - Resume via `Range:` header against `.part`; appends on 206, restarts on 200
 - Atomic commit: `.part` → final rename (with copy fallback)
 - SHA-256 + size verification when declared; **empty-file guard** (0-byte file with no declared integrity is not trusted valid → forces re-download)
+- **Asset-backed files**: a file with an `asset` field is copied from the bundled APK `assets/`, verified, and (for archives) extracted — ships espeak-ng-data (~9 MB) inside the APK so offline English TTS installs with no network
+- **Archive health**: archives are deleted after extraction, so health/install-skip verify the extracted directory (`<dir>.zip` → `<dir>/`) instead of the deleted zip
 - Corrupt recovery: delete bad file + retry once
 - HTTP 416 recovery: complete `.part` commits without network (no "Range Not Satisfiable" death loop)
-- `conn.disconnect()` in `finally`; zip-slip guard on archive extraction
-- Idempotent skip of already-valid files
+- `conn.disconnect()` in `finally`; zip-slip guard on archive extraction; `parentFile.mkdirs()` safety for nested file names
+- Idempotent skip of already-valid files (and already-extracted archives)
 
 **`ModelManager`**:
 - `loadManifest()` / `findModel(id)` / `modelHealth(id): HealthResult` (reports `missing`/`sizeMismatch`/`checksumMismatch`)
@@ -175,7 +177,7 @@ No cross-app `Intent` broadcast is used — transcribed speech never leaves the 
 - `detectModels()` merges manifest info into `ModelStatus` (version, expected vs actual size/checksum, `healthy`)
 - `getLlmModelPath()` finds the first `.litertlm`
 
-**⚠️ Manifest caveat:** `sherpa-asr`/`sherpa-tts`/`vad` ship with their download URLs left **blank** (user-supplied), and every file has empty `sha256`/`sizeBytes`. Integrity verification is a no-op until real hashes/sizes are filled (empty-file + HTTP-completeness guards still catch truncation). Point the descriptors at the Sherpa model variants you want to ship + fill hashes before shipping. The Model Status screen surfaces all of this in the UI.
+**✅ Shipped English models (verified):** `sherpa-asr` and `vad` share the public streaming-zipformer English int8 transducer (`csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26`) with verified SHA-256/size; STT uses Sherpa's **Online (streaming) recognizer** drained single-shot (`while (isReady) decode`) — the only public ungated English transducer on HF is the streaming one. `sherpa-tts` is the Coqui en-ljspeech VITS (`csukuangfj/vits-coqui-en-ljspeech`) plus **espeak-ng-data bundled as an app asset** (`espeak-ng-data.zip`, ~9 MB, extracted at install). `gemma-local`/`punctuation` carry real HF URLs but leave hashes empty (completeness still validated); `ocr-optional` has no URL. To ship another language, repoint the descriptors (URLs + hashes/sizes) and supply matching VITS phoneme data. The Model Status screen surfaces all of this in the UI.
 
 ---
 
@@ -472,7 +474,7 @@ These are honest, current limitations (not papered over):
 
 | Component | Status | Detail |
 |---|---|---|
-| Manifest model URLs + integrity fields | ⚠️ Action required | `sherpa-asr`/`sherpa-tts`/`vad` URLs left blank (user-supplied); all `sha256`/`sizeBytes` empty. Point at the Sherpa variants you want to ship + fill before shipping. |
+| Manifest model URLs + integrity fields | ✅ Done (English) | `sherpa-asr`/`sherpa-tts`/`vad` filled with verified HF URLs + SHA-256/size; espeak-ng-data bundled as app asset; `gemma-local`/`punctuation` URLs only. Repoint descriptors for other languages. |
 | `RAGManager` | 🔧 Scaffold | Exists but not wired into orchestrator runtime flow |
 | `Diagnostics` | 🔧 Scaffold | Helpers exist but not broadly instrumented across execution paths |
 | `ObjectDetectionControl` | 🔧 Dead code | Single-image detector never invoked (BlindAidManager is used) |

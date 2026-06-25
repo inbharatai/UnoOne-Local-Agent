@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -32,7 +33,14 @@ import java.util.zip.ZipInputStream
  */
 class ModelInstaller(
     private val modelBasePath: String,
-    private val dao: ModelMetadataDao? = null
+    private val dao: ModelMetadataDao? = null,
+    /**
+     * Resolves a bundled asset name to an [InputStream], or null if not present. Wired by
+     * [ModelManager] to `context.assets.open(name)`; null in unit tests (asset-backed files then
+     * fail with a clear error rather than crashing). Lets a manifest file ship from the APK's
+     * `assets/` instead of an HTTP download (see [ModelFile.asset]).
+     */
+    private val assetReader: ((String) -> InputStream?)? = null
 ) {
 
     sealed class InstallResult {
@@ -59,13 +67,18 @@ class ModelInstaller(
         setStatus(descriptor, STATUS_DOWNLOADING, folder.absolutePath)
         try {
             descriptor.files.forEachIndexed { index, file ->
-                if (file.url.isBlank()) {
-                    Logger.w("ModelInstaller: ${file.name} has no download URL — skipping (set the url in the manifest to install it)")
-                    return@withContext InstallResult.Failure("No download URL for ${file.name}")
+                val ok = if (!file.asset.isNullOrBlank()) {
+                    installFromAsset(file, folder, descriptor.id, index, descriptor.files.size, listener)
+                } else {
+                    if (file.url.isBlank()) {
+                        Logger.w("ModelInstaller: ${file.name} has no download URL — skipping (set the url in the manifest to install it)")
+                        return@withContext InstallResult.Failure("No download URL for ${file.name}")
+                    }
+                    downloadFile(file, folder, descriptor.id, index, descriptor.files.size, listener)
                 }
-                if (!downloadFile(file, folder, descriptor.id, index, descriptor.files.size, listener)) {
+                if (!ok) {
                     setStatus(descriptor, STATUS_CORRUPT, folder.absolutePath)
-                    return@withContext InstallResult.Failure("Failed to download/verify ${file.name}")
+                    return@withContext InstallResult.Failure("Failed to install ${file.name}")
                 }
             }
             setStatus(descriptor, STATUS_PRESENT, folder.absolutePath)
@@ -88,6 +101,13 @@ class ModelInstaller(
     ): Boolean {
         val target = File(folder, file.name)
 
+        // Archive fast path: the zip is deleted after extraction, so "valid" means the extracted
+        // directory already exists and is non-empty (not that the zip is present).
+        if (file.archive && archiveAlreadyExtracted(file, folder)) {
+            listener?.onProgress(modelId, index, total, file.name, file.sizeBytes, file.sizeBytes)
+            return true
+        }
+
         // Idempotent fast path: already present and valid.
         if (fileAlreadyValid(target, file)) {
             listener?.onProgress(modelId, index, total, file.name, target.length(), file.sizeBytes.coerceAtLeast(target.length()))
@@ -106,6 +126,85 @@ class ModelInstaller(
             if (!target.delete()) Logger.w("ModelInstaller: could not delete archive ${target.name} after extraction")
         }
         return true
+    }
+
+    /**
+     * Installs a file from a bundled app asset ([ModelFile.asset]) instead of an HTTP download.
+     * Copies the asset to `name`, verifies declared size/sha, and — for archives — extracts into
+     * the model folder then deletes the zip. Idempotent: skips when the (non-archive) file is
+     * already valid or the (archive) extraction already exists.
+     */
+    private fun installFromAsset(
+        file: ModelFile,
+        folder: File,
+        modelId: String,
+        index: Int,
+        total: Int,
+        listener: ProgressListener?
+    ): Boolean {
+        val reader = assetReader ?: run {
+            Logger.e("ModelInstaller: ${file.name} is asset-backed ('${file.asset}') but no asset reader is configured")
+            return false
+        }
+        val assetName = file.asset ?: return false
+
+        // Archive fast path: already extracted → skip.
+        if (file.archive && archiveAlreadyExtracted(file, folder)) {
+            listener?.onProgress(modelId, index, total, file.name, file.sizeBytes, file.sizeBytes)
+            return true
+        }
+
+        val target = File(folder, file.name)
+        // Non-archive fast path: already present and valid.
+        if (!file.archive && fileAlreadyValid(target, file)) {
+            listener?.onProgress(modelId, index, total, file.name, target.length(), file.sizeBytes.coerceAtLeast(target.length()))
+            return true
+        }
+
+        target.parentFile?.mkdirs()
+        val input = try {
+            reader(assetName)
+        } catch (e: Exception) {
+            Logger.e("ModelInstaller: asset reader threw for '$assetName'", e)
+            null
+        }
+        if (input == null) {
+            Logger.e("ModelInstaller: asset '$assetName' not found for ${file.name}")
+            return false
+        }
+        return try {
+            input.use { src ->
+                FileOutputStream(target).use { out -> src.copyTo(out) }
+            }
+            if (file.sizeBytes > 0 && target.length() != file.sizeBytes) {
+                Logger.w("ModelInstaller: asset ${file.name} size mismatch (got ${target.length()}, expected ${file.sizeBytes})")
+                return false
+            }
+            if (file.sha256.isNotBlank() && !verifyChecksum(target, file)) {
+                Logger.w("ModelInstaller: asset ${file.name} checksum mismatch")
+                return false
+            }
+            if (file.archive) {
+                extractZip(target, folder)
+                if (!target.delete()) Logger.w("ModelInstaller: could not delete asset archive ${target.name} after extraction")
+            }
+            listener?.onProgress(modelId, index, total, file.name, file.sizeBytes, file.sizeBytes)
+            true
+        } catch (e: Exception) {
+            Logger.e("ModelInstaller: asset copy failed for ${file.name}", e)
+            runCatching { target.delete() }
+            false
+        }
+    }
+
+    /** The directory an archive `name` extracts to, by the `<dir>.zip` → `<dir>/` convention. */
+    private fun archiveOutputDir(file: ModelFile, folder: File): File =
+        File(folder, file.name.substringBeforeLast('.'))
+
+    /** True when an archive has already been extracted (output dir present and non-empty). */
+    private fun archiveAlreadyExtracted(file: ModelFile, folder: File): Boolean {
+        val dir = archiveOutputDir(file, folder)
+        return dir.isDirectory && !dir.listFiles().isNullOrEmpty()
     }
 
     /** Downloads (with resume) then verifies size/checksum; on mismatch deletes and retries once. */
@@ -158,6 +257,8 @@ class ModelInstaller(
         listener: ProgressListener?
     ): Boolean {
         val temp = File(target.parentFile, "${file.name}.part")
+        // Safety: a file.name with a subpath (e.g. nested under a dir) needs its parent created.
+        target.parentFile?.mkdirs()
         val existingBytes = if (temp.exists()) temp.length() else 0L
 
         // If a prior run finished downloading but crashed before the .part→final rename, the temp
