@@ -13,6 +13,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 
 /**
  * Downloads and verifies a model described by a [ModelDescriptor], persisting status to
@@ -122,7 +125,7 @@ class ModelInstaller(
             return false
         }
         if (file.archive) {
-            extractZip(target, folder)
+            extractArchive(target, folder)
             if (!target.delete()) Logger.w("ModelInstaller: could not delete archive ${target.name} after extraction")
         }
         return true
@@ -185,7 +188,7 @@ class ModelInstaller(
                 return false
             }
             if (file.archive) {
-                extractZip(target, folder)
+                extractArchive(target, folder)
                 if (!target.delete()) Logger.w("ModelInstaller: could not delete asset archive ${target.name} after extraction")
             }
             listener?.onProgress(modelId, index, total, file.name, file.sizeBytes, file.sizeBytes)
@@ -197,9 +200,16 @@ class ModelInstaller(
         }
     }
 
-    /** The directory an archive `name` extracts to, by the `<dir>.zip` → `<dir>/` convention. */
+    /**
+     * The directory an archive extracts to. When [ModelFile.extractsTo] is set, that exact top
+     * directory is used (required for tarballs whose top dir differs from the archive name, e.g.
+     * `sherpa-onnx-whisper-tiny.tar.bz2` → `sherpa-onnx-whisper-tiny/`, and for `.tar.bz2` whose
+     * double extension breaks strip-last-extension). Otherwise fall back to stripping the last
+     * extension of `name` (`<dir>.zip` → `<dir>/`), preserving the original espeak-ng-data convention.
+     */
     private fun archiveOutputDir(file: ModelFile, folder: File): File =
-        File(folder, file.name.substringBeforeLast('.'))
+        if (!file.extractsTo.isNullOrBlank()) File(folder, file.extractsTo)
+        else File(folder, file.name.substringBeforeLast('.'))
 
     /** True when an archive has already been extracted (output dir present and non-empty). */
     private fun archiveAlreadyExtracted(file: ModelFile, folder: File): Boolean {
@@ -362,31 +372,82 @@ class ModelInstaller(
         false
     }
 
-    private fun extractZip(zipFile: File, destFolder: File) {
+    /**
+     * Extracts an archive into [destFolder]. Supports ZIP (via `java.util.zip`, the original path —
+     * unchanged) and tar.bz2 / tar.gz / tar (via Apache commons-compress) so a manifest entry can
+     * point at a public model tarball (e.g. `sherpa-onnx-whisper-tiny.tar.bz2`) without re-hosting
+     * its contents. The archive is deleted by the caller after extraction. All entry paths are
+     * guarded against zip-slip / tar-slip (paths escaping the dest folder).
+     */
+    private fun extractArchive(archiveFile: File, destFolder: File) {
         destFolder.mkdirs()
-        ZipInputStream(zipFile.inputStream().buffered()).use { zis ->
-            var entry = zis.nextEntry
-            while (entry != null) {
-                val out = File(destFolder, entry.name)
-                // Guard against zip-slip (paths escaping the dest folder).
-                val canonicalDest = destFolder.canonicalPath
-                val canonicalOut = out.canonicalPath
-                if (!canonicalOut.startsWith(canonicalDest + File.separator) && canonicalOut != canonicalDest) {
-                    Logger.w("ModelInstaller: skipping zip entry outside dest folder: ${entry.name}")
+        val name = archiveFile.name.lowercase()
+        val isZip = name.endsWith(".zip")
+        if (isZip) {
+            // Original ZIP path, verbatim — preserves the behavior the existing asset tests rely on.
+            ZipInputStream(archiveFile.inputStream().buffered()).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    val out = File(destFolder, entry.name)
+                    if (!isInsideDest(out, destFolder)) {
+                        Logger.w("ModelInstaller: skipping zip entry outside dest folder: ${entry.name}")
+                        zis.closeEntry()
+                        entry = zis.nextEntry
+                        continue
+                    }
+                    if (entry.isDirectory) {
+                        out.mkdirs()
+                    } else {
+                        out.parentFile?.mkdirs()
+                        FileOutputStream(out).use { fos -> zis.copyTo(fos) }
+                    }
                     zis.closeEntry()
                     entry = zis.nextEntry
+                }
+            }
+            return
+        }
+
+        // tar / tar.bz2 / tar.gz — decompress layer first, then the tar archive layer.
+        val raw = archiveFile.inputStream().buffered()
+        val decompressed: java.io.InputStream = when {
+            name.endsWith(".tar.bz2") || name.endsWith(".tbz2") || name.endsWith(".tbz") ->
+                BZip2CompressorInputStream(raw)
+            name.endsWith(".tar.gz") || name.endsWith(".tgz") ->
+                GzipCompressorInputStream(raw)
+            else -> raw // plain .tar
+        }
+        val tarIn = TarArchiveInputStream(decompressed)
+        tarIn.use { ais ->
+            var entry = ais.nextEntry
+            while (entry != null) {
+                val out = File(destFolder, entry.name)
+                if (!isInsideDest(out, destFolder)) {
+                    Logger.w("ModelInstaller: skipping tar entry outside dest folder: ${entry.name}")
+                    entry = ais.nextEntry
                     continue
                 }
                 if (entry.isDirectory) {
                     out.mkdirs()
                 } else {
                     out.parentFile?.mkdirs()
-                    FileOutputStream(out).use { fos -> zis.copyTo(fos) }
+                    FileOutputStream(out).use { fos ->
+                        // Copy only this entry's bytes; TarArchiveInputStream.read() returns -1 at
+                        // the entry boundary, so copyTo stops there (not at end of the whole tar).
+                        ais.copyTo(fos)
+                    }
                 }
-                zis.closeEntry()
-                entry = zis.nextEntry
+                entry = ais.nextEntry
             }
         }
+    }
+
+    /** True when [out] resolves inside [destFolder] (zip-slip / tar-slip guard). */
+    private fun isInsideDest(out: File, destFolder: File): Boolean {
+        val canonicalDest = destFolder.canonicalPath
+        val canonicalOut = out.canonicalPath
+        return canonicalOut == canonicalDest ||
+            canonicalOut.startsWith(canonicalDest + File.separator)
     }
 
     private suspend fun setStatus(descriptor: ModelDescriptor, status: String, path: String) {

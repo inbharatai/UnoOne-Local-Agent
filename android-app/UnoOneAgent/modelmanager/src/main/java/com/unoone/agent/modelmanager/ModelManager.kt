@@ -52,10 +52,13 @@ class ModelManager(
         val checksumMismatch = mutableListOf<String>()
         for (file in descriptor.files) {
             // Archives are deleted after extraction, so health verifies the extracted directory
-            // (by the `<dir>.zip` → `<dir>/` convention) rather than the zip file itself. Without
-            // this, a successfully installed archive would always be reported missing.
+            // rather than the (deleted) archive. The directory is ModelFile.extractsTo when set
+            // (required for tarballs whose top dir differs from the archive name, e.g. the
+            // whisper-tiny tar), else the strip-last-extension of the archive name (espeak convention).
             if (file.archive) {
-                val extracted = File(folder, file.name.substringBeforeLast('.'))
+                val extractedName = file.extractsTo?.takeIf { it.isNotBlank() }
+                    ?: file.name.substringBeforeLast('.')
+                val extracted = File(folder, extractedName)
                 if (!extracted.exists() || !extracted.isDirectory || extracted.listFiles().isNullOrEmpty()) {
                     missing.add(file.name)
                 }
@@ -120,10 +123,19 @@ class ModelManager(
         // Known model folders: manifest first (source of truth), then any legacy hardcoded ones.
         val known: List<Pair<String, String>> = manifest.models.map { it.folder to it.type.name }
             .ifEmpty {
+                // Legacy fallback when the manifest asset fails to load. Mirrors the manifest's
+                // per-language folder layout (English + shared whisper ASR + per-language MMS TTS).
                 listOf(
                     "gemma-local" to "llm",
-                    "sherpa-asr" to "asr",
-                    "sherpa-tts" to "tts",
+                    "sherpa-asr-en" to "asr",
+                    "sherpa-asr-whisper" to "asr",
+                    "sherpa-tts-en" to "tts",
+                    "sherpa-tts-hin" to "tts",
+                    "sherpa-tts-ben" to "tts",
+                    "sherpa-tts-tam" to "tts",
+                    "sherpa-tts-tel" to "tts",
+                    "sherpa-tts-kan" to "tts",
+                    "sherpa-tts-mal" to "tts",
                     "vad" to "vad",
                     "punctuation" to "punctuation",
                     "ocr-optional" to "ocr"
@@ -203,7 +215,14 @@ class ModelManager(
         val base = File(appPrivateModelPath)
         val manifest = loadManifest()
         val folders = manifest.models.map { it.folder }
-            .ifEmpty { listOf("gemma-local", "sherpa-asr", "sherpa-tts", "vad", "punctuation", "ocr-optional") }
+            .ifEmpty {
+                listOf(
+                    "gemma-local", "sherpa-asr-en", "sherpa-asr-whisper",
+                    "sherpa-tts-en", "sherpa-tts-hin", "sherpa-tts-ben", "sherpa-tts-tam",
+                    "sherpa-tts-tel", "sherpa-tts-kan", "sherpa-tts-mal",
+                    "vad", "punctuation", "ocr-optional"
+                )
+            }
         folders.forEach { File(base, it).mkdirs() }
     }
 

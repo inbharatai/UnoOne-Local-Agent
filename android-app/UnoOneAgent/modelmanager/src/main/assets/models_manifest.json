@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "_comment": "UnoOne offline model manifest. URLs point at the official Sherpa-ONNX / Hugging Face artifact hosts. For the English variants shipped here (sherpa-asr, sherpa-tts, vad) the sha256 + sizeBytes are filled with verified values so the installer performs strict integrity checking; gemma-local / punctuation carry URLs only (size/sha left empty — the installer still validates download completeness via the HTTP response and extraction success). The espeak-ng-data phoneme table ships as a bundled app asset (asset field) instead of a download — language-independent, ~9 MB, stable — so offline English TTS installs with no network and no 355 individual downloads. STT and the wake-word (vad) share the same public streaming-zipformer-int8 English transducer (encoder/decoder/joiner/tokens).",
+  "_comment": "UnoOne offline model manifest — per-language voice models. English: sherpa-asr-en (streaming zipformer transducer int8) + sherpa-tts-en (Coqui VITS + espeak-ng-data bundled as an app asset). Indian languages (Hindi/Bengali/Tamil/Telugu/Kannada/Malayalam): sherpa-asr-whisper (a single multilingual whisper-tiny int8 tarball — the 'language' field selects the language at runtime; no Sherpa transducer exists for these) + sherpa-tts-<lang> (MMS VITS from willwade/mms-tts-multilingual-models-onnx, character frontend, no espeak). The wake-word (vad) is always English (no Indic KWS model exists). Every sha256 + sizeBytes below is stream-computed from the actual artifact bytes (no fabrication) so the installer performs strict integrity checking; gemma-local / punctuation carry URLs only (size/sha left empty — the installer still validates download completeness via the HTTP response and extraction success). The whisper tarball is a .tar.bz2 (commons-compress extracts it); its 'extractsTo' names the top directory the tar expands to (sherpa-onnx-whisper-tiny), which differs from the archive name — the strip-last-extension fallback would not work for .tar.bz2. STT and the wake-word (vad) share the same public streaming-zipformer-int8 English transducer (encoder/decoder/joiner/tokens).",
   "models": [
     {
       "id": "gemma-local",
@@ -21,8 +21,8 @@
       ]
     },
     {
-      "id": "sherpa-asr",
-      "folder": "sherpa-asr",
+      "id": "sherpa-asr-en",
+      "folder": "sherpa-asr-en",
       "type": "asr",
       "version": "streaming-zipformer-transducer-int8",
       "minRamMb": 512,
@@ -60,35 +60,22 @@
       ]
     },
     {
-      "id": "sherpa-tts",
-      "folder": "sherpa-tts",
-      "type": "tts",
-      "version": "vits-coqui-en-ljspeech",
+      "id": "sherpa-asr-whisper",
+      "folder": "sherpa-asr-whisper",
+      "type": "asr",
+      "version": "whisper-tiny-int8",
       "minRamMb": 512,
       "backend": "cpu",
-      "defaultLanguage": "en",
+      "defaultLanguage": "multi",
+      "_comment": "Single multilingual whisper-tiny int8 model shared by hi/bn/ta/te/kn/ml. The .tar.bz2 is downloaded then extracted (commons-compress); extractsTo names the tar's top directory. SherpaSttEngine reads <folder>/sherpa-onnx-whisper-tiny/tiny-{encoder,decoder}.int8.onnx + tiny-tokens.txt. Integrity is verified against the tarball's sha256 (the extracted int8 files are: encoder d24fb083.../12937772B, decoder d2fece8d.../89855401B, tokens b34b360d.../816730B).",
       "files": [
         {
-          "name": "model.onnx",
-          "url": "https://huggingface.co/csukuangfj/vits-coqui-en-ljspeech/resolve/main/model.onnx",
-          "sha256": "3c4468add71e72431dec810545dcb44639b0b1fa117994d72dad0864f95ee9fd",
-          "sizeBytes": 114358757,
-          "archive": false
-        },
-        {
-          "name": "tokens.txt",
-          "url": "https://huggingface.co/csukuangfj/vits-coqui-en-ljspeech/resolve/main/tokens.txt",
-          "sha256": "32f1406ff39d355bc7c44b55c23f6efe4cd5e81fc2c2d7518cc61571b3e9082a",
-          "sizeBytes": 1089,
-          "archive": false
-        },
-        {
-          "name": "espeak-ng-data.zip",
-          "url": "",
-          "sha256": "289db3099d0b8d074d00578c277220410b0d89880481338f538c0d1bbdea673d",
-          "sizeBytes": 9014002,
+          "name": "sherpa-onnx-whisper-tiny.tar.bz2",
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2",
+          "sha256": "c46116994e539aa165266d96b325252728429c12535eb9d8b6a2b10f129e66b1",
+          "sizeBytes": 116204861,
           "archive": true,
-          "asset": "espeak-ng-data.zip"
+          "extractsTo": "sherpa-onnx-whisper-tiny"
         }
       ]
     },
@@ -127,6 +114,190 @@
           "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main/tokens.txt",
           "sha256": "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb",
           "sizeBytes": 5048,
+          "archive": false
+        }
+      ]
+    },
+    {
+      "id": "sherpa-tts-en",
+      "folder": "sherpa-tts-en",
+      "type": "tts",
+      "version": "vits-coqui-en-ljspeech",
+      "minRamMb": 512,
+      "backend": "cpu",
+      "defaultLanguage": "en",
+      "files": [
+        {
+          "name": "model.onnx",
+          "url": "https://huggingface.co/csukuangfj/vits-coqui-en-ljspeech/resolve/main/model.onnx",
+          "sha256": "3c4468add71e72431dec810545dcb44639b0b1fa117994d72dad0864f95ee9fd",
+          "sizeBytes": 114358757,
+          "archive": false
+        },
+        {
+          "name": "tokens.txt",
+          "url": "https://huggingface.co/csukuangfj/vits-coqui-en-ljspeech/resolve/main/tokens.txt",
+          "sha256": "32f1406ff39d355bc7c44b55c23f6efe4cd5e81fc2c2d7518cc61571b3e9082a",
+          "sizeBytes": 1089,
+          "archive": false
+        },
+        {
+          "name": "espeak-ng-data.zip",
+          "url": "",
+          "sha256": "289db3099d0b8d074d00578c277220410b0d89880481338f538c0d1bbdea673d",
+          "sizeBytes": 9014002,
+          "archive": true,
+          "asset": "espeak-ng-data.zip",
+          "extractsTo": "espeak-ng-data"
+        }
+      ]
+    },
+    {
+      "id": "sherpa-tts-hin",
+      "folder": "sherpa-tts-hin",
+      "type": "tts",
+      "version": "mms-vits-hin",
+      "minRamMb": 512,
+      "backend": "cpu",
+      "defaultLanguage": "hi",
+      "files": [
+        {
+          "name": "model.onnx",
+          "url": "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/hin/model.onnx",
+          "sha256": "42c69b3611dc016ff337e994c78a76b5131156718c5a69e9cfa8912cfd850c5e",
+          "sizeBytes": 114043064,
+          "archive": false
+        },
+        {
+          "name": "tokens.txt",
+          "url": "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/hin/tokens.txt",
+          "sha256": "aa9abf8320da4ca80b153c51e2d3b6b52cb41e930ccc16dec570e70726ab3dd6",
+          "sizeBytes": 472,
+          "archive": false
+        }
+      ]
+    },
+    {
+      "id": "sherpa-tts-ben",
+      "folder": "sherpa-tts-ben",
+      "type": "tts",
+      "version": "mms-vits-ben",
+      "minRamMb": 512,
+      "backend": "cpu",
+      "defaultLanguage": "bn",
+      "files": [
+        {
+          "name": "model.onnx",
+          "url": "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/ben/model.onnx",
+          "sha256": "d16d6ea228104876499a8b09b3417e6de0aca91e1ff04d23f5a3fc2f6ddd3ad7",
+          "sizeBytes": 114044600,
+          "archive": false
+        },
+        {
+          "name": "tokens.txt",
+          "url": "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/ben/tokens.txt",
+          "sha256": "a74190ec42b8f0afb349276430c716f1b585090d8fe6d3c1d6d5fe510798a387",
+          "sizeBytes": 480,
+          "archive": false
+        }
+      ]
+    },
+    {
+      "id": "sherpa-tts-tam",
+      "folder": "sherpa-tts-tam",
+      "type": "tts",
+      "version": "mms-vits-tam",
+      "minRamMb": 512,
+      "backend": "cpu",
+      "defaultLanguage": "ta",
+      "files": [
+        {
+          "name": "model.onnx",
+          "url": "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tam/model.onnx",
+          "sha256": "c86cf0a0657d57577d937b806d7b63d638cff522b5687cb650dde24bc71c5c88",
+          "sizeBytes": 114032312,
+          "archive": false
+        },
+        {
+          "name": "tokens.txt",
+          "url": "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tam/tokens.txt",
+          "sha256": "0b3f692319bb5fae8658e2f84bf252bca92450d0207bbba7273caa1a182d81b8",
+          "sizeBytes": 375,
+          "archive": false
+        }
+      ]
+    },
+    {
+      "id": "sherpa-tts-tel",
+      "folder": "sherpa-tts-tel",
+      "type": "tts",
+      "version": "mms-vits-tel",
+      "minRamMb": 512,
+      "backend": "cpu",
+      "defaultLanguage": "te",
+      "files": [
+        {
+          "name": "model.onnx",
+          "url": "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tel/model.onnx",
+          "sha256": "e82525ab1e662ba96ef81346ff1943c5bb731853c1f96d02fbff2e7a0284824c",
+          "sizeBytes": 114037688,
+          "archive": false
+        },
+        {
+          "name": "tokens.txt",
+          "url": "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tel/tokens.txt",
+          "sha256": "528152cb4121272e6e71f7a1d91c8d4922b92fae414ae599db608cb92a738bb7",
+          "sizeBytes": 435,
+          "archive": false
+        }
+      ]
+    },
+    {
+      "id": "sherpa-tts-kan",
+      "folder": "sherpa-tts-kan",
+      "type": "tts",
+      "version": "mms-vits-kan",
+      "minRamMb": 512,
+      "backend": "cpu",
+      "defaultLanguage": "kn",
+      "files": [
+        {
+          "name": "model.onnx",
+          "url": "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/kan/model.onnx",
+          "sha256": "8b6f313ebfdf423991ab6444a4520a72cc506a5b262a5d0c0c467ed7d8555834",
+          "sizeBytes": 114045368,
+          "archive": false
+        },
+        {
+          "name": "tokens.txt",
+          "url": "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/kan/tokens.txt",
+          "sha256": "a4a44037f7492c9e5b69a4483250e54af9a2d528bd4e19de95a21ff0c5e82a8a",
+          "sizeBytes": 487,
+          "archive": false
+        }
+      ]
+    },
+    {
+      "id": "sherpa-tts-mal",
+      "folder": "sherpa-tts-mal",
+      "type": "tts",
+      "version": "mms-vits-mal",
+      "minRamMb": 512,
+      "backend": "cpu",
+      "defaultLanguage": "ml",
+      "files": [
+        {
+          "name": "model.onnx",
+          "url": "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/mal/model.onnx",
+          "sha256": "13965d4eeed2f5198c53689e192ce7095e167fb11dd0e72ae5cd8a3bf117374b",
+          "sizeBytes": 114052280,
+          "archive": false
+        },
+        {
+          "name": "tokens.txt",
+          "url": "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/mal/tokens.txt",
+          "sha256": "3a752c36593cc519193c8caa6c00371369b423366fa6ead8d91945a28b2c46a3",
+          "sizeBytes": 571,
           "archive": false
         }
       ]

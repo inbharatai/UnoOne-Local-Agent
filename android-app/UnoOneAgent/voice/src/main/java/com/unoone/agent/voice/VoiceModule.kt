@@ -7,6 +7,7 @@ import com.unoone.agent.core.util.Logger
 import com.unoone.agent.voice.recorder.AudioRecorder
 import com.unoone.agent.voice.stt.AndroidSttEngine
 import com.unoone.agent.voice.stt.SherpaSttEngine
+import com.unoone.agent.voice.stt.SttMode
 import com.unoone.agent.voice.tts.SherpaTtsEngine
 import com.unoone.agent.voice.tts.TtsPlayer
 import kotlinx.coroutines.CoroutineScope
@@ -71,14 +72,22 @@ class VoiceModule(private val context: Context) {
             recorder.onAmplitude = value
         }
 
-    fun initStt(modelDir: String): Result<Unit> {
-        val engine = SherpaSttEngine(context, modelDir)
+    /**
+     * Initialize Sherpa STT for [modelDir] using the given [mode] and whisper [language].
+     * Defaults match the English streaming transducer so existing single-arg callers are unchanged.
+     */
+    fun initStt(
+        modelDir: String,
+        mode: SttMode = SttMode.TRANSDUCER,
+        language: String = "en"
+    ): Result<Unit> {
+        val engine = SherpaSttEngine(context, modelDir, mode, language)
         val result = engine.initialize()
         return if (result is Result.Success) {
             sttEngine = engine
             useAndroidStt = false
             sttState = VoiceRuntimeState.SHERPA
-            Logger.i("VoiceModule: Using Sherpa-ONNX for STT (offline)")
+            Logger.i("VoiceModule: Using Sherpa-ONNX for STT (offline, $mode/$language)")
             result
         } else {
             // Do NOT silently flip to Android STT. Surface the missing-model state so the UI can
@@ -90,6 +99,30 @@ class VoiceModule(private val context: Context) {
             result
         }
     }
+
+    /**
+     * Re-initialize STT and TTS for the active voice language (read from SharedPreferences via
+     * [VoiceLanguage]), releasing the previous engines first. Used by [UnoOneApplication] at startup
+     * and by Settings when the user changes the language. [modelBaseDir] is the models root
+     * (typically `getExternalFilesDir(null)/models`). Does not touch the recorder or Android fallback.
+     */
+    fun reinitForLanguage(modelBaseDir: String, lang: String = currentLanguage()): Pair<Result<Unit>, Result<Unit>> {
+        runCatching { sttEngine?.release() }
+        sttEngine = null
+        runCatching { ttsEngine?.release() }
+        ttsEngine = null
+        val asr = VoiceLanguage.asrSpec(lang)
+        val sttResult = initStt("$modelBaseDir/${asr.folder}", asr.mode, asr.whisperLanguage)
+        val ttsResult = initTts("$modelBaseDir/${VoiceLanguage.ttsFolder(lang)}")
+        return sttResult to ttsResult
+    }
+
+    /** The currently selected voice language from SharedPreferences (normalized, default English). */
+    fun currentLanguage(): String =
+        VoiceLanguage.normalize(
+            context.getSharedPreferences(VoiceLanguage.PREF_NAME, android.content.Context.MODE_PRIVATE)
+                .getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT)
+        )
 
     fun initTts(modelDir: String): Result<Unit> {
         val engine = SherpaTtsEngine(context, modelDir)

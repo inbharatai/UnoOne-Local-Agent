@@ -2,12 +2,15 @@ package com.unoone.agent.ui.viewmodel
 
 import android.content.Context
 import android.os.Environment
+import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.modelmanager.ModelManager
+import com.unoone.agent.voice.VoiceLanguage
 import com.unoone.agent.voice.VoiceModule
+import com.unoone.agent.voice.VoiceService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +37,10 @@ class SettingsViewModel(context: Context) : ViewModel() {
     private val _darkMode = MutableStateFlow(prefs.getBoolean("dark_mode", false))
     val darkMode: StateFlow<Boolean> = _darkMode.asStateFlow()
 
+    // Offline voice language, persisted in the same unoone_settings store. Default English.
+    private val _voiceLanguage = MutableStateFlow(VoiceLanguage.normalize(prefs.getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT)))
+    val voiceLanguage: StateFlow<String> = _voiceLanguage.asStateFlow()
+
     init {
         refresh()
     }
@@ -55,18 +62,47 @@ class SettingsViewModel(context: Context) : ViewModel() {
         prefs.edit().putBoolean("dark_mode", enabled).apply()
     }
 
-    /** 5E: Test STT by starting a recording, speaking, and transcribing */
+    /**
+     * Select the offline voice language (en/hi/bn/ta/te/kn/ml), persist it, and ask the live
+     * VoiceService + shared VoiceModule to rebuild their STT/TTS engines for the new language so
+     * the change takes effect without an app restart. Unsupported codes are normalized to English.
+     */
+    fun setVoiceLanguage(code: String) {
+        val normalized = VoiceLanguage.normalize(code)
+        _voiceLanguage.value = normalized
+        prefs.edit { putString(VoiceLanguage.PREF_KEY, normalized) }
+        Logger.i("SettingsViewModel: voice language set to '$normalized'")
+        // Rebuild engines for the new language. VoiceService owns the wake-word loop path; the
+        // shared VoiceModule owns the mic-button / VoiceTest path. Both read the pref we just wrote.
+        VoiceService.reinitLanguage(appContext)
+        val shared = (appContext as? com.unoone.agent.UnoOneApplication)?.sharedVoiceModule
+        if (shared != null) {
+            viewModelScope.launch {
+                val modelBaseDir = (appContext.getExternalFilesDir(null)?.absolutePath
+                    ?: appContext.filesDir.absolutePath) + "/models"
+                shared.reinitForLanguage(modelBaseDir, normalized)
+            }
+        }
+    }
+
+    /** 5E: Test STT by starting a recording, speaking, and transcribing (active language). */
     fun testStt(context: Context) {
         viewModelScope.launch {
-            val voiceModule = VoiceModule(context)
-            val initResult = voiceModule.initStt(context.getExternalFilesDir(null)?.absolutePath + "/models/sherpa-asr")
-            if (initResult is Result.Error) {
-                Logger.w("SettingsViewModel: STT test init failed: ${initResult.message}")
-                // Try Android STT fallback
-                voiceModule.startRecording(context, viewModelScope)
-                return@launch
+            // Use the shared VoiceModule (already initialized for the active language at startup);
+            // fall back to a fresh module if the app instance isn't available.
+            val voiceModule = (context.applicationContext as? com.unoone.agent.UnoOneApplication)?.sharedVoiceModule
+                ?: VoiceModule(context).also {
+                    val base = context.getExternalFilesDir(null)?.absolutePath + "/models"
+                    it.reinitForLanguage(base)
+                }
+            if (!voiceModule.isSttInitialized()) {
+                val base = context.getExternalFilesDir(null)?.absolutePath + "/models"
+                voiceModule.reinitForLanguage(base)
             }
-            voiceModule.startRecording(context, viewModelScope)
+            val startResult = voiceModule.startRecording(context, viewModelScope)
+            if (startResult is Result.Error) {
+                Logger.w("SettingsViewModel: STT test start failed: ${startResult.message}")
+            }
         }
     }
 

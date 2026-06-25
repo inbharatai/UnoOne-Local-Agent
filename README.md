@@ -161,14 +161,16 @@ UnoOne replaced loose "does this folder exist?" model detection with a **real ma
 
 ### Manifest schema
 
-Each model descriptor declares `id, folder, type, version, minRamMb, backend, defaultLanguage, files[]`. Each file declares `name, url, sha256, sizeBytes, archive, asset?`. `asset` (optional) names a file bundled in the app's `assets/` — when set, the installer copies it from the APK instead of downloading `url` (used for the espeak-ng-data phoneme table).
+Each model descriptor declares `id, folder, type, version, minRamMb, backend, defaultLanguage, files[]`. Each file declares `name, url, sha256, sizeBytes, archive, asset?, extractsTo?`. `asset` (optional) names a file bundled in the app's `assets/` — when set, the installer copies it from the APK instead of downloading `url` (used for the espeak-ng-data phoneme table). `extractsTo` (optional) names the top directory an archive extracts to — required for tarballs whose top dir differs from the archive name (e.g. `sherpa-onnx-whisper-tiny.tar.bz2` → `sherpa-onnx-whisper-tiny/`) and for `.tar.bz2` whose double extension breaks the strip-last-extension fallback; when unset, health/skip fall back to stripping the last extension of `name`.
 
 | Model id | Type | Backend | What it is |
 |---|---|---|---|
 | `gemma-local` | llm | any (GPU→CPU) | Gemma 3n E4B `.litertlm` — the planning brain |
-| `sherpa-asr` | asr | cpu | Streaming zipformer-transducer **int8** ASR (English) — `csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26` |
-| `sherpa-tts` | tts | cpu | VITS Coqui **en-ljspeech** neural TTS (English) — `csukuangfj/vits-coqui-en-ljspeech` + bundled espeak-ng-data |
-| `vad` | vad | cpu | Streaming zipformer-transducer **int8** keyword spotting / VAD (English, same model family as `sherpa-asr`) |
+| `sherpa-asr-en` | asr | cpu | Streaming zipformer-transducer **int8** ASR (English) — `csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26` |
+| `sherpa-asr-whisper` | asr | cpu | Multilingual **whisper-tiny int8** ASR (shared by hi/bn/ta/te/kn/ml) — `k2-fsa/sherpa-onnx` whisper-tiny tarball; `language` field selects the language at runtime |
+| `vad` | vad | cpu | Streaming zipformer-transducer **int8** keyword spotting / wake-word (English — no Indic KWS model exists) |
+| `sherpa-tts-en` | tts | cpu | VITS Coqui **en-ljspeech** neural TTS (English) — `csukuangfj/vits-coqui-en-ljspeech` + bundled espeak-ng-data |
+| `sherpa-tts-hin/ben/tam/tel/kan/mal` | tts | cpu | **MMS VITS** neural TTS per Indian language — `willwade/mms-tts-multilingual-models-onnx` (character frontend, no espeak) |
 | `punctuation` | punctuation | cpu | Punctuation restoration model (English) |
 | `ocr-optional` | ocr | cpu | Optional OCR model (URL left blank) |
 
@@ -180,7 +182,8 @@ Real, dependency-free (plain `HttpURLConnection`):
 - **Atomic commit** — downloads to `name.part` then renames to the final name, so a crash never leaves a half-written final file.
 - **Integrity verification** — SHA-256 + size check, but only when the manifest actually declares them.
 - **Asset-backed files** — a file with an `asset` field is copied from the bundled APK `assets/` (not downloaded), then verified and (for archives) extracted. This ships the espeak-ng-data phoneme table (~9 MB, language-independent, stable) inside the APK so offline English TTS installs with **no network and no 355 individual downloads**.
-- **Archive health** — archives are deleted after extraction, so health and install-skip verify the *extracted directory* (by the `<dir>.zip` → `<dir>/` convention) rather than the (deleted) zip — a successfully installed archive is not falsely reported missing.
+- **Archive extraction (zip + tar)** — ZIP via `java.util.zip`; tar.bz2 / tar.gz via Apache commons-compress (Android's stdlib has no tar/bzip2), so a manifest entry can point at a public model tarball (the whisper-tiny `.tar.bz2`) without re-hosting its contents.
+- **Archive health** — archives are deleted after extraction, so health and install-skip verify the *extracted directory* (named by `extractsTo`, else the strip-last-extension of `name`) rather than the (deleted) archive — a successfully installed archive is not falsely reported missing.
 - **Empty-file guard** — a 0-byte file with no declared integrity is **not** trusted as valid (forces re-download instead of silently skipping).
 - **Corrupt recovery** — on size/checksum mismatch, deletes the bad file and retries exactly once.
 - **HTTP 416 recovery** — if a prior run finished downloading but crashed before the `.part→final` rename, the installer commits directly without the network (otherwise a "Range Not Satisfiable" response would make re-install fail forever).
@@ -196,19 +199,26 @@ Real, dependency-free (plain `HttpURLConnection`):
 - `detectModels()` — merges manifest info (version, expected vs actual size/checksum, health) into `ModelStatus`
 - `getLlmModelPath()` — finds the first `.litertlm` under `gemma-local/`
 
-### ✅ Shipped English models (verified, integrity-checked)
+### ✅ Shipped models (verified, integrity-checked)
 
-The shipped manifest is filled with **real, verified English model URLs + SHA-256 hashes + byte sizes** — offline English STT/TTS/wake-word install and verify end-to-end with no manual configuration:
+The shipped manifest is filled with **real, verified model URLs + SHA-256 hashes + byte sizes** — offline STT/TTS/wake-word for **English + 6 Indian languages** install and verify end-to-end with no manual configuration. Every hash/size was stream-computed from the actual artifact bytes (no fabrication).
 
-- **`sherpa-asr`** and **`vad`** share the public streaming-zipformer English int8 transducer (`encoder`/`decoder`/`joiner`/`tokens` from `csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26`). STT uses Sherpa's **Online (streaming) recognizer** drained single-shot (`while (isReady) decode`) — the only public, ungated English transducer on Hugging Face is the streaming one; the offline English transducer repos are gated. The wake-word `KeywordSpotter` uses the same Online model family, so STT and KWS share one model install.
-- **`sherpa-tts`** is the Coqui en-ljspeech VITS model (`model.onnx` + `tokens.txt` from `csukuangfj/vits-coqui-en-ljspeech`) plus the **espeak-ng-data phoneme table bundled as an app asset** (`espeak-ng-data.zip`, ~9 MB) — extracted at install time, so the engine's `espeak-ng-data/` directory is populated with no network and no 355 individual HTTP downloads.
+**English:**
+
+- **`sherpa-asr-en`** and **`vad`** share the public streaming-zipformer English int8 transducer (`encoder`/`decoder`/`joiner`/`tokens` from `csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26`). STT uses Sherpa's **Online (streaming) recognizer** drained single-shot (`while (isReady) decode`) — the only public, ungated English transducer on Hugging Face is the streaming one. The wake-word `KeywordSpotter` uses the same Online model family, so STT and KWS share one model install.
+- **`sherpa-tts-en`** is the Coqui en-ljspeech VITS model (`model.onnx` + `tokens.txt` from `csukuangfj/vits-coqui-en-ljspeech`) plus the **espeak-ng-data phoneme table bundled as an app asset** (`espeak-ng-data.zip`, ~9 MB) — extracted at install time, with no 355 individual HTTP downloads.
+
+**Indian languages (Hindi / Bengali / Tamil / Telugu / Kannada / Malayalam):**
+
+- **`sherpa-asr-whisper`** — a single multilingual **whisper-tiny int8** model (the `sherpa-onnx-whisper-tiny.tar.bz2` public tarball) shared by all six languages. `SherpaSttEngine` runs it via Sherpa's **offline-Whisper path** (`OfflineRecognizer` + `OfflineWhisperModelConfig(encoder, decoder, language, task="transcribe")`), decoded one-shot, with the 2-letter language code (hi/bn/ta/te/kn/ml) set per utterance. There is **no public Sherpa transducer for these languages**, so whisper-tiny is the lightest viable offline ASR (~103 MB of int8 weights; whisper-small is ~480 MB and can be swapped in by changing one manifest entry). The tarball is extracted with commons-compress into `sherpa-onnx-whisper-tiny/` (named via `extractsTo`); integrity is verified against the tarball's SHA-256.
+- **`sherpa-tts-hin/ben/tam/tel/kan/mal`** — one **MMS VITS** model per language from `willwade/mms-tts-multilingual-models-onnx` (`model.onnx` + `tokens.txt`, ~114 MB each, character frontend — no espeak needed). `SherpaTtsEngine` auto-detects the frontend: an `espeak-ng-data/` dir present ⇒ Coqui (English) config, else ⇒ MMS config with `dataDir=""` (Sherpa derives the character frontend from model metadata).
 
 What is **not** pre-filled (by design — content, not code):
 
 - **`gemma-local`** and **`punctuation`** carry their real Hugging Face URLs but leave `sha256`/`sizeBytes` empty (the installer still validates download completeness via the HTTP response). Fill the hashes to enable strict integrity checking for the exact Gemma variant you ship.
 - **`ocr-optional`** has no URL (OCR is optional and not wired into the default tool set).
 
-To ship a **different language**, repoint the `sherpa-asr`/`sherpa-tts`/`vad` descriptors at the Sherpa model variants for that language (URLs + hashes/sizes) and, for VITS TTS, ensure the matching phoneme data is available (as an `asset` or a download). The installer and health system enforce integrity the moment the fields are populated.
+The user picks the active language in **Settings → Voice language** (en/hi/bn/ta/te/kn/ml); it is persisted in `unoone_settings` and `VoiceService` + the shared `VoiceModule` rebuild their STT/TTS engines for it live (the wake-word stays English regardless). Install the matching models from **Model Status & Install**. The installer and health system enforce integrity the moment the fields are populated.
 
 The **Model Status & Install** screen (Settings → Model Status) surfaces every model's version, size, health, backend, and install/uninstall with a live progress bar, so this is operable from the UI.
 
@@ -430,12 +440,17 @@ A **single source of truth** — `core/safety/ToolPermissionRegistry` — is con
 
 ## 🌐 Language Support
 
-The offline speech language is determined by **which Sherpa model is installed**, not a hard-coded locale list:
+UnoOne ships **offline** STT/TTS for **7 languages**: English, Hindi, Bengali, Tamil, Telugu, Kannada, Malayalam. The active language is chosen in **Settings → Voice language** (persisted in `unoone_settings`); both voice paths — the foreground `VoiceService` (wake-word loop) and the shared `VoiceModule` (mic-button / Voice Test) — rebuild their STT/TTS engines for it live via `VoiceLanguage` → `asrSpec(lang)` / `ttsFolder(lang)`.
 
-- **Offline STT/TTS language = the installed `sherpa-asr` / `sherpa-tts` model's language.** The shipped manifest is configured for **English** (streaming-zipformer int8 ASR/KWS + Coqui en-ljspeech VITS TTS + bundled espeak-ng-data). To ship another language, repoint those descriptors at the Sherpa model variants for that language (URLs + hashes/sizes) and ensure the matching VITS phoneme data is available.
+- **English** → `sherpa-asr-en` (streaming zipformer transducer int8) + `sherpa-tts-en` (Coqui VITS + espeak).
+- **Hindi / Bengali / Tamil / Telugu / Kannada / Malayalam** → `sherpa-asr-whisper` (one shared multilingual **whisper-tiny int8** model; the whisper `language` field selects the language) + `sherpa-tts-<lang>` (**MMS VITS**, one model per language).
+- **Wake-word (`vad`)** is always **English** — no public Indic keyword-spotter transducer exists. The wake word is spoken in English; the *command* that follows is in the selected Indic language.
 - **Punctuation model** (`punctuation`) is English.
 - **Emergency Android fallback**, when opted in, follows the device's system locales (commonly `en-IN`, `hi-IN`, `ta-IN`, `te-IN`, `kn-IN`, `ml-IN`, `bn-IN`).
 - **Gemma 3n E4B** is multilingual for planning; the system/user prompts are English-oriented.
+- **Bhashini online fallback** is separately scaffolded (a `KEY_BHASHINI_TTS` privacy toggle exists) but not part of the offline path described here.
+
+**Whisper accuracy / weight tradeoff:** the default `sherpa-asr-whisper` uses whisper-**tiny** int8 (~103 MB) to stay light on mobile — accuracy is lower than larger whisper variants, especially for Dravidian languages. To prioritize accuracy over weight, repoint the manifest entry at `sherpa-onnx-whisper-base` / `-small` (larger; update `extractsTo` to the new tarball's top dir) — the engine and installer need no other changes.
 
 ---
 

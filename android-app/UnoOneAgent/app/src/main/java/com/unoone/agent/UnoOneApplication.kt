@@ -52,6 +52,13 @@ class UnoOneApplication : Application() {
 
         // Create the shared VoiceModule first, then inject it into the orchestrator
         sharedVoiceModule = VoiceModule(this)
+        // Initialize the shared module's STT/TTS for the active voice language so the mic-button and
+        // VoiceTest paths work offline at startup (VoiceService inits its own engines separately).
+        // Done off the main thread — Sherpa native init can take a few hundred milliseconds.
+        appScope.launch {
+            val modelBaseDir = (getExternalFilesDir(null)?.absolutePath ?: filesDir.absolutePath) + "/models"
+            sharedVoiceModule.reinitForLanguage(modelBaseDir)
+        }
 
         orchestrator = AgentOrchestrator(
             this,

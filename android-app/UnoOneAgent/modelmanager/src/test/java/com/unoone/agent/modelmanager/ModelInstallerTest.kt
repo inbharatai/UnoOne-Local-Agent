@@ -21,6 +21,9 @@ import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream
 
 /**
  * Exercises [ModelInstaller] against a tiny in-process HTTP server built on plain [ServerSocket]
@@ -308,10 +311,95 @@ class ModelInstallerTest {
         assertEquals("already", File(modelDir, "tts/espeak-ng-data/phondata").readText())
     }
 
+    @Test
+    fun extractsTarBz2ArchiveWithExtractsTo() {
+        // The whisper-tiny pattern: a .tar.bz2 whose top directory ("sherpa-onnx-whisper-tiny")
+        // differs from the archive name and whose double extension (".tar.bz2") breaks the
+        // strip-last-extension fallback. `extractsTo` names the real top dir so the installer
+        // extracts and later health-checks the right path.
+        val tarBytes = tarBz2(
+            mapOf(
+                "sherpa-onnx-whisper-tiny/tiny-encoder.int8.onnx" to "ENC".toByteArray(),
+                "sherpa-onnx-whisper-tiny/tiny-tokens.txt" to "TOK".toByteArray()
+            )
+        )
+        val assets = mapOf("sherpa-onnx-whisper-tiny.tar.bz2" to tarBytes)
+        val assetInstaller = ModelInstaller(modelDir, dao = null) { name ->
+            assets[name]?.let { ByteArrayInputStream(it) }
+        }
+        val descriptor = ModelDescriptor(
+            id = "sherpa-asr-whisper", folder = "sherpa-asr-whisper", type = ModelType.asr,
+            version = "whisper-tiny-int8", minRamMb = 0, backend = ModelBackend.cpu,
+            defaultLanguage = "multi",
+            files = listOf(
+                ModelFile(
+                    name = "sherpa-onnx-whisper-tiny.tar.bz2",
+                    url = "", sha256 = "", sizeBytes = tarBytes.size.toLong(),
+                    archive = true, asset = "sherpa-onnx-whisper-tiny.tar.bz2",
+                    extractsTo = "sherpa-onnx-whisper-tiny"
+                )
+            )
+        )
+        val result = runBlocking { assetInstaller.install(descriptor) }
+        assertTrue(result is ModelInstaller.InstallResult.Success)
+        // Archive deleted after extraction.
+        assertFalse(File(modelDir, "sherpa-asr-whisper/sherpa-onnx-whisper-tiny.tar.bz2").exists())
+        // Extracted files sit under the extractsTo top directory.
+        val top = File(modelDir, "sherpa-asr-whisper/sherpa-onnx-whisper-tiny")
+        assertTrue(top.isDirectory)
+        assertEquals("ENC", File(top, "tiny-encoder.int8.onnx").readText())
+        assertEquals("TOK", File(top, "tiny-tokens.txt").readText())
+    }
+
+    @Test
+    fun skipsTarBz2ArchiveWhenAlreadyExtractedViaExtractsTo() {
+        // Idempotent: when the extractsTo directory already exists with content, the installer must
+        // skip without invoking the asset reader. This exercises archiveAlreadyExtracted with
+        // extractsTo (the strip-last-extension fallback would look for "pkg.tar" and never match).
+        val top = File(modelDir, "sherpa-asr-whisper/sherpa-onnx-whisper-tiny").apply { mkdirs() }
+        File(top, "tiny-encoder.int8.onnx").writeText("already")
+        var reads = 0
+        val assetInstaller = ModelInstaller(modelDir, dao = null) { _ ->
+            reads++
+            ByteArrayInputStream("should-not-be-used".toByteArray())
+        }
+        val descriptor = ModelDescriptor(
+            id = "sherpa-asr-whisper", folder = "sherpa-asr-whisper", type = ModelType.asr,
+            version = "v", minRamMb = 0, backend = ModelBackend.cpu, defaultLanguage = "multi",
+            files = listOf(
+                ModelFile(
+                    name = "pkg.tar.bz2", url = "", sha256 = "", sizeBytes = 0,
+                    archive = true, asset = "pkg.tar.bz2", extractsTo = "sherpa-onnx-whisper-tiny"
+                )
+            )
+        )
+        val result = runBlocking { assetInstaller.install(descriptor) }
+        assertTrue(result is ModelInstaller.InstallResult.Success)
+        assertEquals(0, reads) // asset reader never invoked
+        assertEquals("already", File(top, "tiny-encoder.int8.onnx").readText())
+    }
+
     // ---- helpers ----
 
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+    /** Builds a tar.bz2 with the given `path → bytes` entries (commons-compress, no native deps). */
+    private fun tarBz2(entries: Map<String, ByteArray>): ByteArray {
+        val bos = ByteArrayOutputStream()
+        BZip2CompressorOutputStream(bos).use { bz ->
+            TarArchiveOutputStream(bz).use { tar ->
+                entries.forEach { (name, data) ->
+                    val entry = TarArchiveEntry(name)
+                    entry.size = data.size.toLong()
+                    tar.putArchiveEntry(entry)
+                    tar.write(data)
+                    tar.closeArchiveEntry()
+                }
+            }
+        }
+        return bos.toByteArray()
+    }
 
     private fun descriptor(id: String, file: String, url: String, sha: String, size: Long): ModelDescriptor =
         ModelDescriptor(

@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.unoone.agent.ui.viewmodel.SettingsViewModel
+import com.unoone.agent.voice.VoiceLanguage
 
 @Composable
 fun SettingsScreen(
@@ -55,6 +57,7 @@ fun SettingsScreen(
     val modelStatuses by viewModel.modelStatuses.collectAsState()
     val storageUsageMb by viewModel.storageUsageMb.collectAsState()
     val darkMode by viewModel.darkMode.collectAsState()
+    val voiceLanguage by viewModel.voiceLanguage.collectAsState()
     var showClearConfirmation by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -116,6 +119,37 @@ fun SettingsScreen(
                 Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Audit log")
                 Text("Audit Log", modifier = Modifier.padding(start = 8.dp))
             }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Offline voice language — selects the STT/TTS model set the agent uses.
+        SettingsSection(title = "Voice language") {
+            VoiceLanguage.SUPPORTED.forEach { lang ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.setVoiceLanguage(lang.code) }
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(lang.display)
+                    if (lang.code == voiceLanguage) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = "Selected language",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Wake word stays English. Install the matching STT/TTS models in Model Status & Install.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))

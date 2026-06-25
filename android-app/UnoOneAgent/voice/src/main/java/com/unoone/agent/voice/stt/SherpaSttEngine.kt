@@ -2,6 +2,11 @@ package com.unoone.agent.voice.stt
 
 import android.content.Context
 import com.k2fsa.sherpa.onnx.FeatureConfig
+import com.k2fsa.sherpa.onnx.OfflineModelConfig
+import com.k2fsa.sherpa.onnx.OfflineRecognizer
+import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OfflineStream
+import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig
 import com.k2fsa.sherpa.onnx.OnlineModelConfig
 import com.k2fsa.sherpa.onnx.OnlineRecognizer
 import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
@@ -14,34 +19,57 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Production offline STT using Sherpa-ONNX **streaming** transducer models
- * (encoder/decoder/joiner + tokens).
+ * Which Sherpa model family the engine loads for a given language.
  *
- * Uses the Online (streaming) recognizer rather than the Offline one because the only public,
- * ungated English transducer on Hugging Face is the streaming zipformer int8
- * (`csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26`). The offline English transducer
- * repos are gated. A streaming recognizer fed a whole utterance at once and drained with
- * `while (isReady) decode` behaves as a single-shot transcriber and preserves this engine's
- * `transcribe(pcmBytes) -> Result<String>` contract. The wake-word [KeywordSpotterEngine] uses the
- * same Online model family, so STT and KWS share one model install.
+ * - [TRANSDUCER]: streaming zipformer transducer (encoder/decoder/joiner + tokens). Used for
+ *   English — the only public, ungated Indic-relevant transducer is the English streaming one, which
+ *   the wake-word [KeywordSpotterEngine] also shares. Decoded in streaming mode (drained with
+ *   `while (isReady) decode`) which behaves as single-shot for a whole captured clip.
+ * - [WHISPER]: OpenAI whisper (encoder/decoder + tokens) via Sherpa's offline-Whisper path. Used for
+ *   the Indian languages (Hindi/Bengali/Tamil/Telugu/Kannada/Malayalam) — no Sherpa transducer
+ *   exists for those, so the multilingual `whisper-tiny` int8 covers all of them with its `language`
+ *   field. Decoded one-shot (`acceptWaveform` → `decode` → `getResult`).
+ */
+enum class SttMode { TRANSDUCER, WHISPER }
+
+/**
+ * Production offline STT using Sherpa-ONNX. Supports two model families via [mode]:
+ *
+ * - **TRANSDUCER** (streaming zipformer, English): `OnlineRecognizer` fed a whole utterance and
+ *   drained with `while (isReady) decode`. The only public, ungated English transducer on Hugging
+ *   Face is the streaming zipformer int8 (`csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26`)
+ *   — the offline repos are gated. The wake-word [KeywordSpotterEngine] uses the same Online family,
+ *   so STT and KWS share one model install.
+ * - **WHISPER** (multilingual tiny, Indian languages): `OfflineRecognizer` with
+ *   `OfflineWhisperModelConfig(encoder, decoder, language, task = "transcribe")`. One-shot decode.
+ *   The model tarball extracts to a `sherpa-onnx-whisper-tiny/` top directory inside [modelDir].
  *
  * Real direct-API implementation (no reflection). The native AAR is pulled in via the
  * `com.github.k2-fsa:sherpa-onnx` Maven coordinate declared in :voice/build.gradle.kts, or a
  * dropped-in `voice/libs/sherpa-onnx.aar`. If the native `.so` fails to load on a given device,
  * initialization degrades gracefully (returns Result.Error) so the caller can fall back to the
  * emergency Android SpeechRecognizer path — it never crashes.
+ *
+ * @param language the whisper `language` code (e.g. "hi", "ta"). Ignored in TRANSDUCER mode.
  */
-class SherpaSttEngine(private val context: Context, private val modelDir: String) {
+class SherpaSttEngine(
+    private val context: Context,
+    private val modelDir: String,
+    private val mode: SttMode = SttMode.TRANSDUCER,
+    private val language: String = "en"
+) {
 
     @Volatile
-    private var recognizer: OnlineRecognizer? = null
+    private var onlineRecognizer: OnlineRecognizer? = null
+    @Volatile
+    private var offlineRecognizer: OfflineRecognizer? = null
     @Volatile
     private var initialized = false
 
     /**
-     * Best-effort confidence for the last transcription. Sherpa streaming transducer results do not
-     * expose a confidence score, so this is 1.0 when text is produced and 0.0 when empty — enough
-     * to drive the orchestrator's low-confidence retry prompt.
+     * Best-effort confidence for the last transcription. Sherpa results do not expose a numeric
+     * confidence, so this is 1.0 when text is produced and 0.0 when empty — enough to drive the
+     * orchestrator's low-confidence retry prompt.
      */
     @Volatile
     var lastConfidence: Float = 1f
@@ -50,61 +78,109 @@ class SherpaSttEngine(private val context: Context, private val modelDir: String
     @Synchronized
     fun initialize(): Result<Unit> {
         return try {
-            Logger.i("SherpaSttEngine: Checking model files in $modelDir")
-            val encoder = File("$modelDir/encoder.onnx")
-            val decoder = File("$modelDir/decoder.onnx")
-            val joiner = File("$modelDir/joiner.onnx")
-            val tokens = File("$modelDir/tokens.txt")
-
-            if (!encoder.exists() || !decoder.exists() || !joiner.exists() || !tokens.exists()) {
-                return Result.Error("Sherpa STT model files missing. Please download models to: $modelDir")
+            when (mode) {
+                SttMode.TRANSDUCER -> initializeTransducer()
+                SttMode.WHISPER -> initializeWhisper()
             }
-
-            val onlineModelConfig = OnlineModelConfig().apply {
-                transducer = OnlineTransducerModelConfig(
-                    encoder.absolutePath,
-                    decoder.absolutePath,
-                    joiner.absolutePath
-                )
-                this.tokens = tokens.absolutePath
-                numThreads = 4
-            }
-
-            val config = OnlineRecognizerConfig().apply {
-                featConfig = FeatureConfig(16000, 80, 0f)
-                this.modelConfig = onlineModelConfig
-                // We transcribe whole utterances, not a live mic feed, so endpoint detection is not
-                // useful here; disable it so the recognizer does not cut off mid-utterance.
-                enableEndpoint = false
-            }
-
-            recognizer = OnlineRecognizer(context.assets, config)
-            initialized = true
-            Logger.i("SherpaSttEngine: Online STT initialized (streaming transducer, 4 threads)")
-            Result.Success(Unit)
         } catch (e: Throwable) {
             // UnsatisfiedLinkError (native .so missing/incompatible) is an Error, not Exception.
-            Logger.e("SherpaSttEngine: Initialization failed: ${e::class.java.simpleName}: ${e.message}")
-            recognizer = null
+            Logger.e("SherpaSttEngine: Initialization failed (${mode}): ${e::class.java.simpleName}: ${e.message}")
+            onlineRecognizer = null
+            offlineRecognizer = null
             initialized = false
             Result.Error("Sherpa STT unavailable: ${e.message}")
         }
     }
 
+    private fun initializeTransducer(): Result<Unit> {
+        Logger.i("SherpaSttEngine: Checking transducer files in $modelDir")
+        val encoder = File("$modelDir/encoder.onnx")
+        val decoder = File("$modelDir/decoder.onnx")
+        val joiner = File("$modelDir/joiner.onnx")
+        val tokens = File("$modelDir/tokens.txt")
+        if (!encoder.exists() || !decoder.exists() || !joiner.exists() || !tokens.exists()) {
+            return Result.Error("Sherpa STT (transducer) model files missing. Please download models to: $modelDir")
+        }
+
+        val onlineModelConfig = OnlineModelConfig().apply {
+            transducer = OnlineTransducerModelConfig(
+                encoder.absolutePath,
+                decoder.absolutePath,
+                joiner.absolutePath
+            )
+            this.tokens = tokens.absolutePath
+            numThreads = 4
+        }
+        val config = OnlineRecognizerConfig().apply {
+            featConfig = FeatureConfig(16000, 80, 0f)
+            this.modelConfig = onlineModelConfig
+            // We transcribe whole utterances, not a live mic feed, so endpoint detection is not
+            // useful here; disable it so the recognizer does not cut off mid-utterance.
+            enableEndpoint = false
+        }
+        onlineRecognizer = OnlineRecognizer(context.assets, config)
+        initialized = true
+        Logger.i("SherpaSttEngine: Online STT initialized (streaming transducer, 4 threads)")
+        return Result.Success(Unit)
+    }
+
+    private fun initializeWhisper(): Result<Unit> {
+        // The whisper-tiny tarball extracts to a `sherpa-onnx-whisper-tiny/` top directory.
+        val whisperDir = whisperModelDir(modelDir)
+        Logger.i("SherpaSttEngine: Checking whisper files in $whisperDir (lang=$language)")
+        val encoder = File(whisperDir, "tiny-encoder.int8.onnx")
+        val decoder = File(whisperDir, "tiny-decoder.int8.onnx")
+        val tokens = File(whisperDir, "tiny-tokens.txt")
+        if (!encoder.exists() || !decoder.exists() || !tokens.exists()) {
+            return Result.Error("Sherpa STT (whisper) model files missing. Please download the whisper model to: $modelDir")
+        }
+
+        val whisperConfig = OfflineWhisperModelConfig(
+            encoder.absolutePath,
+            decoder.absolutePath,
+            language,
+            "transcribe"
+        )
+        val modelConfig = OfflineModelConfig().apply {
+            this.whisper = whisperConfig
+            this.tokens = tokens.absolutePath
+            numThreads = 4
+        }
+        val config = OfflineRecognizerConfig().apply {
+            featConfig = FeatureConfig(16000, 80, 0f)
+            this.modelConfig = modelConfig
+        }
+        offlineRecognizer = OfflineRecognizer(context.assets, config)
+        initialized = true
+        Logger.i("SherpaSttEngine: Offline STT initialized (whisper-tiny, lang=$language, 4 threads)")
+        return Result.Success(Unit)
+    }
+
     @Synchronized
     fun transcribe(pcmBytes: ByteArray): Result<String> {
-        val rec = recognizer
-        if (!initialized || rec == null) {
-            return Result.Error("SherpaSttEngine not initialized")
-        }
+        if (!initialized) return Result.Error("SherpaSttEngine not initialized")
         if (pcmBytes.size < 2) {
             lastConfidence = 0f
             return Result.Error("No audio captured")
         }
 
-        var stream: OnlineStream? = null
         return try {
             val samples = pcmToFloat(pcmBytes)
+            when (mode) {
+                SttMode.TRANSDUCER -> transcribeTransducer(samples)
+                SttMode.WHISPER -> transcribeWhisper(samples)
+            }
+        } catch (e: Throwable) {
+            Logger.e("SherpaSttEngine: Transcription failed (${mode}): ${e::class.java.simpleName}: ${e.message}")
+            lastConfidence = 0f
+            Result.Error("Transcription failed: ${e.message}")
+        }
+    }
+
+    private fun transcribeTransducer(samples: FloatArray): Result<String> {
+        val rec = onlineRecognizer ?: return Result.Error("Sherpa STT (transducer) not initialized")
+        var stream: OnlineStream? = null
+        return try {
             stream = rec.createStream()
             stream.acceptWaveform(samples, 16000)
             // Drain the streaming decoder: feed the whole utterance at once, then keep decoding
@@ -113,20 +189,30 @@ class SherpaSttEngine(private val context: Context, private val modelDir: String
             while (rec.isReady(stream)) {
                 rec.decode(stream)
             }
-            val result = rec.getResult(stream)
-            val text = result.text.trim()
+            val text = rec.getResult(stream).text.trim()
             lastConfidence = if (text.isNotBlank()) 1f else 0f
-            Logger.i("SherpaSttEngine: Transcribed: '$text'")
+            Logger.i("SherpaSttEngine: Transcribed (transducer): '$text'")
             Result.Success(text)
-        } catch (e: Throwable) {
-            Logger.e("SherpaSttEngine: Transcription failed: ${e::class.java.simpleName}: ${e.message}")
-            lastConfidence = 0f
-            Result.Error("Transcription failed: ${e.message}")
         } finally {
-            try {
-                stream?.release()
-            } catch (_: Throwable) {
-            }
+            try { stream?.release() } catch (_: Throwable) {}
+        }
+    }
+
+    private fun transcribeWhisper(samples: FloatArray): Result<String> {
+        val rec = offlineRecognizer ?: return Result.Error("Sherpa STT (whisper) not initialized")
+        var stream: OfflineStream? = null
+        return try {
+            stream = rec.createStream()
+            stream.acceptWaveform(samples, 16000)
+            // Whisper is decoded one-shot: feed the whole utterance, decode once, read the result.
+            // Unlike the streaming transducer there is no isReady() drain loop.
+            rec.decode(stream)
+            val text = rec.getResult(stream).text.trim()
+            lastConfidence = if (text.isNotBlank()) 1f else 0f
+            Logger.i("SherpaSttEngine: Transcribed (whisper/$language): '$text'")
+            Result.Success(text)
+        } finally {
+            try { stream?.release() } catch (_: Throwable) {}
         }
     }
 
@@ -134,12 +220,10 @@ class SherpaSttEngine(private val context: Context, private val modelDir: String
 
     @Synchronized
     fun release() {
-        try {
-            recognizer?.release()
-        } catch (e: Throwable) {
-            Logger.e("SherpaSttEngine: Error releasing recognizer", e)
-        }
-        recognizer = null
+        try { onlineRecognizer?.release() } catch (e: Throwable) { Logger.e("SherpaSttEngine: Error releasing online recognizer", e) }
+        try { offlineRecognizer?.release() } catch (e: Throwable) { Logger.e("SherpaSttEngine: Error releasing offline recognizer", e) }
+        onlineRecognizer = null
+        offlineRecognizer = null
         initialized = false
     }
 
@@ -150,5 +234,37 @@ class SherpaSttEngine(private val context: Context, private val modelDir: String
             samples[i] = buffer.short.toFloat() / 32768f
         }
         return samples
+    }
+
+    companion object {
+        /** The top directory the whisper-tiny tarball extracts to inside a model folder. */
+        const val WHISPER_TOP_DIR = "sherpa-onnx-whisper-tiny"
+
+        /**
+         * Resolves the whisper model directory (the tarball's extracted top dir) inside [modelDir].
+         * Pure/testable — does not touch the native runtime.
+         */
+        fun whisperModelDir(modelDir: String): File = File(modelDir, WHISPER_TOP_DIR)
+
+        /**
+         * The files a whisper install requires under [modelDir]. Pure/testable — used by the engine
+         * and by tests that verify the expected layout without instantiating the native runtime.
+         */
+        fun whisperRequiredFiles(modelDir: String): List<File> {
+            val dir = whisperModelDir(modelDir)
+            return listOf(
+                File(dir, "tiny-encoder.int8.onnx"),
+                File(dir, "tiny-decoder.int8.onnx"),
+                File(dir, "tiny-tokens.txt")
+            )
+        }
+
+        /** The files a transducer install requires directly under [modelDir]. Pure/testable. */
+        fun transducerRequiredFiles(modelDir: String): List<File> = listOf(
+            File(modelDir, "encoder.onnx"),
+            File(modelDir, "decoder.onnx"),
+            File(modelDir, "joiner.onnx"),
+            File(modelDir, "tokens.txt")
+        )
     }
 }

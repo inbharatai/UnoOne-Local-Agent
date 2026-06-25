@@ -43,4 +43,6 @@ dependencies {
     // ---------------------------------------------------------------------------
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
     implementation("com.github.k2-fsa:sherpa-onnx:v1.13.3")
+
+    testImplementation("junit:junit:4.13.2")
 }

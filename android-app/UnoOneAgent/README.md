@@ -158,7 +158,7 @@ No cross-app `Intent` broadcast is used — transcribed speech never leaves the 
 
 `modelmanager` ships a real manifest + installer replacing loose folder detection.
 
-**Manifest** (`src/main/assets/models_manifest.json`): array of model descriptors (`id, folder, type, version, minRamMb, backend, defaultLanguage, files[]`), each file `{name, url, sha256, sizeBytes, archive, asset?}`. `asset` names a file bundled in the app's `assets/` (copied from the APK instead of downloaded). Six models: `gemma-local` (LLM), `sherpa-asr`, `sherpa-tts`, `vad`, `punctuation`, `ocr-optional`.
+**Manifest** (`src/main/assets/models_manifest.json`): array of model descriptors (`id, folder, type, version, minRamMb, backend, defaultLanguage, files[]`), each file `{name, url, sha256, sizeBytes, archive, asset?, extractsTo?}`. `asset` names a file bundled in the app's `assets/` (copied from the APK instead of downloaded); `extractsTo` names the top directory an archive extracts to (required for tarballs like `sherpa-onnx-whisper-tiny.tar.bz2` whose top dir differs from the archive name). Models: `gemma-local` (LLM), `sherpa-asr-en` (English ASR), `sherpa-asr-whisper` (multilingual whisper ASR for hi/bn/ta/te/kn/ml), `vad` (English wake-word), `sherpa-tts-en` (English TTS), `sherpa-tts-hin/ben/tam/tel/kan/mal` (MMS TTS per Indic language), `punctuation`, `ocr-optional`.
 
 **`ModelInstaller`** (plain `HttpURLConnection`, no deps):
 - Resume via `Range:` header against `.part`; appends on 206, restarts on 200
@@ -418,9 +418,11 @@ All `AccessibilityNodeInfo` objects are recycled using `try/finally` patterns:
 App-managed model directories under app external files (`Android/data/com.unoone.agent/files/models/`):
 
 - `gemma-local` — Gemma 3n E4B `.litertlm`
-- `sherpa-asr` — offline ASR
-- `sherpa-tts` — offline TTS
-- `vad` — keyword spotting / VAD
+- `sherpa-asr-en` — offline ASR (English, streaming zipformer transducer int8)
+- `sherpa-asr-whisper` — offline ASR (multilingual whisper-tiny int8; shared by hi/bn/ta/te/kn/ml — the `language` field selects the language). Extracts to `sherpa-onnx-whisper-tiny/`
+- `sherpa-tts-en` — offline TTS (English, Coqui VITS + espeak-ng-data)
+- `sherpa-tts-hin/ben/tam/tel/kan/mal` — offline TTS (MMS VITS, one per Indic language)
+- `vad` — keyword spotting / wake-word (English — no Indic KWS model exists)
 - `punctuation` — punctuation restoration
 - `ocr-optional` — optional OCR
 
@@ -463,8 +465,9 @@ Run from this directory (`android-app/UnoOneAgent`):
 | `app/.../core/util/{CallbackMulticast,InputSanitizer}Test.kt` | multicast dedup, sanitization |
 | `core/.../safety/ToolPermissionRegistryTest.kt` | full tool→requirement mapping |
 | `localbrain/.../PromptBuilderTest.kt` | prompt assembly + tool names |
-| `modelmanager/.../ModelManifestTest.kt` | manifest parse, checksum, health |
-| `modelmanager/.../ModelInstallerTest.kt` | resume, corrupt-recovery, zip, idempotent skip, empty-file guard, complete-`.part` commit |
+| `modelmanager/.../ModelManifestTest.kt` | manifest parse, checksum, health, per-language `extractsTo`/`asset` fields |
+| `modelmanager/.../ModelInstallerTest.kt` | resume, corrupt-recovery, zip + tar.bz2 extraction, `extractsTo` archive health/skip, idempotent skip, empty-file guard, complete-`.part` commit |
+| `voice/.../VoiceLanguageMappingTest.kt` | en→transducer, Indic→whisper, per-language TTS folder mapping |
 
 ---
 
@@ -474,7 +477,7 @@ These are honest, current limitations (not papered over):
 
 | Component | Status | Detail |
 |---|---|---|
-| Manifest model URLs + integrity fields | ✅ Done (English) | `sherpa-asr`/`sherpa-tts`/`vad` filled with verified HF URLs + SHA-256/size; espeak-ng-data bundled as app asset; `gemma-local`/`punctuation` URLs only. Repoint descriptors for other languages. |
+| Manifest model URLs + integrity fields | ✅ Done (7 languages) | `sherpa-asr-en`/`sherpa-asr-whisper`/`sherpa-tts-{en,hin,ben,tam,tel,kan,mal}`/`vad` filled with verified HF/GitHub URLs + stream-computed SHA-256/size; espeak-ng-data bundled as app asset; `gemma-local`/`punctuation` URLs only. ASR for hi/bn/ta/te/kn/ml uses shared multilingual whisper-tiny int8 (language selected at runtime); TTS uses per-language MMS VITS. Wake word (`vad`) stays English. |
 | `RAGManager` | 🔧 Scaffold | Exists but not wired into orchestrator runtime flow |
 | `Diagnostics` | 🔧 Scaffold | Helpers exist but not broadly instrumented across execution paths |
 | `ObjectDetectionControl` | 🔧 Dead code | Single-image detector never invoked (BlindAidManager is used) |

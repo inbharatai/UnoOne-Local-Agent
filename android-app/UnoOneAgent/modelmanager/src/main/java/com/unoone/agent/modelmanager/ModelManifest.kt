@@ -21,10 +21,15 @@ enum class ModelBackend { gpu, cpu, any }
  * - `sha256` / `sizeBytes`: optional strict-integrity fields. Empty/zero ⇒ the installer skips that
  *   particular check (still validates download completeness via the HTTP response and, for
  *   archives, extraction success). Fill them in for a model variant you ship to enable verification.
- * - `archive`: when true the file is a ZIP extracted into the model folder then deleted (used for
- *   directory-shaped assets like espeak-ng-data). Convention: the archive `name` is `<dir>.zip` and
- *   its entries are rooted at `<dir>/`, so health/install-skip verify the extracted `<dir>/` rather
- *   than the (deleted) zip.
+ * - `archive`: when true the file is an archive (ZIP, tar.bz2, tar.gz) extracted into the model
+ *   folder then deleted (used for directory-shaped assets like espeak-ng-data, or the whisper-tiny
+ *   model tarball). Health/install-skip verify the extracted directory rather than the (deleted)
+ *   archive. By default the extracted directory is derived by stripping the last extension of
+ *   `name` (`<dir>.zip` → `<dir>/`); set [extractsTo] when that convention does not hold — e.g. a
+ *   `sherpa-onnx-whisper-tiny.tar.bz2` whose top directory is `sherpa-onnx-whisper-tiny/` (the
+ *   `.tar.bz2` double extension and the differing top dir both break the strip-last-extension rule).
+ * - `extractsTo`: optional name of the top directory an archive extracts to, used for archive
+ *   health and install-skip. When null, falls back to stripping the last extension of `name`.
  * - `asset`: optional name of a file bundled in the app's `assets/`. When set, the installer copies
  *   the asset to `name` instead of downloading `url` (the espeak-ng-data phoneme table ships this
  *   way — ~9 MB, language-independent, stable — avoiding 355 individual HTTP downloads at install
@@ -37,7 +42,8 @@ data class ModelFile(
     val sha256: String = "",
     val sizeBytes: Long = 0,
     val archive: Boolean = false,
-    val asset: String? = null
+    val asset: String? = null,
+    val extractsTo: String? = null
 )
 
 /**

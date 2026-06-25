@@ -54,6 +54,11 @@ class VoiceService : Service() {
         private const val NOTIFICATION_ID = 1001
         const val ACTION_VOICE_COMMAND = "com.unoone.agent.VOICE_COMMAND"
         const val EXTRA_COMMAND = "command"
+        /**
+         * Delivered via startService to an already-running service so it rebuilds STT/TTS for the
+         * newly-selected voice language without restarting the wake-word loop. Sent by Settings.
+         */
+        const val ACTION_REINIT_LANG = "com.unoone.agent.REINIT_VOICE_LANG"
 
         /**
          * Static callback for voice commands. Set by the Application layer
@@ -71,6 +76,12 @@ class VoiceService : Service() {
             val intent = Intent(context, VoiceService::class.java)
             context.stopService(intent)
         }
+
+        /** Ask a running VoiceService to rebuild STT/TTS for the current voice language pref. */
+        fun reinitLanguage(context: Context) {
+            val intent = Intent(context, VoiceService::class.java).setAction(ACTION_REINIT_LANG)
+            runCatching { context.startService(intent) }
+        }
     }
 
     override fun onCreate() {
@@ -81,42 +92,76 @@ class VoiceService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_REINIT_LANG) {
+            // Language changed at runtime: rebuild STT/TTS only, keep the wake-word loop running.
+            reinitSttTts()
+            return START_STICKY
+        }
         initEngines()
         startMonitoring()
         return START_STICKY
     }
 
+    /** The models root under app external files dir. */
+    private fun modelRoot(): String =
+        (getExternalFilesDir(null)?.absolutePath ?: filesDir.absolutePath) + "/models"
+
+    /** The currently selected voice language (normalized; default English). */
+    private fun currentLanguage(): String =
+        VoiceLanguage.normalize(
+            getSharedPreferences(VoiceLanguage.PREF_NAME, Context.MODE_PRIVATE)
+                .getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT)
+        )
+
     private fun initEngines() {
-        // Sherpa-ONNX is the production offline default. Android SpeechRecognizer is an explicit
-        // emergency fallback only — never used silently to keep the offline promise honest.
-        val modelDir = getExternalFilesDir(null)?.absolutePath + "/models"
-        val stt = SherpaSttEngine(this, "$modelDir/sherpa-asr")
+        val modelDir = modelRoot()
+        val lang = currentLanguage()
+        initSttTts(modelDir, lang)
+        initKeywordSpotter(modelDir)
+    }
+
+    /** Builds STT + TTS for [lang]. Sherpa is the offline default; Android STT is emergency-only. */
+    private fun initSttTts(modelDir: String, lang: String) {
+        val asr = VoiceLanguage.asrSpec(lang)
+        val stt = SherpaSttEngine(this, "$modelDir/${asr.folder}", asr.mode, asr.whisperLanguage)
         if (stt.initialize() is Result.Success) {
             sttEngine = stt
             useAndroidStt = false
-            Logger.i("VoiceService: Sherpa STT ready (offline)")
+            Logger.i("VoiceService: Sherpa STT ready (offline, ${asr.mode}/$lang)")
         } else {
             useAndroidStt = allowSystemSttFallback
-            Logger.w("VoiceService: Sherpa STT unavailable; emergency Android fallback ${if (allowSystemSttFallback) "enabled" else "disabled"}")
+            Logger.w("VoiceService: Sherpa STT unavailable (lang=$lang); emergency Android fallback ${if (allowSystemSttFallback) "enabled" else "disabled"}")
         }
 
-        // Try Sherpa-ONNX TTS
-        val tts = SherpaTtsEngine(this, "$modelDir/sherpa-tts")
+        val tts = SherpaTtsEngine(this, "$modelDir/${VoiceLanguage.ttsFolder(lang)}")
         if (tts.initialize() is Result.Success) {
             ttsEngine = tts
-            Logger.i("VoiceService: Sherpa TTS ready (offline)")
+            Logger.i("VoiceService: Sherpa TTS ready (offline, $lang)")
         } else {
-            Logger.w("VoiceService: Sherpa TTS unavailable")
+            Logger.w("VoiceService: Sherpa TTS unavailable (lang=$lang)")
         }
+    }
 
-        // Try Keyword Spotter (wake word) — uses the online transducer model in models/vad
-        val kws = KeywordSpotterEngine(this, "$modelDir/vad", cacheDir?.absolutePath)
+    /** Wake-word (KWS) — always English (vad). No Indic keyword-spotter model exists. */
+    private fun initKeywordSpotter(modelDir: String) {
+        val kws = KeywordSpotterEngine(this, "$modelDir/${VoiceLanguage.KWS_FOLDER}", cacheDir?.absolutePath)
         if (kws.initialize(listOf("uno one", "uno one")) is Result.Success) {
             keywordSpotter = kws
-            Logger.i("VoiceService: Keyword spotter ready")
+            Logger.i("VoiceService: Keyword spotter ready (English wake word)")
         } else {
             Logger.w("VoiceService: Keyword spotter unavailable, using continuous listen mode")
         }
+    }
+
+    /** Releases and rebuilds STT/TTS for the current language pref; keeps KWS running. */
+    private fun reinitSttTts() {
+        runCatching { sttEngine?.release() }
+        sttEngine = null
+        runCatching { ttsEngine?.release() }
+        ttsEngine = null
+        val lang = currentLanguage()
+        Logger.i("VoiceService: reinitializing STT/TTS for language '$lang'")
+        initSttTts(modelRoot(), lang)
     }
 
     private fun startMonitoring() {

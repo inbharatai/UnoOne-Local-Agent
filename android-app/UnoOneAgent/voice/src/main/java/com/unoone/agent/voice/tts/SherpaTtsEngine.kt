@@ -10,7 +10,15 @@ import com.unoone.agent.core.util.Logger
 import java.io.File
 
 /**
- * Production offline TTS using Sherpa-ONNX (VITS models: model.onnx + tokens.txt + espeak-ng-data).
+ * Production offline TTS using Sherpa-ONNX VITS models: `model.onnx` + `tokens.txt`.
+ *
+ * Supports two frontend families, auto-detected from the model folder contents:
+ * - **espeak frontend** (English Coqui `vits-coqui-en-ljspeech`): an `espeak-ng-data/` directory is
+ *   present alongside the model → `dataDir` is set to it. This is the original shipped path.
+ * - **character frontend** (Indic MMS TTS from `willwade/mms-tts-multilingual-models-onnx`): no
+ *   `espeak-ng-data/` directory → `dataDir` is left empty and Sherpa auto-detects the character
+ *   frontend from the model metadata. One model per language (Hindi/Bengali/Tamil/Telugu/Kannada/
+ *   Malayalam), each ~114 MB.
  *
  * Real direct-API implementation (no reflection). Generates PCM via Sherpa and plays it through
  * the shared [TtsPlayer] (AudioTrack). Degrades gracefully if the native `.so` fails to load.
@@ -29,16 +37,20 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
             Logger.i("SherpaTtsEngine: Checking model files in $modelDir")
             val model = File("$modelDir/model.onnx")
             val tokens = File("$modelDir/tokens.txt")
-            val espeakData = File("$modelDir/espeak-ng-data")
-
-            if (!model.exists() || !tokens.exists() || !espeakData.exists()) {
+            if (!model.exists() || !tokens.exists()) {
                 return Result.Error("Sherpa TTS model files missing. Please download models to: $modelDir")
             }
+
+            // Auto-detect the frontend: espeak (English Coqui) when its data dir is present,
+            // character (Indic MMS) otherwise. Sherpa derives the frontend from the model when
+            // dataDir is empty, so the MMS path needs no phoneme table.
+            val espeakData = File("$modelDir/espeak-ng-data")
+            val espeakFrontend = usesEspeakFrontend(modelDir)
 
             val vits = OfflineTtsVitsModelConfig().apply {
                 this.model = model.absolutePath
                 this.tokens = tokens.absolutePath
-                dataDir = espeakData.absolutePath
+                dataDir = if (espeakFrontend) espeakData.absolutePath else ""
             }
             val modelConfig = OfflineTtsModelConfig().apply {
                 this.vits = vits
@@ -50,7 +62,7 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
 
             tts = OfflineTts(context.assets, config)
             initialized = true
-            Logger.i("SherpaTtsEngine: Offline TTS initialized (VITS, 2 threads)")
+            Logger.i("SherpaTtsEngine: Offline TTS initialized (${if (espeakFrontend) "espeak" else "MMS/character"} frontend, 2 threads)")
             Result.Success(Unit)
         } catch (e: Throwable) {
             Logger.e("SherpaTtsEngine: Initialization failed: ${e::class.java.simpleName}: ${e.message}")
@@ -100,5 +112,18 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
         player.release()
         tts = null
         initialized = false
+    }
+
+    companion object {
+        /** The espeak phoneme-table directory name placed alongside a Coqui (English) VITS model. */
+        private const val ESPEAK_DATA_DIR = "espeak-ng-data"
+
+        /**
+         * True when the model folder ships an `espeak-ng-data/` directory (the Coqui English
+         * frontend). False for MMS Indic models, which use the character frontend and need no
+         * phoneme table. Pure/testable — does not touch the native runtime.
+         */
+        fun usesEspeakFrontend(modelDir: String): Boolean =
+            File(modelDir, ESPEAK_DATA_DIR).let { it.exists() && it.isDirectory }
     }
 }

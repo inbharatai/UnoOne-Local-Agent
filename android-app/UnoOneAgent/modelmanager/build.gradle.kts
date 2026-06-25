@@ -36,6 +36,11 @@ dependencies {
     implementation(project(":storage"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
+    // Archive extraction beyond ZIP: tar.bz2 / tar.gz for model tarballs (e.g. the public
+    // sherpa-onnx-whisper-tiny.tar.bz2). Android's stdlib only ships java.util.zip; commons-compress
+    // is pure-Java, Android-safe (~1 MB) and lets the installer point a manifest entry at a public
+    // tarball instead of re-hosting its contents. ZIP archives still use java.util.zip directly.
+    implementation("org.apache.commons:commons-compress:1.27.1")
 
     testImplementation("junit:junit:4.13.2")
 }
