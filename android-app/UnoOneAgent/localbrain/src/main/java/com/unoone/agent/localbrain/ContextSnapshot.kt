@@ -12,7 +12,11 @@ data class ContextSnapshot(
     val ocrText: String = "",
     val recentNotes: List<String> = emptyList(),
     val userMemory: String = "",
-    val activeSkills: List<String> = emptyList()
+    val activeSkills: List<String> = emptyList(),
+    /** Last few commands the user issued (oldest→newest), for continuity/disambiguation. */
+    val recentCommands: List<String> = emptyList(),
+    /** Human-readable result of the most recent tool execution, if any. */
+    val lastToolResult: String = ""
 ) {
     fun isEmpty(): Boolean =
         currentPackage.isBlank() &&
@@ -21,5 +25,7 @@ data class ContextSnapshot(
             ocrText.isBlank() &&
             recentNotes.isEmpty() &&
             userMemory.isBlank() &&
-            activeSkills.isEmpty()
+            activeSkills.isEmpty() &&
+            recentCommands.isEmpty() &&
+            lastToolResult.isBlank()
 }

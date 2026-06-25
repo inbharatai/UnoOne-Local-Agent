@@ -10,5 +10,18 @@ interface ICommandParser {
     fun parse(text: String): ToolCall?
     fun sanitizeAndParse(rawInput: String): ToolCall?
     fun isModelLoaded(): Boolean
-    suspend fun parseAsync(text: String): ToolCall?
+
+    /** Rule-first, then LLM fallback (no conversation context). */
+    suspend fun parseAsync(text: String): ToolCall? = parseAsync(text, emptyList(), "")
+
+    /**
+     * Rule-first, then LLM fallback, enriching the LLM context snapshot with the recent commands
+     * and the last tool result so the model can disambiguate follow-ups ("do it again", "the
+     * second one", etc.). Only the [text] is parsed; the context is advisory.
+     */
+    suspend fun parseAsync(
+        text: String,
+        recentCommands: List<String>,
+        lastToolResult: String
+    ): ToolCall?
 }

@@ -55,6 +55,7 @@ class AudioRecorder {
             )
 
             if (record.state != AudioRecord.STATE_INITIALIZED) {
+                runCatching { record.release() } // don't leak the native AudioRecord on init failure
                 return Result.Error("AudioRecord failed to initialize")
             }
 
@@ -78,7 +79,8 @@ class AudioRecorder {
                         if (onAmplitude != null && now - lastAmplitudeTime >= AMPLITUDE_INTERVAL_MS) {
                             var sum = 0.0
                             for (i in 0 until read step 2) {
-                                val sample = (buffer[i].toInt() and 0xFF) or (buffer[i + 1].toInt() shl 8)
+                                // Little-endian signed 16-bit: mask the high byte to avoid sign-extension.
+                                val sample = (buffer[i].toInt() and 0xFF) or ((buffer[i + 1].toInt() and 0xFF) shl 8)
                                 sum += sample.toDouble() * sample.toDouble()
                             }
                             val rms = sqrt(sum / (read / 2)).toFloat() / 32768f
@@ -96,6 +98,11 @@ class AudioRecorder {
             Result.Success(Unit)
         } catch (e: Exception) {
             Logger.e("Failed to start recording", e)
+            // Reset half-initialized state so a subsequent start() doesn't silently no-op
+            // (isRecording was set true before startRecording() could throw).
+            isRecording = false
+            runCatching { audioRecord?.release() }
+            audioRecord = null
             Result.Error("Failed to start recording: ${e.message}", e)
         }
     }

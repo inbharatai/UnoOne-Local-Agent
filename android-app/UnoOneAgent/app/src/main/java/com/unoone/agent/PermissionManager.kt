@@ -5,12 +5,15 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
+import androidx.core.net.toUri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import com.unoone.agent.accessibilitycontrol.UnoOneAccessibilityService
+import com.unoone.agent.core.safety.PermissionRequirement
+import com.unoone.agent.phonecontrol.ScreenshotCapture
+import com.unoone.agent.screenshot.ScreenshotPermissionActivity
 
 object PermissionManager {
 
@@ -57,10 +60,10 @@ object PermissionManager {
 
     fun getNextSystemPermissionIntent(context: Context): Intent? {
         if (!Settings.canDrawOverlays(context)) {
-            return Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+            return Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:${context.packageName}".toUri())
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !android.os.Environment.isExternalStorageManager()) {
-            return Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${context.packageName}"))
+            return Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, "package:${context.packageName}".toUri())
         }
         if (!UnoOneAccessibilityService.isEnabled()) {
             return Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -73,7 +76,7 @@ object PermissionManager {
     }
 
     fun getAppSettingsIntent(context: Context): Intent {
-        return Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+        return Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri())
     }
 
     fun isIgnoringBatteryOptimizations(context: Context): Boolean {
@@ -83,7 +86,7 @@ object PermissionManager {
 
     fun getBatteryOptimizationIntent(context: Context): Intent {
         return Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-            data = Uri.parse("package:${context.packageName}")
+            data = "package:${context.packageName}".toUri()
         }
     }
 
@@ -141,5 +144,34 @@ object PermissionManager {
      */
     private fun tryIntent(component: ComponentName): Intent? {
         return Intent().setComponent(component)
+    }
+
+    /**
+     * Whether a given [PermissionRequirement] is currently satisfied on this device. Single source
+     * of truth for the access check (SafetyPipeline delegates here).
+     */
+    fun isRequirementSatisfied(context: Context, requirement: PermissionRequirement): Boolean = when (requirement) {
+        is PermissionRequirement.RuntimePerm ->
+            ContextCompat.checkSelfPermission(context, requirement.permission) == PackageManager.PERMISSION_GRANTED
+        PermissionRequirement.Overlay -> Settings.canDrawOverlays(context)
+        PermissionRequirement.Accessibility -> UnoOneAccessibilityService.isEnabled()
+        PermissionRequirement.MediaProjection -> ScreenshotCapture.hasPermission()
+        PermissionRequirement.None -> true
+    }
+
+    /**
+     * The settings/activity intent that lets the user grant a [PermissionRequirement], or null for
+     * runtime perms (those are requested via `requestPermissions`, not an intent) and for None.
+     */
+    fun getRequirementIntent(context: Context, requirement: PermissionRequirement): Intent? = when (requirement) {
+        is PermissionRequirement.RuntimePerm -> null
+        PermissionRequirement.Overlay ->
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:${context.packageName}".toUri())
+        PermissionRequirement.Accessibility ->
+            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        PermissionRequirement.MediaProjection ->
+            Intent(context, ScreenshotPermissionActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        PermissionRequirement.None -> null
     }
 }

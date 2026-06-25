@@ -3,16 +3,18 @@
 # UnoOneAgent — Android Technical Implementation
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Build-Gradle%208.7-1f6feb?style=for-the-badge" alt="Gradle">
+  <img src="https://img.shields.io/badge/AGP-8.10.0-1f6feb?style=for-the-badge" alt="AGP 8.10.0">
+  <img src="https://img.shields.io/badge/Gradle-8.11.1-1f6feb?style=for-the-badge" alt="Gradle 8.11.1">
+  <img src="https://img.shields.io/badge/Kotlin-2.2.21-7f52ff?style=for-the-badge" alt="Kotlin 2.2.21">
   <img src="https://img.shields.io/badge/Min%20SDK-28-success?style=for-the-badge" alt="Min SDK 28">
   <img src="https://img.shields.io/badge/Modules-13-0ea5e9?style=for-the-badge" alt="13 Modules">
-  <img src="https://img.shields.io/badge/Vision-CameraX%20%2B%20ML%20Kit-2563eb?style=for-the-badge" alt="Vision">
-  <img src="https://img.shields.io/badge/Tests-9%20Passing-22c55e?style=for-the-badge" alt="9 Tests">
+  <img src="https://img.shields.io/badge/Voice-Sherpa--ONNX%20offline-0b7285?style=for-the-badge" alt="Sherpa-ONNX">
+  <img src="https://img.shields.io/badge/Tests-172%20passing-22c55e?style=for-the-badge" alt="172 Tests">
 </p>
 
 </div>
 
-> This document is implementation-aligned and intentionally avoids over-claims. It reflects the **current runtime state** of every subsystem.
+> This document is implementation-aligned and intentionally avoids over-claims. It reflects the **current runtime state** of every subsystem after the production-hardening overhaul + A-to-Z review (2026-06-24).
 
 ---
 
@@ -22,10 +24,13 @@
 - [Module Architecture](#module-architecture)
 - [Shared VoiceModule Architecture](#shared-voicemodule-architecture)
 - [Command Orchestrator Pipeline](#command-orchestrator-pipeline)
+- [Model Manifest & Installer](#model-manifest--installer)
 - [Blind Aid Vision Deep Dive](#blind-aid-vision-deep-dive)
 - [Voice Runtime Behavior](#voice-runtime-behavior)
+- [Local Brain (Gemma via LiteRT-LM)](#local-brain-gemma-via-litert-lm)
 - [Command Parser](#command-parser)
 - [Safety Framework](#safety-framework)
+- [Permissions](#permissions)
 - [Accessibility Hardening](#accessibility-hardening)
 - [Permissions and Hardware](#permissions-and-hardware)
 - [Validation Commands](#validation-commands)
@@ -38,16 +43,25 @@
 | Capability | Status | Notes |
 |---|---|---|
 | Compose app shell + overlay | ✅ Implemented | Main UI + floating chat bubble with mic permission handling |
-| Orchestrator pipeline | ✅ Implemented | Parse → permission → safety → execute → verify → speak |
-| Compound command execution | ✅ Implemented | Splits on `" and "` with domain-safe guard, per-part safety checks |
+| Orchestrator pipeline | ✅ Implemented | Parse → permission → safety → execute → verify → speak; shared `runValidatedToolCall` |
+| Compound command execution | ✅ Implemented | `steps[]` JSON array (up to 3) with domain-safe guard, per-step safety checks |
+| Skill safety routing | ✅ Implemented | Skill steps run through the same safety pipeline as normal commands |
 | Blind Aid camera mode | ✅ Implemented & live | CameraX preview + analyzer feedback, foreground activation from background |
 | Voice input APIs | ✅ Implemented | Unified start/stop transcribe, shared singleton instance |
-| Background voice routing | ✅ End-to-end | VoiceService → package-local broadcast → UnoOneApplication receiver → orchestrator |
+| Offline Sherpa STT/TTS default | ✅ Implemented | Android speech demoted to opt-in emergency fallback (`allowSystemSttFallback`, default false) |
+| Voice runtime state + offline chip | ✅ Implemented | `VoiceRuntimeState` {SHERPA, SYSTEM_FALLBACK, UNAVAILABLE} → OFFLINE/LIMITED/NO_MODEL chip |
+| STT confidence + retry | ✅ Implemented | <0.6 confidence → "please repeat" + one retry |
+| Background voice routing | ✅ End-to-end | VoiceService → in-app `SharedFlow` (`commandFlow`) → UnoOneApplication collector → orchestrator |
 | Accessibility deep control | ✅ Implemented & hardened | All `AccessibilityNodeInfo` recycled in `try/finally`, suspend `findAndClick()` |
+| Model manifest + installer | ✅ Implemented | Resume, SHA-256/size, corrupt-recovery, atomic commit, health, path-traversal guard |
+| Permission registry | ✅ Single source of truth | `ToolPermissionRegistry`; corrected read_screen/ocr_screen/system_control gates |
+| Tool coverage | ✅ Complete | Every `UnoOneToolSet` tool has a real `ActionExecutor` branch |
+| New Settings screens | ✅ Implemented | Model Status, Voice Test, Audit Viewer — reachable from Settings |
+| Gemma 3n E4B via LiteRT-LM | ✅ Implemented | `GemmaPlanner`, manual tool calling, GPU→CPU fallback, Mutex load, onTrimMemory unload + onResume reload |
 | Parser blind-aid fixes | ✅ Implemented & verified | Activation/deactivation disambiguation, negative-intent patterns |
-| Parser compound commands | ✅ Implemented | Domain-specific guard prevents skill/email/whatsapp/calendar split |
-| Parser unit tests | ✅ 9/9 passing | Activation, deactivation, notes, compound, long press, disambiguation |
-| Safety framework | ✅ Implemented | 4-tier: DIRECT, CONFIRM, STRONG_CONFIRM, BLOCK |
+| Parser unit tests | ✅ 172 passing across 16 files | See [Validation Commands](#validation-commands) |
+| Safety framework | ✅ Implemented | 4-tier: DIRECT, CONFIRM, STRONG_CONFIRM, BLOCK (per-step for compounds & skills) |
+| Lint | ✅ Clean | 0 new issues; 39 baselined staleness advisories; 0 StaticFieldLeak |
 
 ---
 
@@ -55,14 +69,14 @@
 
 | Module | Primary responsibility | Core files |
 |---|---|---|
-| `:app` | app shell, orchestration, permissions, UI | `MainActivity.kt`, `AgentOrchestrator.kt`, `AgentScreen.kt`, `AgentViewModel.kt`, `FloatingAgentService.kt` |
-| `:core` | shared models and logging | `Result.kt`, `ToolCall.kt`, `AgentStatus.kt`, `TimelineStep.kt`, `Logger.kt` |
-| `:storage` | Room persistence layer | `UnoOneDatabase.kt`, DAOs, entities |
-| `:modelmanager` | model folder management and checksum verification | `ModelManager.kt` |
-| `:localbrain` | parsing/inference utilities | `RuleBasedParser.kt`, `LocalBrain.kt`, `PromptBuilder.kt`, `RAGManager.kt` |
-| `:voice` | recorder, STT/TTS engines, voice service, broadcast routing | `VoiceModule.kt`, `AndroidSttEngine.kt`, `VoiceService.kt` |
-| `:agentrouter` | tool registry and routing fallback | `AgentRouter.kt` |
-| `:safetyguard` | risk classification policy | `SafetyGuard.kt` |
+| `:app` | app shell, orchestration, permissions, UI, Settings sub-screens, data export | `MainActivity.kt`, `AgentOrchestrator.kt`, `AgentScreen.kt`, `AgentViewModel.kt`, `FloatingAgentService.kt`, `execution/ActionExecutor.kt`, `safety/SafetyPipeline.kt`, `PermissionManager.kt`, `data/DataExporter.kt`, `ui/screens/{ModelStatus,VoiceTest,AuditViewer}Screen.kt` |
+| `:core` | shared models, logging, single-source permission registry, summarizer | `Result.kt`, `ToolCall.kt`, `AgentStatus.kt`, `TimelineStep.kt`, `Logger.kt`, `safety/ToolPermissionRegistry.kt`, `safety/PermissionRequirement.kt`, `util/TextSummarizer.kt` |
+| `:storage` | Room persistence layer | `UnoOneDatabase.kt`, DAOs, entities (`NoteDao` incl. `searchOnce`/`deleteByQuery`/`deleteAll`/`recent`, `ModelMetadataDao`) |
+| `:modelmanager` | manifest, on-disk health, install/uninstall, discovery | `ModelManager.kt`, `ModelInstaller.kt`, `ModelManifest.kt`, `ModelManifestLoader.kt`, `assets/models_manifest.json` |
+| `:localbrain` | parsing, Gemma/LiteRT-LM planner, manual tool calling, context | `RuleBasedParser.kt`, `GemmaPlanner.kt`, `LocalBrain.kt`, `UnoOneToolSet.kt`, `ContextSnapshot.kt`, `PromptBuilder.kt`, `RAGManager.kt` |
+| `:voice` | recorder, Sherpa STT/TTS (default), Android fallback (opt-in), voice service, SharedFlow routing | `VoiceModule.kt`, `VoiceService.kt`, `stt/SherpaSttEngine.kt`, `tts/SherpaTtsEngine.kt`, `stt/KeywordSpotter.kt`, `recorder/AudioRecorder.kt` |
+| `:agentrouter` | tool registry and plugin routing | `AgentRouter.kt` |
+| `:safetyguard` | 4-tier risk classification policy | `SafetyGuard.kt` |
 | `:phonecontrol` | intents, OCR, object detection, blind aid analyzer | `PhoneControl.kt`, `OcrControl.kt`, `ObjectDetectionControl.kt`, `BlindAidManager.kt` |
 | `:memory` | preference/correction/pattern memory | `MemoryModule.kt` |
 | `:skills` | skill CRUD and trigger execution | `SkillsModule.kt` |
@@ -79,11 +93,10 @@ The application uses a **single shared `VoiceModule` instance** to prevent micro
 UnoOneApplication.onCreate()
   ├── sharedVoiceModule = VoiceModule(this)        // Created once
   ├── orchestrator.setVoiceModule(sharedVoiceModule) // Injected into orchestrator
-  └── BroadcastReceiver uses orchestrator.voiceModule for speak()
+  └── SharedFlow collector uses orchestrator.voiceModule for speak()
 
 AgentViewModel
   ├── Constructor receives sharedVoiceModule
-  ├── orchestrator.setVoiceModule(voiceModuleInstance) // Redundant but harmless
   └── onCleared() does NOT release — application-scoped
 
 FloatingAgentService
@@ -94,7 +107,7 @@ VoiceService
   └── Owns separate STT/TTS/keyword engines (by design — different lifecycle)
 ```
 
-This ensures that only one `VoiceModule` manages the microphone at any time across the foreground UI, background broadcast, and floating overlay.
+This ensures that only one `VoiceModule` manages the microphone at any time across the foreground UI, background flow, and floating overlay.
 
 ---
 
@@ -106,26 +119,63 @@ The `AgentOrchestrator` processes every command through 8 stages:
 LISTENING → TRANSCRIBING → UNDERSTANDING → TOOL_SELECTED → SAFETY_CHECK → EXECUTING → VERIFYING → SPEAKING → DONE
 ```
 
+### Shared safety pipeline (`runValidatedToolCall`)
+
+A single private `suspend fun runValidatedToolCall(toolCall, sanitizedText, inputType, log)` runs the full pipeline — `checkPermissionsForTool` → `classifyRisk` → block/confirm → execute → audit — and is called from **three** places so none can bypass safety:
+
+1. The normal command path
+2. Each step of a compound command
+3. Each step of a skill
+
 ### Compound command handling
 
-When the parser returns `ToolCall("compound", ...)`, the orchestrator:
+When the parser returns `ToolCall("compound", { steps: [...] })`, the orchestrator:
 
-1. Deserializes both halves (`first_tool`, `first_args`, `second_tool`, `second_args`)
-2. Runs **permission checks** on each half independently
-3. Runs **safety classification** on each half independently
-4. Executes each half with its own confirmation flow if needed
-5. Speaks results for each completed action
+1. Expands the compound into `List<ToolCall>` via `ToolCall.compoundSteps()` (each step is a `{tool, args}` object; up to 3 parts)
+2. Runs `runValidatedToolCall` on each step independently (permissions + risk + confirm + execute + audit)
+3. Accumulates results and speaks a combined summary
 
-This means a compound like *"open chrome and delete all notes"* will execute `open_chrome` (DIRECT — no confirmation) and then prompt for strong confirmation on `delete_all_notes` (STRONG_CONFIRM — user must type "confirm").
+A compound like *"open chrome and delete all notes"* will execute `open_chrome` (DIRECT — no confirmation) and then prompt for strong confirmation on `delete_all_notes` (STRONG_CONFIRM — user must type "confirm").
+
+### Confirmation timeout
+
+`awaitConfirmation` wraps both the multicast and legacy paths in `withTimeoutOrNull(60_000L)` with an `AtomicBoolean` dedup on multicast resume. If the user never responds within 60s, the agent logs and releases the processing lock instead of hanging forever. The `NeedsSystemAccess`/`NeedsRuntimeAccess` branches stash `pendingCommand`/`pendingInputType` *before* releasing the lock (previously the user's command was dropped here).
 
 ### Background command dispatch
 
-Commands received via `VoiceService` broadcast are processed identically to foreground commands:
+Commands received via `VoiceService` are processed identically to foreground commands:
 
-1. `VoiceService` sends `ACTION_VOICE_COMMAND` broadcast with `RECEIVER_NOT_EXPORTED`
-2. `UnoOneApplication` BroadcastReceiver receives it on `appScope`
+1. `VoiceService` emits the transcribed command to the in-app `MutableSharedFlow` (`_commandFlow.tryEmit(command)`)
+2. `UnoOneApplication` collects from `commandFlow` on `appScope`
 3. Calls `orchestrator.processCommand(command, InputType.VOICE)`
 4. If the command activates blind aid, `bringAppToForegroundIfNeeded()` launches `MainActivity` with `FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_SINGLE_TOP`
+
+No cross-app `Intent` broadcast is used — transcribed speech never leaves the app process or enters system logs.
+
+---
+
+## Model Manifest & Installer
+
+`modelmanager` ships a real manifest + installer replacing loose folder detection.
+
+**Manifest** (`src/main/assets/models_manifest.json`): array of model descriptors (`id, folder, type, version, minRamMb, backend, defaultLanguage, files[]`), each file `{name, url, sha256, sizeBytes, archive}`. Six models: `gemma-local` (LLM), `sherpa-asr`, `sherpa-tts`, `vad`, `punctuation`, `ocr-optional`.
+
+**`ModelInstaller`** (plain `HttpURLConnection`, no deps):
+- Resume via `Range:` header against `.part`; appends on 206, restarts on 200
+- Atomic commit: `.part` → final rename (with copy fallback)
+- SHA-256 + size verification when declared; **empty-file guard** (0-byte file with no declared integrity is not trusted valid → forces re-download)
+- Corrupt recovery: delete bad file + retry once
+- HTTP 416 recovery: complete `.part` commits without network (no "Range Not Satisfiable" death loop)
+- `conn.disconnect()` in `finally`; zip-slip guard on archive extraction
+- Idempotent skip of already-valid files
+
+**`ModelManager`**:
+- `loadManifest()` / `findModel(id)` / `modelHealth(id): HealthResult` (reports `missing`/`sizeMismatch`/`checksumMismatch`)
+- `installModel(id, onProgress)` / `uninstallModel(id)` with a **canonical path-traversal guard** (folder must stay inside the models root)
+- `detectModels()` merges manifest info into `ModelStatus` (version, expected vs actual size/checksum, `healthy`)
+- `getLlmModelPath()` finds the first `.litertlm`
+
+**⚠️ Manifest caveat:** `sherpa-asr`/`sherpa-tts`/`vad` currently point at **Chinese** model artifacts while declaring `defaultLanguage: "en"`, and every file has empty `sha256`/`sizeBytes`. Integrity verification is a no-op until real hashes/sizes are filled (empty-file + HTTP-completeness guards still catch truncation). Repoint to English Sherpa variants + fill hashes before an English-first ship. The Model Status screen surfaces all of this in the UI.
 
 ---
 
@@ -134,7 +184,7 @@ Commands received via `VoiceService` broadcast are processed identically to fore
 ### Command and state flow
 
 1. `RuleBasedParser` maps 6 activation phrases to `detect_objects`
-2. `RuleBasedParser` maps 8 deactivation phrases to `deactivate_blind_aid` (including negative-intent patterns: stop, remove, turn off, deactivate, disable, no more)
+2. `RuleBasedParser` maps 8 deactivation phrases to `deactivate_blind_aid` (negative-intent: stop, remove, turn off, deactivate, disable, no more)
 3. `AgentOrchestrator.setBlindAidActive(true)` speaks confirmation and calls `bringAppToForegroundIfNeeded()`
 4. `AgentScreen` reacts to `isBlindAidActive` StateFlow, mounting `BlindAidCameraPreview`
 
@@ -142,8 +192,8 @@ Commands received via `VoiceService` broadcast are processed identically to fore
 
 `BlindAidCameraPreview`:
 
-- Camera binding is done in `AndroidView(factory=...)` — one-time setup, no rebind on recomposition
-- Uses `ProcessCameraProvider` lifecycle-bound to `LocalLifecycleOwner`
+- Camera binding in `AndroidView(factory=...)` — one-time setup, no rebind on recomposition
+- `ProcessCameraProvider` lifecycle-bound to `LocalLifecycleOwner`
 - Binds `Preview` + `ImageAnalysis` with `STRATEGY_KEEP_ONLY_LATEST`
 - Unbinds camera providers in `DisposableEffect.onDispose`
 - Releases `BlindAidManager` on dispose
@@ -152,15 +202,12 @@ Commands received via `VoiceService` broadcast are processed identically to fore
 
 `BlindAidManager`:
 
-- Throttles processing to 1 in 6 frames (~5 FPS at 30 FPS input)
-- Runs ML Kit object detection in single-image mode
-- Attempts local custom model load from `Android/data/com.unoone.agent/files/models/gemma-local/custom_yolov8.tflite`
-- Falls back to default ML Kit detector when custom model is absent
-- Computes obstacle proximity from fill ratio
-- Emits three feedback channels:
-  - **Vibration intensity** — scales with obstacle proximity
-  - **Tone beeps** — dynamic rate sound generator
-  - **Throttled spoken guidance** — distance alert thresholds via VoiceModule callback
+- Throttles to 1 in 6 frames (~5 FPS at 30 FPS input)
+- ML Kit object detection in single-image mode
+- Attempts local custom model from `Android/data/com.unoone.agent/files/models/gemma-local/custom_yolov8.tflite`
+- Falls back to default ML Kit detector when custom model absent
+- Obstacle proximity from fill ratio
+- Three feedback channels: vibration intensity (proximity-scaled), dynamic-rate tone beeps, throttled spoken guidance
 
 ### Safety classifications
 
@@ -177,9 +224,17 @@ No Compose-rendered bounding-box overlay is drawn over the camera preview. Detec
 
 ## Voice Runtime Behavior
 
-### In-app mic path (Agent screen and overlay)
+### Offline-first state machine
 
-Current code path:
+`VoiceModule` tracks `sttState`/`ttsState` as `VoiceRuntimeState { SHERPA, SYSTEM_FALLBACK, UNAVAILABLE }`, which drives the AgentScreen offline chip (OFFLINE / LIMITED / NO MODEL).
+
+- **Sherpa-ONNX is the default** STT and TTS engine.
+- Android `SpeechRecognizer`/`TextToSpeech` is an **opt-in emergency fallback**, gated by `allowSystemSttFallback` (default **false**).
+- When Sherpa is unavailable and the fallback is off, `startRecording`/`stopAndTranscribe`/`transcribeAudio` return `Result.Error("Offline STT model not installed…")` — the UI surfaces "install model" rather than silently routing to a cloud-dependent system service.
+- `lastSttConfidence` is seeded `0f` and set from the real Sherpa engine result (Android fallback: 1.0f non-blank, 0.0f blank). The orchestrator treats `<0.6f` as low-confidence → "please repeat" + one retry.
+- `VoiceService.transcribeAudio` only uses Android STT when `allowSystemSttFallback` is true; `hasSpeechActivity` decodes little-endian signed-16 PCM with masked bytes: `(b[i] and 0xFF) or ((b[i+1] and 0xFF) shl 8)`.
+
+### In-app mic path (Agent screen and overlay)
 
 ```kotlin
 // Start
@@ -192,33 +247,42 @@ if (result is Result.Success) {
 }
 ```
 
-Runtime behavior:
-
-- Falls back to Android `SpeechRecognizer` when Sherpa STT is not initialized
-- Android STT `onRmsChanged` is wired to waveform amplitude updates
-- Recognizer-first fallback avoids recorder resource contention
-- `AndroidSttEngine` uses `synchronized safeDestroyRecognizer()` to prevent double-destroy race condition between `onError` and `onResults`
-- Mic permission is pre-checked with `ContextCompat.checkSelfPermission()` before launching system dialog
+- Waveform visualizer from recorder amplitude
+- `AudioRecorder` guards state-check failure (`runCatching { record.release() }`), masks high byte in amplitude, and releases `audioRecord` in the catch block
+- Mic permission pre-checked with `ContextCompat.checkSelfPermission()` before launching system dialog
+- `AndroidSttEngine` uses `synchronized safeDestroyRecognizer()` to prevent the double-destroy race between `onError` and `onResults`
 
 ### Background VoiceService path
 
 `VoiceService` includes:
 
-- Wake-word + VAD loop scaffolding
+- Wake-word + VAD loop (Sherpa `KeywordSpotter` + RMS VAD)
 - Sherpa STT/TTS init attempts
-- Keyword spotting and RMS VAD loop
-- **End-to-end command dispatch**: verified commands are broadcast via `ACTION_VOICE_COMMAND` with `setPackage(packageName)` and `RECEIVER_NOT_EXPORTED`, received by `UnoOneApplication`'s `BroadcastReceiver`, and dispatched to `orchestrator.processCommand()` on `appScope`
-
-Broadcast receiver registration (in `UnoOneApplication.onCreate()`):
+- **End-to-end command dispatch**: verified commands are emitted to the in-app `SharedFlow` (`commandFlow`), collected by `UnoOneApplication`, and dispatched to `orchestrator.processCommand()` on `appScope`. `onDestroy` cancels `serviceJob`.
 
 ```kotlin
-ContextCompat.registerReceiver(
-    this, commandReceiver, IntentFilter(ACTION_VOICE_COMMAND),
-    RECEIVER_NOT_EXPORTED
-)
+// UnoOneApplication
+private val _commandFlow = MutableSharedFlow<String>(extraBufferCapacity = 16)
+val commandFlow: SharedFlow<String> = _commandFlow.asSharedFlow()
+// collector:
+commandFlow.collect { command -> orchestrator.processCommand(command, InputType.VOICE) }
+// emitter (VoiceService):
+app.commandFlow.tryEmit(command)
 ```
 
-This is **fully wired end-to-end** — background voice commands reach the orchestrator immediately and are processed identically to foreground commands.
+This is **fully wired end-to-end** — background voice commands reach the orchestrator immediately and are processed identically to foreground commands, with no cross-app broadcast.
+
+---
+
+## Local Brain (Gemma via LiteRT-LM)
+
+`GemmaPlanner` loads a Gemma 3n E4B `.litertlm` via LiteRT-LM `0.13.1` and keeps a reusable `Conversation` with `UnoOneToolSet` registered (`automaticToolCalling = false` — manual tool calling).
+
+- **GPU→CPU fallback**: `tryLoadBackend(GPU) ?: tryLoadBackend(CPU)`; winner recorded in `activeBackend()`.
+- **`lastLoadError()`** surfaces device-compatibility status to the UI.
+- **Crash-safe load**: `Mutex` serializes concurrent loads; a `createConversation` failure closes the half-built engine (no native LiteRT engine + GPU delegate leak); `isLoaded`/`activeBackend`/`lastLoadError` are `@Volatile`.
+- **Memory pressure**: `UnoOneApplication.onTrimMemory(RUNNING_LOW | RUNNING_CRITICAL)` unloads the brain; `MainActivity.onResume` reloads it if it was previously loaded (transparent recovery).
+- **`LocalBrain.runInference`** is a real thin wrapper around `GemmaPlanner.plan` — no mock output. Rule-based fallback via `RuleBasedParser` when no model is loaded.
 
 ---
 
@@ -229,38 +293,35 @@ This is **fully wired end-to-end** — background voice commands reach the orche
 The `RuleBasedParser` uses a `when` block with the following priority:
 
 1. **Domain-specific rules** — skills, email, WhatsApp, calendar (checked first to preserve internal `"and"` semantics)
-2. **Compound commands** — splits on `" and "` only when no `domainSpecificKeywords` are present
-3. **General rules** — blind aid, system control, notes, apps, etc.
-4. **Fallback** — `LocalBrain.runInference()` (currently returns mock JSON)
+2. **Compound commands** — splits on `" and "` into `steps[]` (up to 3) only when no `domainSpecificKeywords` are present
+3. **General rules** — blind aid, system control, notes (delete-before-create), apps, etc.
+4. **Fallback** — `LocalBrain.runInference()` → `GemmaPlanner.plan()` (real LiteRT-LM), or null
 
 ### Domain-specific keyword guard
 
 ```kotlin
 private val domainSpecificKeywords = listOf(
     "teach you", "create skill", "new skill",
-    "email", "mail", "whatsapp", "calendar", "schedule", "events"
+    "email", "mail", "whatsapp", "calendar", "schedule", "events",
+    "find and click", "find and tap", "find then click", "find then tap"
 )
 ```
 
-Compound splitting on `" and "` only occurs if none of these keywords appear in the input.
+Compound splitting on `" and "` only occurs if none of these keywords appear.
 
-### Negative-intent patterns
+### Note handling
 
-Deactivation phrases include negative-intent keywords: stop, remove, turn off, deactivate, disable, no more — ensuring `"deactivate blind aid"` is never confused with activation.
+- **Deletion** is checked **before** creation: `delete`/`remove`/`clear`/`erase` + `note(s)` → `delete_notes` / `delete_all_notes` (so `"delete note about X"` routes to delete, not create).
+- `cancel`/`close` are deliberately **not** delete-verbs (would misroute *"create note about cancel"* → `delete_notes`, a data-loss regression).
+- Creation suppresses on negation verbs (`noteNegationVerbs = delete/remove/cancel/close/clear/erase`).
 
-### Test coverage (9/9 passing)
+### Compound schema
 
-| Test | What it verifies |
-|---|---|
-| `testBlindAidActivationTriggers` | 6 activation phrases → `detect_objects` |
-| `testBlindAidDeactivationTriggers` | 8 deactivation phrases → `deactivate_blind_aid` |
-| `testNoteCreationTriggers` | `"remember: pick up groceries"` → `create_note` |
-| `testNoteCreationWithoutColon` | `"add note buy milk"` → `create_note` (content = "buy milk") |
-| `testNoteRememberToStripsToPrefix` | `"remember to buy groceries"` → content = "buy groceries" |
-| `testCompoundCommand` | `"scroll down and go home"` → `compound(system_control, system_control)` |
-| `testCompoundCommandDoesNotBreakSkillSteps` | Skill steps with "and" preserved intact |
-| `testLongPressWithText` | `"long press on settings"` → `system_control(action=long_press, target=settings)` |
-| `testActivationNotConfusedByDeactivation` | `"deactivate blind aid"` → deactivation, not activation |
+Compound commands serialize as a single `steps` JSON array of `{tool, args}` objects (up to 3 parts). If only one half parses, that half is returned directly (the "and" was not a separator). `ToolCall.compoundSteps()` expands a compound into `List<ToolCall>` for the orchestrator.
+
+### Test coverage
+
+172 unit tests across 16 files. Parser-relevant tests cover: 6 activation phrases → `detect_objects`; 8 deactivation phrases → `deactivate_blind_aid`; note creation with/without colon; "remember to" stripping; compound `steps[]` (2- and 3-part); domain-specific preservation (skill steps, email, whatsapp, calendar); long press target extraction; activation/deactivation disambiguation; note deletion routing.
 
 ---
 
@@ -270,14 +331,37 @@ Deactivation phrases include negative-intent keywords: stop, remove, turn off, d
 
 | Risk Level | Behavior | Tools |
 |---|---|---|
-| **DIRECT** | Execute immediately | `create_note`, `search_notes`, `summarize_text`, `speak_response`, `open_chrome`, `open_app`, `deactivate_blind_aid` |
-| **CONFIRM** | Single confirmation dialog | `open_url`, `open_calendar_insert`, `open_dialer`, `share_text` |
-| **STRONG_CONFIRM** | Must type "confirm" | `delete_notes`, `delete_all_notes`, `export_data`, `detect_objects` |
+| **DIRECT** | Execute immediately | `create_note`, `search_notes`, `summarize_text`, `speak_response`, `open_chrome`, `open_app`, `deactivate_blind_aid`, `check_calendar` |
+| **CONFIRM** | Single confirmation dialog | `open_url`, `open_calendar_insert`, `open_dialer`, `share_text`, `read_screen`, `ocr_screen`, `open_camera`, `create_skill`, `click`, `type`, `long_press` |
+| **STRONG_CONFIRM** | Must type "confirm" | `delete_notes`, `delete_all_notes`, `export_data`, `detect_objects`, `draft_email`, `send_whatsapp`, `system_control`, `find_and_click`, `fill` |
 | **BLOCK** | Hard block — never executed | `send_message`, `make_payment`, `install_app`, `access_passwords`, `silent_control` |
 
-**Default**: Any tool not in the map → `STRONG_CONFIRM`
+**Default**: Any tool not in the map → `STRONG_CONFIRM`.
 
-**Compound commands**: Each half is independently classified and permission-checked. The `compound` tool itself never reaches the safety classifier — both halves are evaluated separately.
+**Input-level escalation** (`classifyFromInput`): scans the raw utterance for dangerous keywords (`send`/`message`, `payment`/`pay`, `password`, `install`, `transfer money`, `bank`, `credit card` → BLOCK). This is a deliberate, **tested** over-block posture — e.g. *"send a WhatsApp message to mom"* hits `send`/`message` → BLOCK, overriding `send_whatsapp`'s STRONG_CONFIRM. Intentionally strict; weakening it is a security-policy decision, not a bug fix. Verified by `SafetyGuardTest`.
+
+**Compound & skill commands**: Each step is independently classified and permission-checked via `runValidatedToolCall`. A blocked step blocks the whole compound/skill; a `delete_all_notes` step requires STRONG_CONFIRM.
+
+**Confirmation timeout**: 60s (`CONFIRMATION_TIMEOUT_MS`); on timeout the agent logs and releases the lock instead of hanging.
+
+---
+
+## Permissions
+
+`core/safety/ToolPermissionRegistry` is the **single source of truth** consumed by both `SafetyPipeline` and `ActionExecutor` (which previously held a duplicated, incorrect copy). `PermissionRequirement` is sealed: `None | RuntimePerm(String) | Overlay | Accessibility | MediaProjection`.
+
+| Tool | Requirement | Correction |
+|---|---|---|
+| `read_screen`, `system_control` | **Accessibility** | was wrongly `SYSTEM_ALERT_WINDOW` |
+| `ocr_screen` | **MediaProjection** | was wrongly `SYSTEM_ALERT_WINDOW`; camera not required for screenshots |
+| `open_camera` | `CAMERA` | |
+| `detect_objects` | `CAMERA` + **Accessibility** | |
+| `voice_recording` | `RECORD_AUDIO` | (no executor branch yet — see Known Gaps) |
+| `check_calendar` / `open_calendar_insert` | `READ_CALENDAR` / `WRITE_CALENDAR` | |
+| `open_dialer`, `share_text`, `open_url`, `open_app`, `open_chrome`, notes/skills/email/whatsapp | `None` | intent-launched or local-only |
+| `compound` | `None` | expanded into real steps before execution; checked per-step |
+
+`PermissionManager` mediates the runtime launchers; overlay/accessibility/media-projection each have dedicated flows. Verified by `ToolPermissionRegistryTest`.
 
 ---
 
@@ -317,26 +401,28 @@ All `AccessibilityNodeInfo` objects are recycled using `try/finally` patterns:
 | Overlay | `SYSTEM_ALERT_WINDOW` |
 | Background Execution | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`, `WAKE_LOCK`, `POST_NOTIFICATIONS` |
 | Battery | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` |
-| Storage | Model directory access permissions |
+| Storage | Model directory access (app external files) |
 
 ### Hardware tiers
 
 | Tier | Recommended profile |
 |---|---|
-| **Minimum** (functional baseline) | Android 9+ (API 28), 4 GB RAM, 1 GB free storage, microphone |
-| **Recommended** (smooth blind aid + voice UX) | Android 12+, 6–8 GB RAM, rear camera with autofocus, vibration motor, 2+ GB free storage |
-| **Expert** (local model tier) | 8+ GB RAM (12+ preferred), NPU-capable chipset, additional multi-GB model storage |
+| **Minimum** | Android 9+ (API 28), 4 GB RAM, 1 GB free storage, microphone |
+| **Recommended** | Android 12+, 6–8 GB RAM, rear camera with autofocus, vibration motor, 2+ GB free storage |
+| **Expert** | 8+ GB RAM (12+ preferred), NPU/GPU-capable chipset, additional multi-GB model storage (Gemma 3n E4B auto GPU→CPU) |
 
 ### Model folder expectations
 
-App-managed model directories under app external files:
+App-managed model directories under app external files (`Android/data/com.unoone.agent/files/models/`):
 
-- `gemma-local`
-- `sherpa-asr`
-- `sherpa-tts`
-- `vad`
-- `punctuation`
-- `ocr-optional`
+- `gemma-local` — Gemma 3n E4B `.litertlm`
+- `sherpa-asr` — offline ASR
+- `sherpa-tts` — offline TTS
+- `vad` — keyword spotting / VAD
+- `punctuation` — punctuation restoration
+- `ocr-optional` — optional OCR
+
+Installable from the **Model Status** screen or dropped in manually.
 
 ---
 
@@ -345,41 +431,73 @@ App-managed model directories under app external files:
 Run from this directory (`android-app/UnoOneAgent`):
 
 ```bash
-# Run unit tests (9 tests)
-./gradlew.bat :app:testDebugUnitTest
+# All unit tests (172 tests across 16 files)
+./gradlew test
 
-# Compile debug build
-./gradlew.bat :app:assembleDebug
+# Full debug APK build
+./gradlew assembleDebug
+
+# Lint (abortOnError + warningsAsErrors; 39 baselined advisories, 0 StaticFieldLeak)
+./gradlew :app:lint
 
 # Compile check (faster, no APK)
-./gradlew.bat :app:compileDebugKotlin
+./gradlew compileDebugKotlin
 ```
+
+### Test files (16)
+
+| File | Covers |
+|---|---|
+| `app/.../RuleBasedParserTest.kt` | parser activation/deactivation/notes/compound/long-press |
+| `app/.../CompoundStepsTest.kt` | compound `steps[]` serialization + per-step safety |
+| `app/.../parsing/CommandParserTest.kt` | context snapshot + command parsing |
+| `app/.../parsing/ContextSnapshotTest.kt` | enriched context (notes/skills/OCR/recent-commands) |
+| `app/.../execution/ActionExecutorToolCoverageTest.kt` | every tool dispatches to a real branch |
+| `app/.../safety/SafetyPipelineTest.kt` | permission + risk pipeline |
+| `app/.../safetyguard/SafetyGuardTest.kt` | input-level BLOCK keywords |
+| `app/.../safetyguard/SafetyGuardToolCoverageTest.kt` | tool→risk tier coverage |
+| `app/.../skills/SkillSafetyRoutingTest.kt` | skill steps honor block/confirm |
+| `app/.../core/model/{Result,RiskAssessment}Test.kt` | core primitives |
+| `app/.../core/util/{CallbackMulticast,InputSanitizer}Test.kt` | multicast dedup, sanitization |
+| `core/.../safety/ToolPermissionRegistryTest.kt` | full tool→requirement mapping |
+| `localbrain/.../PromptBuilderTest.kt` | prompt assembly + tool names |
+| `modelmanager/.../ModelManifestTest.kt` | manifest parse, checksum, health |
+| `modelmanager/.../ModelInstallerTest.kt` | resume, corrupt-recovery, zip, idempotent skip, empty-file guard, complete-`.part` commit |
 
 ---
 
 ## Known Integration Gaps
 
-These components exist but are not yet fully integrated end-to-end:
+These are honest, current limitations (not papered over):
 
 | Component | Status | Detail |
 |---|---|---|
-| `LocalBrain.runInference()` | 🔧 Scaffold | Currently returns mock JSON placeholder output |
+| Manifest English models + integrity fields | ⚠️ Action required | `sherpa-asr`/`sherpa-tts`/`vad` point at Chinese models; all `sha256`/`sizeBytes` empty. Repoint + fill before English-first ship. |
 | `RAGManager` | 🔧 Scaffold | Exists but not wired into orchestrator runtime flow |
 | `Diagnostics` | 🔧 Scaffold | Helpers exist but not broadly instrumented across execution paths |
-| `ObjectDetectionControl` | 🔧 Dead code | Single-image detector never invoked from orchestrator (BlindAidManager is used instead) |
-| Bounding-box overlay | 🔧 Planned | Detection results are computed but no Compose overlay is drawn over camera preview |
+| `ObjectDetectionControl` | 🔧 Dead code | Single-image detector never invoked (BlindAidManager is used) |
+| Bounding-box overlay | 🔧 Planned | Detection results computed but no Compose overlay drawn over camera preview |
+| `voice_recording` executor | 🔧 Missing | Tool is permission-mapped (`RECORD_AUDIO`) but has no `ActionExecutor` branch |
+| Blocking I/O in `detectModels`/`modelHealth` | ⚠️ Minor | File I/O on caller's thread (typically IO via UI VM, not enforced) |
+| `ttsState` before `initTts` | ⚠️ Minor | State reported before init fully completes |
 
 **Fully resolved** (previously listed as gaps):
 
 | Component | Previous Status | Current Status |
 |---|---|---|
-| `VoiceService` callback wiring | ❌ Not wired | ✅ End-to-end via `ACTION_VOICE_COMMAND` broadcast |
+| `VoiceService` command delivery | ❌ Broadcast / not wired | ✅ End-to-end via in-app `SharedFlow` (`commandFlow`) |
 | Accessibility node recycling | ⚠️ Partial leaks | ✅ All methods use `try/finally` patterns |
 | `AndroidSttEngine` double-destroy | ⚠️ Race condition | ✅ `synchronized safeDestroyRecognizer()` guard |
-| Compound command parsing | ❌ Broke skill steps | ✅ Domain-specific guard prevents incorrect splits |
-| Compound safety checks | ❌ Bypassed safety | ✅ Per-part safety classification and permission checks |
+| Compound command parsing | ❌ Broke skill steps / flat `first`/`second` fields | ✅ Domain-specific guard + `steps[]` JSON array (up to 3) |
+| Compound & skill safety checks | ❌ Bypassed safety | ✅ Per-step `runValidatedToolCall` for both |
 | `BlindAidManager` initialization | ⚠️ Race on factory | ✅ `remember{}` eager init, only composed when active |
 | VoiceModule lifecycle | ❌ Multiple instances | ✅ Single shared instance across all consumers |
 | Camera binding flicker | ⚠️ Rebind on recomposition | ✅ One-time `factory` block binding |
+| Offline voice default | ❌ Silent Android STT fallback | ✅ Sherpa default; Android opt-in emergency fallback (off by default) |
+| Permission mapping | ❌ Duplicated + wrong (overlay for screen read) | ✅ Single `ToolPermissionRegistry`; read_screen→Accessibility, ocr_screen→MediaProjection |
+| Model lifecycle | ❌ Loose folder detection | ✅ Manifest + installer (resume/SHA-256/corrupt-recovery/atomic commit/health/path-traversal guard) |
+| Brain load crash-safety | ❌ Concurrent-load engine leak | ✅ Mutex load + createConversation-failure cleanup + onTrimMemory/onResume lifecycle |
+| `create_skill` result handling | ❌ Operated on `Unit?` (saveSkill returns Unit) | ✅ try/catch returning Success/Error; `steps` accepts array or `\|`-string |
+| Confirmation flow | ❌ Indefinite hang | ✅ 60s timeout + pendingCommand stash before lock release |
 
 This README is intentionally explicit about remaining gaps to keep architecture and hardware guidance accurate.

@@ -70,6 +70,12 @@ object PromptBuilder {
             if (context.activeSkills.isNotEmpty()) {
                 appendLine("- active skills: ${context.activeSkills.joinToString(", ")}")
             }
+            if (context.recentCommands.isNotEmpty()) {
+                appendLine("- recent commands: ${context.recentCommands.joinToString(" → ")}")
+            }
+            if (context.lastToolResult.isNotBlank()) {
+                appendLine("- last tool result: ${context.lastToolResult.take(500)}")
+            }
         }
     }
 

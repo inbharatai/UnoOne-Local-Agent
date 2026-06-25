@@ -1,0 +1,79 @@
+package com.unoone.agent.core.safety
+
+import android.Manifest
+
+/**
+ * Single source of truth for which [PermissionRequirement]s each tool needs.
+ *
+ * Consumed by both [com.unoone.agent.safety.SafetyPipeline] (for the runtime check + system
+ * requirement surfacing) and [com.unoone.agent.execution.ActionExecutor] (which used to duplicate
+ * an incorrect copy of this table). Corrects the prior mapping where `read_screen`,
+ * `ocr_screen`, and `system_control` were all wrongly gated behind `SYSTEM_ALERT_WINDOW`:
+ * screen reading / UI control need the **Accessibility** service, and screenshot OCR needs a
+ * **MediaProjection** token — not the overlay permission.
+ *
+ * Risk-level gating (block/confirm/strong-confirm) is separate and lives in SafetyGuard; this
+ * table only describes *access* requirements.
+ */
+object ToolPermissionRegistry {
+
+    private val table: Map<String, List<PermissionRequirement>> = mapOf(
+        // Notes / memory / data — local-only, no system access.
+        "create_note" to listOf(PermissionRequirement.None),
+        "search_notes" to listOf(PermissionRequirement.None),
+        "summarize_text" to listOf(PermissionRequirement.None),
+        "speak_response" to listOf(PermissionRequirement.None),
+        "delete_notes" to listOf(PermissionRequirement.None),
+        "delete_all_notes" to listOf(PermissionRequirement.None),
+        "export_data" to listOf(PermissionRequirement.None),
+
+        // Skills — local-only.
+        "create_skill" to listOf(PermissionRequirement.None),
+
+        // Communication apps — launched via intent; no runtime permission needed.
+        "draft_email" to listOf(PermissionRequirement.None),
+        "send_whatsapp" to listOf(PermissionRequirement.None),
+        "open_dialer" to listOf(PermissionRequirement.None), // dialer intent is safe; no permission
+        "share_text" to listOf(PermissionRequirement.None),
+
+        // Browser / camera.
+        "open_chrome" to listOf(PermissionRequirement.None),
+        "open_url" to listOf(PermissionRequirement.None),
+        "open_app" to listOf(PermissionRequirement.None),
+        "open_camera" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.CAMERA)),
+
+        // Calendar.
+        "check_calendar" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.READ_CALENDAR)),
+        "open_calendar_insert" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.WRITE_CALENDAR)),
+
+        // Screen / UI control — Accessibility (NOT overlay).
+        "system_control" to listOf(PermissionRequirement.Accessibility),
+        "read_screen" to listOf(PermissionRequirement.Accessibility),
+
+        // Screenshot OCR — MediaProjection (NOT overlay). Camera not required for screenshots.
+        "ocr_screen" to listOf(PermissionRequirement.MediaProjection),
+
+        // Voice capture.
+        "voice_recording" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.RECORD_AUDIO)),
+
+        // Blind aid — camera + accessibility (uses camera preview + accessibility for context).
+        "detect_objects" to listOf(
+            PermissionRequirement.RuntimePerm(Manifest.permission.CAMERA),
+            PermissionRequirement.Accessibility
+        ),
+
+        "deactivate_blind_aid" to listOf(PermissionRequirement.None),
+
+        // Compound commands are expanded into real steps before execution; their requirements are
+        // checked per-step, so the compound name itself needs nothing.
+        "compound" to listOf(PermissionRequirement.None)
+    )
+
+    /** Requirements for a tool; empty list ⇒ unknown tool (treat as None at the caller). */
+    fun requirementsFor(tool: String): List<PermissionRequirement> =
+        table[tool] ?: listOf(PermissionRequirement.None)
+
+    /** Just the runtime (dangerous) permission strings a tool needs. */
+    fun runtimePermissionsFor(tool: String): List<String> =
+        requirementsFor(tool).filterIsInstance<PermissionRequirement.RuntimePerm>().map { it.permission }
+}

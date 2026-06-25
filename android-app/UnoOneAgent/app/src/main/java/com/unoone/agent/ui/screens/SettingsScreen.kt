@@ -14,11 +14,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -44,7 +45,13 @@ import androidx.compose.ui.unit.dp
 import com.unoone.agent.ui.viewmodel.SettingsViewModel
 
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel, onNavigateToPrivacy: () -> Unit = {}) {
+fun SettingsScreen(
+    viewModel: SettingsViewModel,
+    onNavigateToPrivacy: () -> Unit = {},
+    onNavigateToModels: () -> Unit = {},
+    onNavigateToVoiceTest: () -> Unit = {},
+    onNavigateToAudit: () -> Unit = {}
+) {
     val modelStatuses by viewModel.modelStatuses.collectAsState()
     val storageUsageMb by viewModel.storageUsageMb.collectAsState()
     val darkMode by viewModel.darkMode.collectAsState()
@@ -84,22 +91,30 @@ fun SettingsScreen(viewModel: SettingsViewModel, onNavigateToPrivacy: () -> Unit
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 5E: Functional Voice Tests
-        SettingsSection(title = "Voice Tests") {
+        // Dedicated management screens (full model manager, real Sherpa voice test, audit viewer).
+        SettingsSection(title = "Manage") {
             Button(
-                onClick = { viewModel.testStt(context) },
+                onClick = onNavigateToModels,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.Mic, contentDescription = "STT test")
-                Text("Run STT Test", modifier = Modifier.padding(start = 8.dp))
+                Icon(Icons.Default.Memory, contentDescription = "Model manager")
+                Text("Model Status & Install", modifier = Modifier.padding(start = 8.dp))
             }
             Spacer(modifier = Modifier.height(8.dp))
             Button(
-                onClick = { viewModel.testTts(context) },
+                onClick = onNavigateToVoiceTest,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.VolumeUp, contentDescription = "TTS test")
-                Text("Run TTS Test", modifier = Modifier.padding(start = 8.dp))
+                Icon(Icons.Default.Mic, contentDescription = "Voice test")
+                Text("Voice Test (STT / TTS)", modifier = Modifier.padding(start = 8.dp))
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = onNavigateToAudit,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Audit log")
+                Text("Audit Log", modifier = Modifier.padding(start = 8.dp))
             }
         }
 

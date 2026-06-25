@@ -79,9 +79,9 @@ Voice / Text / Camera / Screen
   ```
 - **Add** LiteRT-LM Android/Kotlin artifact:
   ```kotlin
-  implementation("com.google.ai.edge.litertlm:litertlm-android:1.0.1")
+  implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
   ```
-  *(Use a pinned version; upgrade after smoke-testing. `latest.release` is avoided for reproducible builds.)*
+  *(Pinned to `0.13.1` — the latest version published on Google Maven as of 2026-06; verified via `dl.google.com` maven-metadata. No `1.0.x` release exists. `latest.release` is avoided for reproducible builds.)*
 - Keep `kotlinx-coroutines-android` and `kotlinx-serialization-json`.
 
 #### A2. Standardize OCR dependency
@@ -382,7 +382,7 @@ New flow in `executeTool()`:
 
 | Risk | Mitigation |
 |------|------------|
-| LiteRT-LM artifact or API differs from docs | Pin to `1.0.1`; add compile-time smoke test; provide fallback to RuleBasedParser if `Engine.initialize()` fails. |
+| LiteRT-LM artifact or API differs from docs | Pin to `0.13.1` (latest published on Google Maven; no `1.0.x` exists); add compile-time smoke test; provide fallback to RuleBasedParser if `Engine.initialize()` fails. |
 | Gemma 4 E2B model is too large for Xiaomi 14 | Start with E2B (2B active parameters); profile memory. If needed, add a smaller distilled model slot. |
 | Tool-call JSON shape mismatches our `ToolCall` | Use LiteRT-LM manual tool calling and a dedicated mapper (`LiteRtResponseMapper.kt`) with exhaustive unit tests. |
 | MediaProjection permission UX is disruptive | Only trigger on explicit "ocr screen" or when accessibility text is empty; show a one-time education dialog. |

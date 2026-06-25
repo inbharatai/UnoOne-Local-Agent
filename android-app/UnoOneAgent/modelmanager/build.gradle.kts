@@ -1,6 +1,7 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -20,10 +21,21 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        unitTests {
+            // android.util.Log calls (via Logger) return defaults instead of throwing "not mocked"
+            // during pure-JVM unit tests.
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
     implementation(project(":core"))
     implementation(project(":storage"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
+
+    testImplementation("junit:junit:4.13.2")
 }

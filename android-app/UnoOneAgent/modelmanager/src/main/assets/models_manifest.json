@@ -1,0 +1,93 @@
+{
+  "manifestVersion": 1,
+  "_comment": "UnoOne offline model manifest. downloadUrl fields point at the official Sherpa-ONNX / Hugging Face artifact hosts. sha256 and sizeBytes are left empty when the exact variant is user-selected; the installer verifies them only when non-empty, and always validates download completeness via the HTTP response and (for archives) extraction success. Replace any url with the exact file URL for the model variant you ship, and fill sha256/sizeBytes for strict integrity checking.",
+  "models": [
+    {
+      "id": "gemma-local",
+      "folder": "gemma-local",
+      "type": "llm",
+      "version": "gemma-3n-e4b-litertlm",
+      "minRamMb": 4096,
+      "backend": "any",
+      "defaultLanguage": "en",
+      "files": [
+        {
+          "name": "gemma-3n-e4b.litertlm",
+          "url": "https://huggingface.co/litert-community/Gemma-3n-E4B-it-litertlm/resolve/main/gemma-3n-e4b.litertlm",
+          "sha256": "",
+          "sizeBytes": 0,
+          "archive": false
+        }
+      ]
+    },
+    {
+      "id": "sherpa-asr",
+      "folder": "sherpa-asr",
+      "type": "asr",
+      "version": "streaming-zipper-transducer",
+      "minRamMb": 512,
+      "backend": "cpu",
+      "defaultLanguage": "en",
+      "files": [
+        { "name": "encoder.onnx", "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipper-multi-zh-hans-2023-12-12/resolve/main/encoder.onnx", "sha256": "", "sizeBytes": 0, "archive": false },
+        { "name": "decoder.onnx", "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipper-multi-zh-hans-2023-12-12/resolve/main/decoder.onnx", "sha256": "", "sizeBytes": 0, "archive": false },
+        { "name": "joiner.onnx", "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipper-multi-zh-hans-2023-12-12/resolve/main/joiner.onnx", "sha256": "", "sizeBytes": 0, "archive": false },
+        { "name": "tokens.txt", "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipper-multi-zh-hans-2023-12-12/resolve/main/tokens.txt", "sha256": "", "sizeBytes": 0, "archive": false }
+      ]
+    },
+    {
+      "id": "sherpa-tts",
+      "folder": "sherpa-tts",
+      "type": "tts",
+      "version": "vits",
+      "minRamMb": 512,
+      "backend": "cpu",
+      "defaultLanguage": "en",
+      "files": [
+        { "name": "model.onnx", "url": "https://huggingface.co/csukuangfj/vits-zh-hf-fem/resolve/main/model.onnx", "sha256": "", "sizeBytes": 0, "archive": false },
+        { "name": "tokens.txt", "url": "https://huggingface.co/csukuangfj/vits-zh-hf-fem/resolve/main/tokens.txt", "sha256": "", "sizeBytes": 0, "archive": false },
+        { "name": "espeak-ng-data.zip", "url": "https://huggingface.co/csukuangfj/vits-zh-hf-fem/resolve/main/espeak-ng-data.zip", "sha256": "", "sizeBytes": 0, "archive": true }
+      ]
+    },
+    {
+      "id": "vad",
+      "folder": "vad",
+      "type": "vad",
+      "version": "online-transducer-kws",
+      "minRamMb": 256,
+      "backend": "cpu",
+      "defaultLanguage": "en",
+      "files": [
+        { "name": "encoder.onnx", "url": "https://huggingface.co/csukuangfj/sherpa-onnx-kws-zh-encoder/resolve/main/encoder.onnx", "sha256": "", "sizeBytes": 0, "archive": false },
+        { "name": "decoder.onnx", "url": "https://huggingface.co/csukuangfj/sherpa-onnx-kws-zh-encoder/resolve/main/decoder.onnx", "sha256": "", "sizeBytes": 0, "archive": false },
+        { "name": "joiner.onnx", "url": "https://huggingface.co/csukuangfj/sherpa-onnx-kws-zh-encoder/resolve/main/joiner.onnx", "sha256": "", "sizeBytes": 0, "archive": false },
+        { "name": "tokens.txt", "url": "https://huggingface.co/csukuangfj/sherpa-onnx-kws-zh-encoder/resolve/main/tokens.txt", "sha256": "", "sizeBytes": 0, "archive": false }
+      ]
+    },
+    {
+      "id": "punctuation",
+      "folder": "punctuation",
+      "type": "punctuation",
+      "version": "punctuation-model",
+      "minRamMb": 128,
+      "backend": "cpu",
+      "defaultLanguage": "en",
+      "files": [
+        { "name": "model.onnx", "url": "https://huggingface.co/csukuangfj/sherpa-onnx-punctuation-en/resolve/main/model.int8.onnx", "sha256": "", "sizeBytes": 0, "archive": false },
+        { "name": "tokens.txt", "url": "https://huggingface.co/csukuangfj/sherpa-onnx-punctuation-en/resolve/main/tokens.txt", "sha256": "", "sizeBytes": 0, "archive": false }
+      ]
+    },
+    {
+      "id": "ocr-optional",
+      "folder": "ocr-optional",
+      "type": "ocr",
+      "version": "optional",
+      "minRamMb": 256,
+      "backend": "cpu",
+      "defaultLanguage": "en",
+      "files": [
+        { "name": "model.onnx", "url": "", "sha256": "", "sizeBytes": 0, "archive": false }
+      ]
+    }
+  ]
+}

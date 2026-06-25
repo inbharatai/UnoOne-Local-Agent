@@ -1,12 +1,12 @@
 package com.unoone.agent.safety
 
-import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.provider.Settings
 import androidx.core.content.ContextCompat
 import com.unoone.agent.core.interfaces.ISafetyPipeline
 import com.unoone.agent.core.model.RiskLevel
+import com.unoone.agent.core.safety.PermissionRequirement
+import com.unoone.agent.core.safety.ToolPermissionRegistry
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.safetyguard.SafetyGuard
 
@@ -20,18 +20,28 @@ class SafetyPipeline(
 ) : ISafetyPipeline {
 
     /**
-     * Checks whether all required permissions are granted for the given tool.
-     * Returns a list of missing permissions (empty if all granted).
+     * Missing *runtime* (dangerous) permission strings for a tool. Kept as `List<String>` for
+     * back-compat with the orchestrator's `requestPermissions` flow. Use [unsatisfiedRequirements]
+     * for the full picture including Overlay/Accessibility/MediaProjection.
      */
     override fun checkPermissionsForTool(tool: String): List<String> {
-        return getRequiredPermissionsForTool(tool).filter { perm ->
-            if (perm == Manifest.permission.SYSTEM_ALERT_WINDOW) {
-                !Settings.canDrawOverlays(context)
-            } else {
-                PackageManager.PERMISSION_GRANTED != ContextCompat.checkSelfPermission(context, perm)
-            }
+        return ToolPermissionRegistry.runtimePermissionsFor(tool).filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
         }
     }
+
+    /**
+     * All unsatisfied [PermissionRequirement]s for a tool (runtime + system access). The orchestrator
+     * uses this to decide which access to request — runtime perms via requestPermissions,
+     * accessibility/overlay via system settings intents, MediaProjection via the screenshot
+     * permission activity. Empty ⇒ fully authorized.
+     */
+    fun unsatisfiedRequirements(tool: String): List<PermissionRequirement> =
+        ToolPermissionRegistry.requirementsFor(tool).filterNot { isSatisfied(it) }
+
+    /** True if the given requirement is currently granted/enabled on this device. */
+    fun isSatisfied(requirement: PermissionRequirement): Boolean =
+        com.unoone.agent.PermissionManager.isRequirementSatisfied(context, requirement)
 
     /**
      * Classify a tool + raw input combination into a risk level.
@@ -71,23 +81,6 @@ class SafetyPipeline(
             RiskLevel.STRONG_CONFIRM -> "SECURITY CHECK: This action ($tool) is sensitive. Confirm?"
             RiskLevel.CONFIRM -> "Confirm: Execute $tool?"
             else -> "Confirm?"
-        }
-    }
-
-    private fun getRequiredPermissionsForTool(tool: String): List<String> {
-        return when (tool) {
-            "create_note" -> emptyList()
-            "draft_email" -> emptyList()
-            "send_whatsapp" -> emptyList()
-            "check_calendar" -> listOf(Manifest.permission.READ_CALENDAR)
-            "open_calendar_insert" -> listOf(Manifest.permission.WRITE_CALENDAR)
-            "open_camera" -> listOf(Manifest.permission.CAMERA)
-            "ocr_screen", "read_screen" -> listOf(Manifest.permission.SYSTEM_ALERT_WINDOW)
-            "system_control" -> listOf(Manifest.permission.SYSTEM_ALERT_WINDOW)
-            "voice_recording" -> listOf(Manifest.permission.RECORD_AUDIO)
-            "detect_objects" -> listOf(Manifest.permission.CAMERA)
-            "deactivate_blind_aid" -> emptyList()
-            else -> emptyList()
         }
     }
 }

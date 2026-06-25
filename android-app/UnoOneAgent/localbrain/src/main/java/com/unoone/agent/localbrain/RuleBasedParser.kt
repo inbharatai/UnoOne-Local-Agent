@@ -94,48 +94,27 @@ object RuleBasedParser {
             }
 
             // === COMPOUND COMMANDS (after domain-specific rules, before simple rules) ===
-            // 4D: Removed limit=2 — now splits on " and " for up to 3 parts
+            // Splits on " and " into up to 3 ordered steps, each parsed independently and embedded
+            // as a {tool, args} object in a single "steps" JSON array. (Previously the 3rd part was
+            // parsed and discarded; it is now included.) If only one half parses, that half is
+            // returned directly — the "and" was not a command separator.
             lowered.contains(" and ") && domainSpecificKeywords.none { lowered.contains(it) } -> {
                 val parts = lowered.split(" and ").map { it.trim() }.filter { it.isNotBlank() }
-                if (parts.size == 2) {
-                    val first = parse(parts[0])
-                    val second = parse(parts[1])
-                    if (first != null && second != null) {
-                        ToolCall(
-                            "compound",
-                            JsonObject(mapOf(
-                                "first_tool" to JsonPrimitive(first.tool),
-                                "first_args" to JsonPrimitive(first.args.toString()),
-                                "second_tool" to JsonPrimitive(second.tool),
-                                "second_args" to JsonPrimitive(second.args.toString())
-                            ))
+                val parsed = parts.mapNotNull { parse(it) }
+                when {
+                    parsed.size >= 2 -> {
+                        val stepsArray = kotlinx.serialization.json.JsonArray(
+                            parsed.take(3).map { tc ->
+                                JsonObject(mapOf(
+                                    "tool" to JsonPrimitive(tc.tool),
+                                    "args" to tc.args
+                                ))
+                            }
                         )
-                    } else {
-                        // If only the first half parses, return it (the "and" was not a command separator)
-                        first
+                        ToolCall("compound", JsonObject(mapOf("steps" to stepsArray)))
                     }
-                } else if (parts.size >= 3) {
-                    // 4D: Support compound "A and B and C" — execute first two, nest the rest
-                    val first = parse(parts[0])
-                    val second = parse(parts[1])
-                    val rest = parts.drop(2).joinToString(" and ")
-                    val third = parse(rest)
-                    if (first != null && second != null) {
-                        // Return a compound of first two; the third is handled by nesting
-                        ToolCall(
-                            "compound",
-                            JsonObject(mapOf(
-                                "first_tool" to JsonPrimitive(first.tool),
-                                "first_args" to JsonPrimitive(first.args.toString()),
-                                "second_tool" to JsonPrimitive(second.tool),
-                                "second_args" to JsonPrimitive(second.args.toString())
-                            ))
-                        )
-                    } else {
-                        first
-                    }
-                } else {
-                    null
+                    parsed.size == 1 -> parsed.first()
+                    else -> null
                 }
             }
 
@@ -221,6 +200,20 @@ object RuleBasedParser {
                     "target" to JsonPrimitive(hint),
                     "value" to JsonPrimitive(value)
                 )))
+            }
+
+            // Note deletion — checked BEFORE create_note so negation verbs route to delete,
+            // and delete_all_notes / delete_notes become reachable offline (not only via LLM).
+            (lowered.contains("delete") || lowered.contains("remove") ||
+                lowered.contains("clear") || lowered.contains("erase")) &&
+                (lowered.contains("note") || lowered.contains("notes")) -> {
+                if (lowered.contains("all")) {
+                    ToolCall("delete_all_notes", JsonObject(emptyMap()))
+                } else {
+                    val query = Regex("(?:about|containing|matching|with) (.+)", RegexOption.IGNORE_CASE)
+                        .find(lowered)?.groupValues?.get(1)?.trim() ?: ""
+                    ToolCall("delete_notes", JsonObject(mapOf("query" to JsonPrimitive(query))))
+                }
             }
 
             // 4D: Note creation — suppress if negation verbs present ("delete note", "remove note", etc.)

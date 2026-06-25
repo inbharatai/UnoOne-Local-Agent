@@ -3,14 +3,20 @@ package com.unoone.agent.ui.navigation
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.List
+import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -28,17 +34,23 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.unoone.agent.ui.screens.AgentScreen
+import com.unoone.agent.ui.screens.AuditViewerScreen
 import com.unoone.agent.ui.screens.LogsScreen
+import com.unoone.agent.ui.screens.ModelStatusScreen
 import com.unoone.agent.ui.screens.NotesScreen
 import com.unoone.agent.ui.screens.PrivacySettingsScreen
 import com.unoone.agent.ui.screens.SettingsScreen
 import com.unoone.agent.ui.screens.SkillsScreen
+import com.unoone.agent.ui.screens.VoiceTestScreen
 import com.unoone.agent.ui.viewmodel.AgentViewModel
+import com.unoone.agent.ui.viewmodel.AuditViewerViewModel
 import com.unoone.agent.ui.viewmodel.LogsViewModel
+import com.unoone.agent.ui.viewmodel.ModelStatusViewModel
 import com.unoone.agent.ui.viewmodel.NotesViewModel
 import com.unoone.agent.ui.viewmodel.PrivacySettingsViewModel
 import com.unoone.agent.ui.viewmodel.SettingsViewModel
 import com.unoone.agent.ui.viewmodel.SkillsViewModel
+import com.unoone.agent.ui.viewmodel.VoiceTestViewModel
 
 @Composable
 fun UnoOneNavHost(
@@ -49,7 +61,10 @@ fun UnoOneNavHost(
     logsViewModel: LogsViewModel,
     skillsViewModel: SkillsViewModel,
     settingsViewModel: SettingsViewModel,
-    privacySettingsViewModel: PrivacySettingsViewModel
+    privacySettingsViewModel: PrivacySettingsViewModel,
+    modelStatusViewModel: ModelStatusViewModel,
+    voiceTestViewModel: VoiceTestViewModel,
+    auditViewerViewModel: AuditViewerViewModel
 ) {
     Scaffold(
         bottomBar = {
@@ -86,8 +101,19 @@ fun UnoOneNavHost(
             composable(Screen.Notes.route) { NotesScreen(viewModel = notesViewModel) }
             composable(Screen.Skills.route) { SkillsScreen(viewModel = skillsViewModel) }
             composable(Screen.Logs.route) { LogsScreen(viewModel = logsViewModel) }
-            composable(Screen.Settings.route) { SettingsScreen(viewModel = settingsViewModel, onNavigateToPrivacy = { navController.navigate(Screen.PrivacySettings.route) }) }
+            composable(Screen.Settings.route) {
+                SettingsScreen(
+                    viewModel = settingsViewModel,
+                    onNavigateToPrivacy = { navController.navigate(Screen.PrivacySettings.route) },
+                    onNavigateToModels = { navController.navigate(Screen.Models.route) },
+                    onNavigateToVoiceTest = { navController.navigate(Screen.VoiceTest.route) },
+                    onNavigateToAudit = { navController.navigate(Screen.Audit.route) }
+                )
+            }
             composable(Screen.PrivacySettings.route) { PrivacySettingsScreen(viewModel = privacySettingsViewModel, onBack = { navController.popBackStack() }) }
+            composable(Screen.Models.route) { ModelStatusScreen(viewModel = modelStatusViewModel, onBack = { navController.popBackStack() }) }
+            composable(Screen.VoiceTest.route) { VoiceTestScreen(viewModel = voiceTestViewModel, onBack = { navController.popBackStack() }) }
+            composable(Screen.Audit.route) { AuditViewerScreen(viewModel = auditViewerViewModel, onBack = { navController.popBackStack() }) }
         }
     }
 }
@@ -97,9 +123,12 @@ private val Screen.selectedIcon: ImageVector
         Screen.Agent -> Icons.Filled.Home
         Screen.Notes -> Icons.AutoMirrored.Filled.Article
         Screen.Skills -> Icons.Filled.Build
-        Screen.Logs -> Icons.Filled.List
+        Screen.Logs -> Icons.AutoMirrored.Filled.List
         Screen.Settings -> Icons.Filled.Settings
         Screen.PrivacySettings -> Icons.Filled.Settings
+        Screen.Models -> Icons.Filled.Memory
+        Screen.VoiceTest -> Icons.Filled.GraphicEq
+        Screen.Audit -> Icons.AutoMirrored.Filled.ReceiptLong
     }
 
 private val Screen.unselectedIcon: ImageVector
@@ -107,7 +136,10 @@ private val Screen.unselectedIcon: ImageVector
         Screen.Agent -> Icons.Outlined.Home
         Screen.Notes -> Icons.AutoMirrored.Outlined.Article
         Screen.Skills -> Icons.Outlined.Build
-        Screen.Logs -> Icons.Outlined.List
+        Screen.Logs -> Icons.AutoMirrored.Outlined.List
         Screen.Settings -> Icons.Outlined.Settings
         Screen.PrivacySettings -> Icons.Outlined.Settings
+        Screen.Models -> Icons.Outlined.Memory
+        Screen.VoiceTest -> Icons.Outlined.GraphicEq
+        Screen.Audit -> Icons.AutoMirrored.Outlined.ReceiptLong
     }

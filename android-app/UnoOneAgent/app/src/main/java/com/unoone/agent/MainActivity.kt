@@ -24,11 +24,14 @@ import com.unoone.agent.di.DatabaseProvider
 import com.unoone.agent.ui.navigation.UnoOneNavHost
 import com.unoone.agent.ui.theme.UnoOneTheme
 import com.unoone.agent.ui.viewmodel.AgentViewModel
+import com.unoone.agent.ui.viewmodel.AuditViewerViewModel
 import com.unoone.agent.ui.viewmodel.LogsViewModel
+import com.unoone.agent.ui.viewmodel.ModelStatusViewModel
 import com.unoone.agent.ui.viewmodel.NotesViewModel
 import com.unoone.agent.ui.viewmodel.PrivacySettingsViewModel
 import com.unoone.agent.ui.viewmodel.SettingsViewModel
 import com.unoone.agent.ui.viewmodel.SkillsViewModel
+import com.unoone.agent.ui.viewmodel.VoiceTestViewModel
 import com.unoone.agent.voice.VoiceModule
 
 @AndroidEntryPoint
@@ -86,6 +89,9 @@ class MainActivity : ComponentActivity() {
         val skillsViewModel = SkillsViewModel(agentOrchestrator.skillsModule)
         val settingsViewModel = SettingsViewModel(this)
         val privacySettingsViewModel = PrivacySettingsViewModel(this)
+        val modelStatusViewModel = ModelStatusViewModel(this, database.modelMetadataDao())
+        val voiceTestViewModel = VoiceTestViewModel(voiceModule)
+        val auditViewerViewModel = AuditViewerViewModel(database.actionLogDao())
 
         setContent {
             UnoOneTheme {
@@ -99,7 +105,10 @@ class MainActivity : ComponentActivity() {
                         logsViewModel = logsViewModel,
                         skillsViewModel = skillsViewModel,
                         settingsViewModel = settingsViewModel,
-                        privacySettingsViewModel = privacySettingsViewModel
+                        privacySettingsViewModel = privacySettingsViewModel,
+                        modelStatusViewModel = modelStatusViewModel,
+                        voiceTestViewModel = voiceTestViewModel,
+                        auditViewerViewModel = auditViewerViewModel
                     )
                 }
             }
@@ -192,6 +201,8 @@ class MainActivity : ComponentActivity() {
         if (!UnoOneAccessibilityService.isEnabled()) {
             // Don't toast on every resume, only on initial check
         }
+        // Recover the Gemma brain if onTrimMemory unloaded it under memory pressure.
+        (application as? UnoOneApplication)?.reloadLlmIfUnloaded()
     }
 }
 
@@ -202,7 +213,10 @@ fun UnoOneApp(
     logsViewModel: LogsViewModel,
     skillsViewModel: SkillsViewModel,
     settingsViewModel: SettingsViewModel,
-    privacySettingsViewModel: PrivacySettingsViewModel
+    privacySettingsViewModel: PrivacySettingsViewModel,
+    modelStatusViewModel: ModelStatusViewModel,
+    voiceTestViewModel: VoiceTestViewModel,
+    auditViewerViewModel: AuditViewerViewModel
 ) {
     val navController = rememberNavController()
     UnoOneNavHost(
@@ -212,6 +226,9 @@ fun UnoOneApp(
         logsViewModel = logsViewModel,
         skillsViewModel = skillsViewModel,
         settingsViewModel = settingsViewModel,
-        privacySettingsViewModel = privacySettingsViewModel
+        privacySettingsViewModel = privacySettingsViewModel,
+        modelStatusViewModel = modelStatusViewModel,
+        voiceTestViewModel = voiceTestViewModel,
+        auditViewerViewModel = auditViewerViewModel
     )
 }

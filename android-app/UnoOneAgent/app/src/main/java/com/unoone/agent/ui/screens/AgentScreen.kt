@@ -98,7 +98,17 @@ fun AgentScreen(viewModel: AgentViewModel) {
     val amplitude by viewModel.amplitude.collectAsState()
     val pendingConfirmation by viewModel.pendingConfirmation.collectAsState()
     val isListening by viewModel.isListening.collectAsState()
+    val offlineMode by viewModel.offlineMode.collectAsState()
     val context = LocalContext.current
+
+    // Keep the offline-mode chip live: VoiceModule exposes @Volatile state (not a Flow), so poll
+    // it on a cadence and on first composition.
+    LaunchedEffect(Unit) {
+        while (true) {
+            viewModel.refreshOfflineMode()
+            kotlinx.coroutines.delay(2000)
+        }
+    }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -137,23 +147,28 @@ fun AgentScreen(viewModel: AgentViewModel) {
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
         )
 
-        // Offline badge
+        // Offline badge — dynamic: OFFLINE (green) / LIMITED (amber) / NO MODEL (red)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val (badgeText, badgeColor) = when (offlineMode) {
+                com.unoone.agent.ui.viewmodel.OfflineMode.OFFLINE -> "OFFLINE" to DoneGreen
+                com.unoone.agent.ui.viewmodel.OfflineMode.LIMITED -> "LIMITED" to SafetyOrange
+                com.unoone.agent.ui.viewmodel.OfflineMode.NO_MODEL -> "NO MODEL" to FailedRed
+            }
             Box(
                 modifier = Modifier
                     .padding(vertical = 8.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f))
+                    .background(badgeColor.copy(alpha = 0.15f))
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = "Offline Local",
+                    text = badgeText,
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.secondary,
+                    color = badgeColor,
                     fontWeight = FontWeight.SemiBold
                 )
             }

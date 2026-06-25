@@ -1,6 +1,7 @@
 package com.unoone.agent.parsing
 
 import com.unoone.agent.core.interfaces.ICommandParser
+import com.unoone.agent.core.model.compoundSteps
 import com.unoone.agent.core.util.InputSanitizer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -99,6 +100,10 @@ class CommandParserTest {
         val result = parser.parse("scroll down and go home")
         assertNotNull(result)
         assertEquals("compound", result!!.tool)
+        val steps = result!!.compoundSteps()
+        assertEquals(2, steps.size)
+        assertEquals("system_control", steps[0].tool)
+        assertEquals("system_control", steps[1].tool)
     }
 
     @Test

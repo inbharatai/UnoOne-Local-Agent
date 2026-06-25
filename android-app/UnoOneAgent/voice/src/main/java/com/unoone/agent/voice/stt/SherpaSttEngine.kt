@@ -1,94 +1,114 @@
 package com.unoone.agent.voice.stt
 
+import android.content.Context
+import com.k2fsa.sherpa.onnx.FeatureConfig
+import com.k2fsa.sherpa.onnx.OfflineModelConfig
+import com.k2fsa.sherpa.onnx.OfflineRecognizer
+import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * World-class offline STT using Sherpa-ONNX.
- * Uses reflection/safe-loading to ensure the app compiles and runs perfectly 
- * on any Android device even if the native .so libraries are missing.
+ * Production offline STT using Sherpa-ONNX (transducer models: encoder/decoder/joiner + tokens).
+ *
+ * Real direct-API implementation (no reflection). The native AAR is pulled in via the
+ * `com.github.k2-fsa:sherpa-onnx` Maven coordinate declared in :voice/build.gradle.kts, or a
+ * dropped-in `voice/libs/sherpa-onnx.aar`. If the native `.so` fails to load on a given device,
+ * initialization degrades gracefully (returns Result.Error) so the caller can fall back to the
+ * emergency Android SpeechRecognizer path — it never crashes.
  */
-class SherpaSttEngine(private val modelDir: String) {
+class SherpaSttEngine(private val context: Context, private val modelDir: String) {
 
-    @Volatile private var recognizer: Any? = null
-    @Volatile private var initialized = false
+    @Volatile
+    private var recognizer: OfflineRecognizer? = null
+    @Volatile
+    private var initialized = false
+
+    /**
+     * Best-effort confidence for the last transcription. Sherpa offline transducer results do not
+     * expose a confidence score, so this is 1.0 when text is produced and 0.0 when empty — enough
+     * to drive the orchestrator's low-confidence retry prompt.
+     */
+    @Volatile
+    var lastConfidence: Float = 1f
+        private set
 
     @Synchronized
     fun initialize(): Result<Unit> {
         return try {
             Logger.i("SherpaSttEngine: Checking model files in $modelDir")
-            val encoderFile = java.io.File("$modelDir/encoder.onnx")
-            val decoderFile = java.io.File("$modelDir/decoder.onnx")
-            val joinerFile = java.io.File("$modelDir/joiner.onnx")
-            val tokensFile = java.io.File("$modelDir/tokens.txt")
+            val encoder = File("$modelDir/encoder.onnx")
+            val decoder = File("$modelDir/decoder.onnx")
+            val joiner = File("$modelDir/joiner.onnx")
+            val tokens = File("$modelDir/tokens.txt")
 
-            if (!encoderFile.exists() || !decoderFile.exists() || !joinerFile.exists() || !tokensFile.exists()) {
+            if (!encoder.exists() || !decoder.exists() || !joiner.exists() || !tokens.exists()) {
                 return Result.Error("Sherpa STT model files missing. Please download models to: $modelDir")
             }
 
-            // Attempt to load Sherpa-ONNX classes dynamically
-            val configClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineRecognizerConfig")
-            val modelConfigClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineModelConfig")
-            val transducerConfigClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig")
-            val recognizerClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineRecognizer")
+            val offlineModelConfig = OfflineModelConfig().apply {
+                transducer = OfflineTransducerModelConfig(
+                    encoder.absolutePath,
+                    decoder.absolutePath,
+                    joiner.absolutePath
+                )
+                this.tokens = tokens.absolutePath
+                numThreads = 4
+            }
 
-            // Build configs using reflection
-            val transducerConfig = transducerConfigClass.getConstructor(
-                String::class.java, String::class.java, String::class.java
-            ).newInstance(encoderFile.absolutePath, decoderFile.absolutePath, joinerFile.absolutePath)
+            val config = OfflineRecognizerConfig().apply {
+                featConfig = FeatureConfig(16000, 80, 0f)
+                this.modelConfig = offlineModelConfig
+            }
 
-            val modelConfig = modelConfigClass.getDeclaredConstructor().newInstance()
-            modelConfigClass.getMethod("setTransducer", transducerConfigClass).invoke(modelConfig, transducerConfig)
-            modelConfigClass.getMethod("setTokens", String::class.java).invoke(modelConfig, tokensFile.absolutePath)
-            modelConfigClass.getMethod("setNumThreads", Int::class.javaPrimitiveType).invoke(modelConfig, 4)
-
-            val config = configClass.getDeclaredConstructor().newInstance()
-            configClass.getMethod("setModelConfig", modelConfigClass).invoke(config, modelConfig)
-
-            recognizer = recognizerClass.getConstructor(configClass).newInstance(config)
+            recognizer = OfflineRecognizer(context.assets, config)
             initialized = true
-            Logger.i("SherpaSttEngine: Offline STT successfully initialized with hardware optimization")
+            Logger.i("SherpaSttEngine: Offline STT initialized (transducer, 4 threads)")
             Result.Success(Unit)
-        } catch (e: ClassNotFoundException) {
-            Logger.w("SherpaSttEngine: Sherpa-ONNX classes not found in classpath. Falling back to System STT.")
-            Result.Error("Sherpa library not available")
-        } catch (e: Exception) {
-            Logger.e("SherpaSttEngine: Initialization failed", e)
-            Result.Error("Sherpa STT failed: ${e.message}")
+        } catch (e: Throwable) {
+            // UnsatisfiedLinkError (native .so missing/incompatible) is an Error, not Exception.
+            Logger.e("SherpaSttEngine: Initialization failed: ${e::class.java.simpleName}: ${e.message}")
+            recognizer = null
+            initialized = false
+            Result.Error("Sherpa STT unavailable: ${e.message}")
         }
     }
 
     @Synchronized
     fun transcribe(pcmBytes: ByteArray): Result<String> {
-        if (!initialized || recognizer == null) {
+        val rec = recognizer
+        if (!initialized || rec == null) {
             return Result.Error("SherpaSttEngine not initialized")
         }
+        if (pcmBytes.size < 2) {
+            lastConfidence = 0f
+            return Result.Error("No audio captured")
+        }
 
+        var stream: com.k2fsa.sherpa.onnx.OfflineStream? = null
         return try {
-            val samples = FloatArray(pcmBytes.size / 2)
-            val buffer = ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN)
-            for (i in samples.indices) {
-                samples[i] = buffer.short.toFloat() / 32768f
-            }
-
-            val waveClass = Class.forName("com.k2fsa.sherpa.onnx.Wave")
-            val wave = waveClass.getConstructor(FloatArray::class.java, Float::class.javaPrimitiveType)
-                .newInstance(samples, 16000f)
-
-            val recognizerClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineRecognizer")
-            val decodeMethod = recognizerClass.getMethod("decode", waveClass)
-            val offlineRecognizerResultClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineRecognizerResult")
-
-            val resultObj = decodeMethod.invoke(recognizer, wave)
-            val text = offlineRecognizerResultClass.getMethod("getText").invoke(resultObj) as String
-
-            Logger.i("SherpaSttEngine: Transcription complete: '$text'")
-            Result.Success(text.trim())
-        } catch (e: Exception) {
-            Logger.e("SherpaSttEngine: Transcription failed", e)
+            val samples = pcmToFloat(pcmBytes)
+            stream = rec.createStream()
+            stream.acceptWaveform(samples, 16000)
+            rec.decode(stream)
+            val result = rec.getResult(stream)
+            val text = result.text.trim()
+            lastConfidence = if (text.isNotBlank()) 1f else 0f
+            Logger.i("SherpaSttEngine: Transcribed: '$text'")
+            Result.Success(text)
+        } catch (e: Throwable) {
+            Logger.e("SherpaSttEngine: Transcription failed: ${e::class.java.simpleName}: ${e.message}")
+            lastConfidence = 0f
             Result.Error("Transcription failed: ${e.message}")
+        } finally {
+            try {
+                stream?.release()
+            } catch (_: Throwable) {
+            }
         }
     }
 
@@ -97,14 +117,20 @@ class SherpaSttEngine(private val modelDir: String) {
     @Synchronized
     fun release() {
         try {
-            if (recognizer != null) {
-                val recognizerClass = Class.forName("com.k2fsa.sherpa.onnx.OfflineRecognizer")
-                recognizerClass.getMethod("close").invoke(recognizer)
-            }
-        } catch (e: Exception) {
-            Logger.e("SherpaSttEngine: Error closing recognizer", e)
+            recognizer?.release()
+        } catch (e: Throwable) {
+            Logger.e("SherpaSttEngine: Error releasing recognizer", e)
         }
         recognizer = null
         initialized = false
+    }
+
+    private fun pcmToFloat(pcmBytes: ByteArray): FloatArray {
+        val samples = FloatArray(pcmBytes.size / 2)
+        val buffer = ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in samples.indices) {
+            samples[i] = buffer.short.toFloat() / 32768f
+        }
+        return samples
     }
 }

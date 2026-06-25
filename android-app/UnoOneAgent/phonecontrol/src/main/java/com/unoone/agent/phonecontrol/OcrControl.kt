@@ -12,7 +12,10 @@ import kotlin.coroutines.suspendCoroutine
 
 class OcrControl(private val context: Context) {
 
-    private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    // Lazily initialized so ML Kit is only spun up if OCR is actually used — avoids the cost (and
+    // the MlKitContext requirement) on devices/paths that never run OCR, and lets this class be
+    // constructed in unit tests.
+    private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
     private val screenshotCapture = ScreenshotCapture(context)
 
     suspend fun recognizeText(bitmap: Bitmap): Result<String> = suspendCoroutine { continuation ->

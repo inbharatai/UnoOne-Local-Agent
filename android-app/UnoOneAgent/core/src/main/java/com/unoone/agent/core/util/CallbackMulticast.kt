@@ -70,3 +70,10 @@ typealias ConfirmationListener = (message: String, callback: (Boolean) -> Unit) 
  * Each listener receives the list of missing permissions.
  */
 typealias PermissionListener = (List<String>) -> Unit
+
+/**
+ * Convenience type for the system-permission callback pattern used by AgentOrchestrator.
+ * Each listener receives the list of unsatisfied non-runtime requirements
+ * (Accessibility / Overlay / MediaProjection).
+ */
+typealias SystemPermissionListener = (List<com.unoone.agent.core.safety.PermissionRequirement>) -> Unit

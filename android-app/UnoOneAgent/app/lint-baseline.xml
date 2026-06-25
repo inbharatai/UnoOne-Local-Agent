@@ -8,7 +8,7 @@
         errorLine2="                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/unoone/agent/MainActivity.kt"
-            line="164"
+            line="173"
             column="46"/>
     </issue>
 
@@ -19,7 +19,7 @@
         errorLine2="                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/unoone/agent/PermissionManager.kt"
-            line="85"
+            line="88"
             column="32"/>
     </issue>
 
@@ -47,7 +47,7 @@
 
     <issue
         id="GradleDependency"
-        message="A newer version of androidx.lifecycle:lifecycle-runtime-ktx than 2.8.0 is available: 2.10.0"
+        message="A newer version of androidx.lifecycle:lifecycle-runtime-ktx than 2.8.0 is available: 2.11.0"
         errorLine1="    implementation(&quot;androidx.lifecycle:lifecycle-runtime-ktx:2.8.0&quot;)"
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
@@ -58,7 +58,7 @@
 
     <issue
         id="GradleDependency"
-        message="A newer version of androidx.lifecycle:lifecycle-runtime-compose than 2.8.0 is available: 2.10.0"
+        message="A newer version of androidx.lifecycle:lifecycle-runtime-compose than 2.8.0 is available: 2.11.0"
         errorLine1="    implementation(&quot;androidx.lifecycle:lifecycle-runtime-compose:2.8.0&quot;)"
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
@@ -69,7 +69,7 @@
 
     <issue
         id="GradleDependency"
-        message="A newer version of androidx.lifecycle:lifecycle-viewmodel-compose than 2.8.0 is available: 2.10.0"
+        message="A newer version of androidx.lifecycle:lifecycle-viewmodel-compose than 2.8.0 is available: 2.11.0"
         errorLine1="    implementation(&quot;androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0&quot;)"
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
@@ -334,7 +334,7 @@
         errorLine2="        ~~~~~~~~~~~~">
         <location
             file="src/main/java/com/unoone/agent/MainActivity.kt"
-            line="129"
+            line="138"
             column="9"/>
     </issue>
 
@@ -345,7 +345,7 @@
         errorLine2="                                                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/unoone/agent/MainActivity.kt"
-            line="140"
+            line="149"
             column="76"/>
     </issue>
 
@@ -356,7 +356,7 @@
         errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/unoone/agent/MainActivity.kt"
-            line="165"
+            line="174"
             column="28"/>
     </issue>
 
@@ -367,63 +367,8 @@
         errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/unoone/agent/MainActivity.kt"
-            line="165"
+            line="174"
             column="28"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="            return Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse(&quot;package:${context.packageName}&quot;))"
-        errorLine2="                                                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/unoone/agent/PermissionManager.kt"
-            line="60"
-            column="70"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="            return Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse(&quot;package:${context.packageName}&quot;))"
-        errorLine2="                                                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/unoone/agent/PermissionManager.kt"
-            line="63"
-            column="83"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="        return Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse(&quot;package:${context.packageName}&quot;))"
-        errorLine2="                                                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/unoone/agent/PermissionManager.kt"
-            line="76"
-            column="69"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="            data = Uri.parse(&quot;package:${context.packageName}&quot;)"
-        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/unoone/agent/PermissionManager.kt"
-            line="86"
-            column="20"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="            data = Uri.parse(&quot;package:${context.packageName}&quot;)"
-        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/unoone/agent/PermissionManager.kt"
-            line="86"
-            column="20"/>
     </issue>
 
     <issue

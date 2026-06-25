@@ -13,6 +13,8 @@ import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
 import com.unoone.agent.core.util.Logger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -34,42 +36,100 @@ class GemmaPlanner {
     @Volatile
     private var isLoaded = false
 
+    /** Which backend the model actually loaded on: "GPU", "CPU", or "" if not loaded. */
+    @Volatile
+    private var activeBackend: String = ""
+
+    /** Last load error message (empty on success). Surfaces device-compatibility status to the UI. */
+    @Volatile
+    private var lastLoadError: String = ""
+
+    /** Serializes loads so two concurrent callers can't both close + reinitialize (leaking an engine). */
+    private val loadMutex = Mutex()
+
     fun isLoaded(): Boolean = isLoaded
+
+    fun activeBackend(): String = activeBackend
+
+    fun lastLoadError(): String = lastLoadError
 
     /**
      * Loads the model and initializes a conversation with UnoOne tools.
-     * Must be called from a coroutine (engine initialization can take seconds).
+     * Tries the GPU backend first; if it fails on this device, falls back to CPU so the brain
+     * still loads instead of hard-failing. Must be called from a coroutine (initialization is slow).
      */
     suspend fun load(modelPath: String): Result<Unit> = withContext(Dispatchers.IO) {
-        if (isLoaded) {
-            close()
+        // Guard against concurrent loads: two callers could both pass the isLoaded check, both
+        // close the existing engine, and both initialize — leaking one native engine.
+        loadMutex.withLock {
+            if (isLoaded) {
+                close()
+            }
+            lastLoadError = ""
+            try {
+                Logger.i("GemmaPlanner: loading LiteRT-LM model from $modelPath")
+                val (newEngine, backend) = tryLoadBackend(modelPath, Backend.GPU())
+                    ?: tryLoadBackend(modelPath, Backend.CPU())
+                    ?: run {
+                        lastLoadError = "Model failed to load on both GPU and CPU backends"
+                        return@withLock Result.Error(lastLoadError)
+                    }
+
+                val conversationConfig = ConversationConfig(
+                    systemInstruction = Contents.of(PromptBuilder.buildSystemInstruction()),
+                    tools = listOf(tool(UnoOneToolSet())),
+                    automaticToolCalling = false
+                )
+
+                // createConversation can throw on some devices; if it does, close the engine we
+                // just built (it isn't assigned to the `engine` field yet, so close() later wouldn't
+                // release it — that would leak the native LiteRT engine + GPU delegate).
+                val newConversation = try {
+                    newEngine.createConversation(conversationConfig)
+                } catch (e: Exception) {
+                    runCatching { newEngine.close() }
+                    throw e
+                }
+
+                engine = newEngine
+                conversation = newConversation
+                activeBackend = backend
+                isLoaded = true
+                Logger.i("GemmaPlanner: model loaded on $backend backend, conversation ready")
+                Result.Success(Unit)
+            } catch (e: Exception) {
+                Logger.e("GemmaPlanner: failed to load model", e)
+                isLoaded = false
+                activeBackend = ""
+                lastLoadError = e.message ?: "Unknown load error"
+                Result.Error("Failed to load Gemma model: ${e.message}", e)
+            }
         }
-        try {
-            Logger.i("GemmaPlanner: loading LiteRT-LM model from $modelPath")
-            val engineConfig = EngineConfig(
-                modelPath = modelPath,
-                backend = Backend.GPU()
-            )
-            val newEngine = Engine(engineConfig)
-            newEngine.initialize()
+    }
 
-            val conversationConfig = ConversationConfig(
-                systemInstruction = Contents.of(PromptBuilder.buildSystemInstruction()),
-                tools = listOf(tool(UnoOneToolSet())),
-                automaticToolCalling = false
-            )
-
-            val newConversation = newEngine.createConversation(conversationConfig)
-
-            engine = newEngine
-            conversation = newConversation
-            isLoaded = true
-            Logger.i("GemmaPlanner: model loaded and conversation ready")
-            Result.Success(Unit)
+    /**
+     * Attempts to construct + initialize an [Engine] with the given backend.
+     * Returns (engine, backendName) on success, or null on failure (so the caller can try the
+     * next backend). Any partially-created engine is released to avoid resource leaks.
+     */
+    private fun tryLoadBackend(modelPath: String, backend: Backend): Pair<Engine, String>? {
+        var candidate: Engine? = null
+        return try {
+            candidate = Engine(EngineConfig(modelPath = modelPath, backend = backend))
+            candidate.initialize()
+            val name = when (backend) {
+                is Backend.GPU -> "GPU"
+                is Backend.CPU -> "CPU"
+                is Backend.NPU -> "NPU"
+            }
+            candidate to name
         } catch (e: Exception) {
-            Logger.e("GemmaPlanner: failed to load model", e)
-            isLoaded = false
-            Result.Error("Failed to load Gemma model: ${e.message}", e)
+            Logger.w("GemmaPlanner: $backend backend failed (${e.message}); will try fallback")
+            try {
+                candidate?.close()
+            } catch (_: Exception) {
+            }
+            null
         }
     }
 
@@ -135,6 +195,7 @@ class GemmaPlanner {
         return JsonObject(arguments.mapValues { (_, value) -> valueToJsonElement(value) })
     }
 
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     private fun valueToJsonElement(value: Any?): kotlinx.serialization.json.JsonElement {
         return when (value) {
             null -> JsonPrimitive(null)

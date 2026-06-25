@@ -58,6 +58,14 @@ class SafetyGuard {
      * Input-level risk classification. Scans the raw user input for dangerous keywords
      * that might indicate higher risk than the tool name alone suggests.
      * Used as a secondary check after tool-level classification.
+     *
+     * NOTE (review 2026-06-24): the broad keyword→BLOCK escalations here (send/message/bank/
+     * password/install/credit card) are the project's deliberate, tested security posture
+     * (see SafetyGuardTest). They can over-block legitimately-worded requests that route to an
+     * already-STRONG_CONFIRM tool — e.g. "send a WhatsApp message to mom" hits "send "/"message"
+     * → BLOCK, which overrides send_whatsapp's STRONG_CONFIRM and hard-blocks it. That is a known
+     * UX trade-off, left in place because the tested intent is to block on these keywords; weakening
+     * it is a security-policy decision for the user, not a bug fix.
      */
     fun classifyFromInput(input: String): RiskLevel {
         val lowered = input.lowercase()

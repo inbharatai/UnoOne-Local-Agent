@@ -34,7 +34,14 @@ class VoiceService : Service() {
     private var sttEngine: SherpaSttEngine? = null
     private var ttsEngine: SherpaTtsEngine? = null
     private var androidStt: AndroidSttEngine? = null
-    private var useAndroidStt = true
+    private var useAndroidStt = false
+
+    /**
+     * When true, the emergency Android SpeechRecognizer is used when Sherpa STT is unavailable.
+     * Default false (offline-first). Mirrors [com.unoone.agent.voice.VoiceModule.allowSystemSttFallback]
+     * so the service never silently uses the cloud-dependent system recognizer.
+     */
+    private var allowSystemSttFallback = false
 
     var onWakeWordDetected: (() -> Unit)? = null
     var onCommandReceived: ((String) -> Unit)? = null
@@ -80,29 +87,30 @@ class VoiceService : Service() {
     }
 
     private fun initEngines() {
-        // Try Sherpa-ONNX STT
+        // Sherpa-ONNX is the production offline default. Android SpeechRecognizer is an explicit
+        // emergency fallback only — never used silently to keep the offline promise honest.
         val modelDir = getExternalFilesDir(null)?.absolutePath + "/models"
-        val stt = SherpaSttEngine("$modelDir/sherpa-asr")
+        val stt = SherpaSttEngine(this, "$modelDir/sherpa-asr")
         if (stt.initialize() is Result.Success) {
             sttEngine = stt
             useAndroidStt = false
-            Logger.i("VoiceService: Sherpa STT ready")
+            Logger.i("VoiceService: Sherpa STT ready (offline)")
         } else {
-            Logger.w("VoiceService: Sherpa STT unavailable, using Android fallback")
-            useAndroidStt = true
+            useAndroidStt = allowSystemSttFallback
+            Logger.w("VoiceService: Sherpa STT unavailable; emergency Android fallback ${if (allowSystemSttFallback) "enabled" else "disabled"}")
         }
 
         // Try Sherpa-ONNX TTS
-        val tts = SherpaTtsEngine("$modelDir/sherpa-tts")
+        val tts = SherpaTtsEngine(this, "$modelDir/sherpa-tts")
         if (tts.initialize() is Result.Success) {
             ttsEngine = tts
-            Logger.i("VoiceService: Sherpa TTS ready")
+            Logger.i("VoiceService: Sherpa TTS ready (offline)")
         } else {
             Logger.w("VoiceService: Sherpa TTS unavailable")
         }
 
-        // Try Keyword Spotter
-        val kws = KeywordSpotterEngine("$modelDir/vad")
+        // Try Keyword Spotter (wake word) — uses the online transducer model in models/vad
+        val kws = KeywordSpotterEngine(this, "$modelDir/vad", cacheDir?.absolutePath)
         if (kws.initialize(listOf("uno one", "uno one")) is Result.Success) {
             keywordSpotter = kws
             Logger.i("VoiceService: Keyword spotter ready")
@@ -238,7 +246,8 @@ class VoiceService : Service() {
         if (pcmData.size < 2) return false
         var sum = 0.0
         for (i in 0 until pcmData.size - 1 step 2) {
-            val sample = (pcmData[i].toInt() and 0xFF) or (pcmData[i + 1].toInt() shl 8)
+            // Little-endian signed 16-bit: mask the high byte to avoid sign-extension corruption.
+            val sample = (pcmData[i].toInt() and 0xFF) or ((pcmData[i + 1].toInt() and 0xFF) shl 8)
             sum += sample.toDouble() * sample.toDouble()
         }
         val rms = sqrt(sum / (pcmData.size / 2))
@@ -246,15 +255,18 @@ class VoiceService : Service() {
     }
 
     private suspend fun transcribeAudio(pcmData: ByteArray): Result<String> {
-        return if (!useAndroidStt && sttEngine != null) {
-            sttEngine!!.transcribe(pcmData)
-        } else {
-            // Android STT handles its own recording, so we use it differently
-            val engine = androidStt ?: AndroidSttEngine(this).also { androidStt = it }
-            val initResult = engine.initialize()
-            if (initResult is Result.Error) return initResult
-            engine.transcribeOnce()
+        // Sherpa offline path when available.
+        if (sttEngine != null) return sttEngine!!.transcribe(pcmData)
+        // Emergency Android fallback — only when explicitly opted in. Never silently use the
+        // cloud-dependent system SpeechRecognizer; otherwise surface the missing-model state so
+        // the caller can prompt the user instead of producing a phantom transcript.
+        if (!allowSystemSttFallback) {
+            return Result.Error("Offline STT model not installed. Install the Sherpa ASR model or enable the system fallback in Settings.")
         }
+        val engine = androidStt ?: AndroidSttEngine(this).also { androidStt = it }
+        val initResult = engine.initialize()
+        if (initResult is Result.Error) return initResult
+        return engine.transcribeOnce()
     }
 
     private fun sqrt(x: Double): Double = kotlin.math.sqrt(x)
@@ -291,6 +303,8 @@ class VoiceService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         monitoringJob?.cancel()
+        // Cancel the SupervisorJob so any stray child coroutine on serviceScope can't outlive the service.
+        serviceJob.cancel()
         // 0C-11: Defensive stop — ensure recorder is always released even if
         // an exception interrupted the monitoring loop before reaching recorder.stop()
         if (recorder.isRecording()) {

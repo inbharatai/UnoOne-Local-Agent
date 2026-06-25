@@ -24,6 +24,12 @@ class LocalBrain {
 
     fun isModelLoaded(): Boolean = planner.isLoaded()
 
+    /** Backend the model loaded on ("GPU"/"CPU"), or "" if not loaded. */
+    fun activeBackend(): String = planner.activeBackend()
+
+    /** Last load error (empty on success) — surfaces device-compatibility status to the UI. */
+    fun lastLoadError(): String = planner.lastLoadError()
+
     suspend fun loadModel(modelPath: String): Result<Unit> = planner.load(modelPath)
 
     fun unloadModel() {

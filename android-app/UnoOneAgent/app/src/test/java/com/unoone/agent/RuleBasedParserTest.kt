@@ -1,6 +1,8 @@
 package com.unoone.agent
 
+import com.unoone.agent.core.model.compoundSteps
 import com.unoone.agent.localbrain.RuleBasedParser
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -81,16 +83,18 @@ class RuleBasedParserTest {
     @Test
     fun testCompoundCommand() {
         // "scroll down and go home" — both halves are navigation commands,
-        // so the compound handler splits and parses them correctly.
-        // Domain-specific rules (skill, email, whatsapp, calendar) are checked
-        // BEFORE compound splitting, so they preserve their internal "and" semantics.
+        // so the compound handler splits and parses them correctly into an ordered
+        // `steps` array. Domain-specific rules (skill, email, whatsapp, calendar) are
+        // checked BEFORE compound splitting, so they preserve their internal "and" semantics.
         val toolCall = RuleBasedParser.parse("scroll down and go home")
         assertNotNull("Compound command should parse", toolCall)
         assertEquals("compound", toolCall!!.tool)
-        val firstTool = toolCall.args["first_tool"]?.toString()?.replace("\"", "")
-        val secondTool = toolCall.args["second_tool"]?.toString()?.replace("\"", "")
-        assertEquals("system_control", firstTool)
-        assertEquals("system_control", secondTool)
+        val steps = toolCall.compoundSteps()
+        assertEquals("Compound must expand to 2 ordered steps", 2, steps.size)
+        assertEquals("system_control", steps[0].tool)
+        assertEquals("system_control", steps[1].tool)
+        assertEquals("scroll_down", steps[0].args["action"]?.jsonPrimitive?.content)
+        assertEquals("go_home", steps[1].args["action"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -175,13 +179,18 @@ class RuleBasedParserTest {
 
     @Test
     fun testThreePartCompoundCommand() {
-        // 4D: "A and B and C" should parse as compound with at least 2 parts
+        // "A and B and C" must parse into a compound with all 3 steps preserved in order
+        // (the 3rd part was previously parsed and discarded).
         val toolCall = RuleBasedParser.parse("open chrome and scroll down and go home")
-        if (toolCall != null && toolCall.tool == "compound") {
-            // Verify we got at least first and second parts
-            assertNotNull(toolCall.args["first_tool"])
-            assertNotNull(toolCall.args["second_tool"])
-        }
+        assertNotNull(toolCall)
+        assertEquals("compound", toolCall!!.tool)
+        val steps = toolCall.compoundSteps()
+        assertEquals("Three-part compound must expand to 3 ordered steps", 3, steps.size)
+        assertEquals("open_chrome", steps[0].tool)
+        assertEquals("system_control", steps[1].tool)
+        assertEquals("system_control", steps[2].tool)
+        assertEquals("scroll_down", steps[1].args["action"]?.jsonPrimitive?.content)
+        assertEquals("go_home", steps[2].args["action"]?.jsonPrimitive?.content)
     }
 
     @Test

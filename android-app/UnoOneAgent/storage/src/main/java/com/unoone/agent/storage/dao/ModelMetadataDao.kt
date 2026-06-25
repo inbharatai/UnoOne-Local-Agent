@@ -23,4 +23,7 @@ interface ModelMetadataDao {
 
     @Query("SELECT * FROM model_metadata WHERE modelName = :name LIMIT 1")
     suspend fun getByName(name: String): ModelMetadataEntity?
+
+    @Query("DELETE FROM model_metadata WHERE modelName = :name")
+    suspend fun deleteByName(name: String)
 }

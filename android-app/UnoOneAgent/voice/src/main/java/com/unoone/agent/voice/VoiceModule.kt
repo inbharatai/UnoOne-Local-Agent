@@ -2,6 +2,7 @@ package com.unoone.agent.voice
 
 import android.content.Context
 import com.unoone.agent.core.model.Result
+import com.unoone.agent.core.model.errorOrNull
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.voice.recorder.AudioRecorder
 import com.unoone.agent.voice.stt.AndroidSttEngine
@@ -17,6 +18,13 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
+/**
+ * Which STT/TTS runtime is active. Used by the offline-mode indicator and the voice test screen
+ * to tell the user whether they are running fully offline (SHERPA), on the emergency system
+ * fallback (SYSTEM_FALLBACK — not truly offline), or have no engine (UNAVAILABLE).
+ */
+enum class VoiceRuntimeState { SHERPA, SYSTEM_FALLBACK, UNAVAILABLE }
+
 class VoiceModule(private val context: Context) {
 
     private val recorder = AudioRecorder()
@@ -24,13 +32,36 @@ class VoiceModule(private val context: Context) {
     @Volatile private var ttsEngine: SherpaTtsEngine? = null
     @Volatile private var androidStt: AndroidSttEngine? = null
     private val ttsPlayer = TtsPlayer()
-    @Volatile private var useAndroidStt = true
+
+    // Sherpa is the default. The Android system SpeechRecognizer is used ONLY as an explicit,
+    // opt-in emergency fallback — never silently. This keeps the "fully offline" promise honest.
+    @Volatile private var useAndroidStt = false
+
+    /**
+     * When true, the user has opted in to the emergency Android SpeechRecognizer fallback for when
+     * the Sherpa STT model is not installed. Default false (offline-first). Set from Settings.
+     */
+    @Volatile
+    var allowSystemSttFallback: Boolean = false
+
+    @Volatile
+    var sttState: VoiceRuntimeState = VoiceRuntimeState.UNAVAILABLE
+        private set
+
+    @Volatile
+    var ttsState: VoiceRuntimeState = VoiceRuntimeState.UNAVAILABLE
+        private set
+
+    /** Confidence of the last STT result (0..1). 0 when empty/failed/uninitialized. Drives the retry prompt. */
+    @Volatile
+    var lastSttConfidence: Float = 0f
+        private set
 
     private val activeSttJob = AtomicReference<Deferred<Result<String>>?>(null)
     private val isRecordingFlag = AtomicBoolean(false)
 
     init {
-        // Initialize the universal, high-quality native TTS player immediately
+        // Initialize the universal Android TTS player immediately (used as the emergency TTS path).
         ttsPlayer.initialize(context)
     }
 
@@ -41,29 +72,39 @@ class VoiceModule(private val context: Context) {
         }
 
     fun initStt(modelDir: String): Result<Unit> {
-        val engine = SherpaSttEngine(modelDir)
+        val engine = SherpaSttEngine(context, modelDir)
         val result = engine.initialize()
         return if (result is Result.Success) {
             sttEngine = engine
             useAndroidStt = false
-            Logger.i("Using Sherpa-ONNX for STT")
+            sttState = VoiceRuntimeState.SHERPA
+            Logger.i("VoiceModule: Using Sherpa-ONNX for STT (offline)")
             result
         } else {
-            Logger.w("Sherpa STT init failed, falling back to Android SpeechRecognizer")
-            useAndroidStt = true
-            Result.Success(Unit)
+            // Do NOT silently flip to Android STT. Surface the missing-model state so the UI can
+            // prompt the user to install the model (or opt into the emergency system fallback).
+            sttEngine = null
+            sttState = if (allowSystemSttFallback) VoiceRuntimeState.SYSTEM_FALLBACK else VoiceRuntimeState.UNAVAILABLE
+            useAndroidStt = allowSystemSttFallback
+            Logger.w("VoiceModule: Sherpa STT unavailable (${result.errorOrNull()}); system fallback ${if (allowSystemSttFallback) "enabled" else "disabled"}")
+            result
         }
     }
 
     fun initTts(modelDir: String): Result<Unit> {
-        val engine = SherpaTtsEngine(modelDir)
+        val engine = SherpaTtsEngine(context, modelDir)
         val result = engine.initialize()
         return if (result is Result.Success) {
             ttsEngine = engine
-            Logger.i("Using Sherpa-ONNX for TTS")
+            ttsState = VoiceRuntimeState.SHERPA
+            Logger.i("VoiceModule: Using Sherpa-ONNX for TTS (offline)")
             result
         } else {
-            Logger.w("Sherpa TTS init failed, TTS will use Android fallback")
+            // TTS keeps a graceful Android fallback so the agent can still speak without a model —
+            // but this is explicitly marked as the emergency system fallback, not the default path.
+            ttsEngine = null
+            ttsState = VoiceRuntimeState.SYSTEM_FALLBACK
+            Logger.w("VoiceModule: Sherpa TTS unavailable (${result.errorOrNull()}); using Android TTS fallback")
             result
         }
     }
@@ -71,7 +112,13 @@ class VoiceModule(private val context: Context) {
     fun startRecording(context: Context, scope: CoroutineScope): Result<Unit> {
         if (!isRecordingFlag.compareAndSet(false, true)) return Result.Success(Unit)
 
-        return if (useAndroidStt || sttEngine == null) {
+        // Sherpa path (offline): record PCM, transcribe on stop.
+        // Emergency Android path: the recognizer records its own audio; we drive it via async.
+        return if (useAndroidStt && sttEngine == null) {
+            if (!allowSystemSttFallback) {
+                isRecordingFlag.set(false)
+                return Result.Error("Offline STT model not installed. Install the Sherpa ASR model or enable the system fallback in Settings.")
+            }
             val engine = androidStt ?: AndroidSttEngine(context).also { androidStt = it }
             val initResult = engine.initialize()
             if (initResult is Result.Error) {
@@ -84,6 +131,13 @@ class VoiceModule(private val context: Context) {
             })
             Result.Success(Unit)
         } else {
+            // Sherpa offline path. If the Sherpa engine isn't initialized and the emergency Android
+            // fallback is disabled, refuse to record — otherwise stopAndTranscribe would NPE on
+            // sttEngine!! and silently recording with no way to transcribe wastes the capture.
+            if (sttEngine == null) {
+                isRecordingFlag.set(false)
+                return Result.Error("Offline STT model not installed. Install the Sherpa ASR model or enable the system fallback in Settings.")
+            }
             if (!recorder.hasPermission(context)) {
                 isRecordingFlag.set(false)
                 return Result.Error("Microphone permission not granted")
@@ -99,16 +153,23 @@ class VoiceModule(private val context: Context) {
     suspend fun stopAndTranscribe(): Result<String> {
         if (!isRecordingFlag.getAndSet(false)) return Result.Error("No active voice capture session")
 
-        return if (useAndroidStt || sttEngine == null) {
+        return if (useAndroidStt && sttEngine == null) {
             androidStt?.stopListening()
             val job = activeSttJob.getAndSet(null)
                 ?: return Result.Error("No active STT job")
             val res = job.await()
+            // Android STT doesn't expose confidence; assume full only on a non-empty success,
+            // otherwise reset to 0 so a stale value never feeds the low-confidence retry logic.
+            lastSttConfidence = if (res is Result.Success && res.data.isNotBlank()) 1f else 0f
             res
         } else {
+            val engine = sttEngine
+                ?: return Result.Error("Offline STT model not installed. Install the Sherpa ASR model or enable the system fallback in Settings.")
             val pcm = recorder.stop()
             if (pcm.isEmpty()) return Result.Error("No audio captured")
-            sttEngine!!.transcribe(pcm)
+            val res = engine.transcribe(pcm)
+            lastSttConfidence = if (res is Result.Success) engine.lastConfidence else 0f
+            res
         }
     }
 
@@ -121,6 +182,7 @@ class VoiceModule(private val context: Context) {
 
     /**
      * Highly accurate, multilingual on-device transcription supporting English and Indian languages.
+     * Emergency-only path; the default offline path is Sherpa via [stopAndTranscribe].
      */
     suspend fun transcribeWithAndroid(locale: Locale = Locale("en", "IN")): Result<String> {
         return withContext(Dispatchers.Main) {
@@ -132,15 +194,15 @@ class VoiceModule(private val context: Context) {
     }
 
     /**
-     * Highly accurate, offline speech synthesis supporting Indian languages (Hindi, Tamil, Telugu) and English.
+     * Speak text. Uses Sherpa offline TTS when available; otherwise the emergency Android TTS.
      */
     fun speak(text: String, languageCode: String = "en-IN"): Result<Unit> {
         val engine = ttsEngine
         if (engine != null && engine.isInitialized()) {
             return engine.speak(text)
         }
-        // Universal Android Fallback
-        Logger.i("VoiceModule: Synthesizing speech via native TTS: '$text'")
+        // Emergency Android TTS fallback — explicitly logged, not the default production path.
+        Logger.i("VoiceModule: Sherpa TTS not available, synthesizing via Android TTS fallback: '$text'")
         return ttsPlayer.speak(text, languageCode)
     }
 
