@@ -194,6 +194,15 @@ class SafetyGuardTest {
     }
 
     @Test
+    fun sendMoneyViaWhatsappStillBlocked() {
+        // Regression guard: the whatsapp/email draft path must NOT downgrade a money transfer to
+        // STRONG_CONFIRM. "send money via whatsapp" contains "money" → BLOCK (step 1 wins over the
+        // draft path). Auto-sending money is always blocked; only message *drafts* are confirmable.
+        assertEquals(RiskLevel.BLOCK, guard.classifyFromInput("send money via whatsapp to mom"))
+        assertEquals(RiskLevel.BLOCK, guard.classifyFromInput("send money to john"))
+    }
+
+    @Test
     fun draftDoesNotExceedToolRisk() {
         // send_whatsapp is STRONG_CONFIRM and the whatsapp-draft input is STRONG_CONFIRM: equal,
         // so the pipeline (max) stays at STRONG_CONFIRM — the draft is confirmable, never blocked.

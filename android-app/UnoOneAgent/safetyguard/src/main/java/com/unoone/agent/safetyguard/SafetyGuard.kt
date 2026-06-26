@@ -85,7 +85,7 @@ class SafetyGuard {
             lowered.contains("payment") || lowered.contains("pay ") -> RiskLevel.BLOCK
             lowered.contains("password") || lowered.contains("otp") || lowered.contains("one time password") -> RiskLevel.BLOCK
             lowered.contains("install") -> RiskLevel.BLOCK
-            lowered.contains("transfer money") || lowered.contains("wire transfer") -> RiskLevel.BLOCK
+            lowered.contains("money") || lowered.contains("transfer money") || lowered.contains("wire transfer") -> RiskLevel.BLOCK
             lowered.contains("bank") || lowered.contains("credit card") -> RiskLevel.BLOCK
             lowered.contains("format") || lowered.contains("factory reset") -> RiskLevel.BLOCK
             lowered.contains("auto send") || lowered.contains("send automatically") ||
