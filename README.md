@@ -7,6 +7,14 @@
 > An offline-first Android AI companion — voice commands, deep app control, sensory blind-aid navigation, and background voice routing — running on-device. Core voice, notes, device control, and planning work locally with models installed; optional web search and Android system fallbacks are user-controlled, clearly labeled, and off by default.
 
 <p align="center">
+  <a href="https://www.startupindia.gov.in" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/badge/DPIIT-Recognised%20Startup%20India-FF6900?style=flat-square" alt="DPIIT Recognised — Startup India">
+  </a>
+  <br>
+  <sub><b>Uni Guru Technologies LLP</b> · Recognised under Startup India in <b>AI &amp; Machine Learning</b> · Certificate No. <b>DPIIP268963</b></sub>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android">
   <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin">
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose%20%2B%20Material%203-1F6FEB?style=for-the-badge&logo=jetpackcompose&logoColor=white" alt="Compose">
@@ -21,7 +29,7 @@
   <img src="https://img.shields.io/badge/LiteRT--LM-0.13.1-0B7285?style=flat-square" alt="LiteRT-LM 0.13.1">
   <img src="https://img.shields.io/badge/Safety-4%20Tier%20Policy-EF4444?style=flat-square" alt="Safety levels">
   <img src="https://img.shields.io/badge/Voice-Sherpa--ONNX%20offline-0B7285?style=flat-square" alt="Sherpa-ONNX">
-  <img src="https://img.shields.io/badge/Tests-203%20passing-22C55E?style=flat-square" alt="203 tests passing">
+  <img src="https://img.shields.io/badge/Tests-204%20passing-22C55E?style=flat-square" alt="204 tests passing">
 </p>
 
 </div>
@@ -380,7 +388,7 @@ The `RuleBasedParser` uses a priority-ordered `when` block that checks **domain-
 
 ### Test Coverage
 
-203 unit tests across 19 test files covering activation/deactivation triggers, note creation/deletion, compound `steps[]` serialization, domain-specific preservation, long press, async Gemma fallback routing, safety-guard tool coverage, **skill safety routing** (a `delete_all_notes` step → STRONG_CONFIRM), **compound per-step safety**, the **permission registry** mapping, the **model manifest** (parse, checksum, health-on-truncation, resume-from-partial, empty-file guard, complete-`.part` commit), prompt assembly, input sanitization, the `Result`/`RiskAssessment`/`CallbackMulticast` primitives, and the new `web_search`/`voice_recording` tool + parser rules — all passing.
+204 unit tests across 19 test files covering activation/deactivation triggers, note creation/deletion, compound `steps[]` serialization, domain-specific preservation, long press, async Gemma fallback routing, safety-guard tool coverage, **skill safety routing** (a `delete_all_notes` step → STRONG_CONFIRM), **compound per-step safety**, the **permission registry** mapping, the **model manifest** (parse, checksum, health-on-truncation, resume-from-partial, empty-file guard, complete-`.part` commit), prompt assembly, input sanitization, the `Result`/`RiskAssessment`/`CallbackMulticast` primitives, and the new `web_search`/`voice_recording` tool + parser rules — all passing.
 
 ---
 
@@ -464,7 +472,7 @@ Toolchain: AGP 8.10.0, Kotlin 2.2.21, Gradle 8.11.1, JDK 17, Compose BOM 2025.12
 # Full debug APK build
 ./gradlew assembleDebug
 
-# All unit tests (203 tests across 19 files)
+# All unit tests (204 tests across 19 files)
 ./gradlew test
 
 # Lint (abortOnError + warningsAsErrors; new issues fail the build)
@@ -565,7 +573,7 @@ UnoOne-Local-Agent/
 | Gemma 3n E4B brain via LiteRT-LM | ✅ Implemented | `GemmaPlanner`, `UnoOneToolSet`, manual tool calling, GPU→CPU fallback |
 | Crash-safe brain lifecycle | ✅ Implemented | Mutex load, createConversation-failure cleanup, onTrimMemory unload + onResume reload |
 | Enriched ContextSnapshot | ✅ Implemented | recent notes/skills/OCR/recent-commands/last-result/userMemory |
-| Unit tests | ✅ 203 passing | 19 test files: parser, safety, skills, compounds, permissions, manifest/installer, prompt, primitives |
+| Unit tests | ✅ 204 passing | 19 test files: parser, safety, skills, compounds, permissions, manifest/installer, prompt, primitives |
 | Lint | ✅ Clean | 0 new issues; 39 baselined staleness advisories; 0 StaticFieldLeak |
 | Manifest model URLs + integrity fields | ✅ Done (7 languages) | `sherpa-asr-en`/`sherpa-asr-whisper`/`sherpa-tts-{en,hin,ben,tam,tel,kan,mal}`/`vad` filled with verified HF/GitHub URLs + stream-computed SHA-256/size; espeak-ng-data bundled as app asset; `gemma-local`/`punctuation` URLs only. ASR for hi/bn/ta/te/kn/ml uses shared multilingual whisper-tiny int8; TTS uses per-language MMS VITS. Wake word (`vad`) stays English |
 | RAG / web search | ⚠️ Experimental / optional online | `RAGManager` wired as the safety-gated `web_search` tool (`UnoOneToolSet` + `ActionExecutor` + `SafetyGuard` CONFIRM + `ToolPermissionRegistry`). This is an **optional online tool**, not part of the offline core: it scrapes DuckDuckGo HTML (fragile, attribution-bearing) only when the user enables online tools, returns an explicit offline message otherwise, and never auto-opens links. Marketed as experimental, not "world-class RAG." |
@@ -600,7 +608,7 @@ adb push /path/to/gemma-3n-e4b.litertlm \
 
 ### What is verified today
 
-- **Build & packaging**: `compileDebugKotlin`, `lint`, `assembleDebug`, and all unit tests pass (203 tests).
+- **Build & packaging**: `compileDebugKotlin`, `lint`, `assembleDebug`, and all unit tests pass (204 tests).
 - **Rule-based parser**: activation, deactivation, notes (create + delete), compound `steps[]`, long press, async routing, domain preservation.
 - **Safety coverage**: `SafetyGuardToolCoverageTest` confirms every tool `GemmaPlanner` can emit has an explicit risk tier, and destructive tools require `STRONG_CONFIRM`/`BLOCK`.
 - **Skill & compound safety routing**: a `delete_all_notes` step requires STRONG_CONFIRM; a blocked tool blocks the skill/compound.
@@ -653,7 +661,7 @@ live **on your device** in app-private storage — no account, no server, no upl
 
 UnoOne `0.3.0-alpha` is a **private on-device Android agent for voice-controlled phone assistance
 and accessibility.** The deterministic command layer (parser, safety, permissions, executor,
-accessibility control, skills, memory, audit) is verified by 203 unit tests + lint + build. The
+accessibility control, skills, memory, audit) is verified by 204 unit tests + lint + build. The
 on-device LLM (Gemma 3n E4B), Sherpa voice, and Blind Aid are implemented and degrade gracefully,
 but **end-to-end on-device verification across the test matrix is not yet complete** — see
 [`DEVICE_VERIFICATION.md`](DEVICE_VERIFICATION.md). Blind Aid and web search are optional modules,

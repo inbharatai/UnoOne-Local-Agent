@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Min%20SDK-28-success?style=for-the-badge" alt="Min SDK 28">
   <img src="https://img.shields.io/badge/Modules-13-0ea5e9?style=for-the-badge" alt="13 Modules">
   <img src="https://img.shields.io/badge/Voice-Sherpa--ONNX%20offline-0b7285?style=for-the-badge" alt="Sherpa-ONNX">
-  <img src="https://img.shields.io/badge/Tests-203%20passing-22c55e?style=for-the-badge" alt="203 Tests">
+  <img src="https://img.shields.io/badge/Tests-204%20passing-22c55e?style=for-the-badge" alt="204 Tests">
 </p>
 
 </div>
@@ -59,7 +59,7 @@
 | New Settings screens | ✅ Implemented | Model Status, Voice Test, Audit Viewer — reachable from Settings |
 | Gemma 3n E4B via LiteRT-LM | ✅ Implemented | `GemmaPlanner`, manual tool calling, GPU→CPU fallback, Mutex load, onTrimMemory unload + onResume reload |
 | Parser blind-aid fixes | ✅ Implemented & verified | Activation/deactivation disambiguation, negative-intent patterns |
-| Parser unit tests | ✅ 203 passing across 19 files | See [Validation Commands](#validation-commands) |
+| Parser unit tests | ✅ 204 passing across 19 files | See [Validation Commands](#validation-commands) |
 | Safety framework | ✅ Implemented | 4-tier: DIRECT, CONFIRM, STRONG_CONFIRM, BLOCK (per-step for compounds & skills) |
 | Lint | ✅ Clean | 0 new issues; 39 baselined staleness advisories; 0 StaticFieldLeak |
 
@@ -323,7 +323,7 @@ Compound commands serialize as a single `steps` JSON array of `{tool, args}` obj
 
 ### Test coverage
 
-203 unit tests across 19 files. Parser-relevant tests cover: 6 activation phrases → `detect_objects`; 8 deactivation phrases → `deactivate_blind_aid`; note creation with/without colon; "remember to" stripping; compound `steps[]` (2- and 3-part); domain-specific preservation (skill steps, email, whatsapp, calendar); long press target extraction; activation/deactivation disambiguation; note deletion routing; "search for X" → `open_url` Google search; compound `open chrome and search for cats`.
+204 unit tests across 19 files. Parser-relevant tests cover: 6 activation phrases → `detect_objects`; 8 deactivation phrases → `deactivate_blind_aid`; note creation with/without colon; "remember to" stripping; compound `steps[]` (2- and 3-part); domain-specific preservation (skill steps, email, whatsapp, calendar); long press target extraction; activation/deactivation disambiguation; note deletion routing; "search for X" → `open_url` Google search; compound `open chrome and search for cats`.
 
 ---
 
@@ -436,7 +436,7 @@ Installable from the **Model Status** screen or dropped in manually.
 Run from this directory (`android-app/UnoOneAgent`):
 
 ```bash
-# All unit tests (203 tests across 19 files)
+# All unit tests (204 tests across 19 files)
 ./gradlew test
 
 # Full debug APK build

@@ -4,7 +4,7 @@
 end-to-end verification results are recorded. Until the matrix below is filled in with actual
 device logs, **UnoOne is an alpha, not production-verified** (see `STATUS.md`).
 
-> CI verifies build, unit tests (203), lint, and `assembleDebug` on a host JVM — it cannot run
+> CI verifies build, unit tests (204), lint, and `assembleDebug` on a host JVM — it cannot run
 > native Sherpa (Whisper/MMS) or LiteRT-LM (Gemma 3n E4B) inference, Accessibility, or camera.
 > Those require a real device with models installed. This file captures that verification.
 
