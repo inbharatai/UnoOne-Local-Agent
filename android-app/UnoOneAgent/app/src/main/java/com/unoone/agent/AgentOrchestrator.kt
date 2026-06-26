@@ -72,8 +72,12 @@ class AgentOrchestrator(
     // One OcrControl shared by the parser (OCR fallback for the context snapshot) and the
     // executor (read_screen / ocr_screen), so MediaProjection is initialized at most once.
     private val ocrControl = com.unoone.agent.phonecontrol.OcrControl(context)
+    // One AccessibilityControl shared by the parser (context snapshot) and the executor
+    // (system_control / read_screen) so both observe the same AccessibilityService static state
+    // and never diverge on the current foreground package/activity.
+    private val accessibilityControl = com.unoone.agent.accessibilitycontrol.AccessibilityControl()
     private val commandParser = CommandParser(
-        accessibilityControl = com.unoone.agent.accessibilitycontrol.AccessibilityControl(),
+        accessibilityControl = accessibilityControl,
         ocrControl = ocrControl,
         memoryModule = memoryModule,
         noteDao = noteDao,
@@ -88,7 +92,7 @@ class AgentOrchestrator(
         phoneControl = com.unoone.agent.phonecontrol.PhoneControl(context),
         calendarControl = com.unoone.agent.phonecontrol.CalendarControl(context),
         ocrControl = ocrControl,
-        accessibilityControl = com.unoone.agent.accessibilitycontrol.AccessibilityControl(),
+        accessibilityControl = accessibilityControl,
         agentRouter = com.unoone.agent.agentrouter.AgentRouter()
     )
     private val safetyPipeline = SafetyPipeline(
@@ -193,7 +197,13 @@ class AgentOrchestrator(
     fun setBlindAidActive(active: Boolean) {
         _isBlindAidActive.value = active
         if (active) {
-            voiceModule.speak("Blind Aid activated. Scanning for obstacles ahead.")
+            // Accessibility disclaimer: Blind Aid is assistive guidance, not a certified navigation
+            // or medical-safety device. Spoken once on activation so the user is never unaware.
+            voiceModule.speak(
+                "Blind Aid activated. Scanning for obstacles ahead. " +
+                    "This is assistive guidance only, not a certified navigation device — " +
+                    "please use a cane or a guide and normal safety precautions."
+            )
                 .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: Blind aid speak failed: $msg") }
             bringAppToForegroundIfNeeded()
         } else {

@@ -26,10 +26,10 @@ dependencies {
     implementation(project(":core"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     
-    // World-class on-device OCR
+    // On-device OCR via bundled ML Kit text-recognition.
     implementation("com.google.mlkit:text-recognition:16.0.0")
-    
-    // World-class offline on-device Object Detection and Tracking
+
+    // On-device object detection via ML Kit default + custom detector.
     implementation("com.google.mlkit:object-detection:17.0.2")
     implementation("com.google.mlkit:object-detection-custom:17.0.2")
 

@@ -156,4 +156,49 @@ class SafetyGuardTest {
         val inputRisk = guard.classifyFromInput("open whatsapp for me")
         assert(toolRisk.ordinal > inputRisk.ordinal)
     }
+
+    // === Contextual draft vs auto-send (review 2026-06-26) ===
+
+    @Test
+    fun whatsappDraftIsStrongConfirmNotBlocked() {
+        // "send a WhatsApp message to mom" routes to send_whatsapp (STRONG_CONFIRM); the input
+        // classifier must NOT hard-block it — it upgrades to STRONG_CONFIRM so the draft proceeds.
+        assertEquals(RiskLevel.STRONG_CONFIRM, guard.classifyFromInput("send a WhatsApp message to mom"))
+    }
+
+    @Test
+    fun emailDraftIsStrongConfirmNotBlocked() {
+        assertEquals(RiskLevel.STRONG_CONFIRM, guard.classifyFromInput("send an email to john about the meeting"))
+    }
+
+    @Test
+    fun explicitDraftIsStrongConfirm() {
+        assertEquals(RiskLevel.STRONG_CONFIRM, guard.classifyFromInput("draft an email to the team"))
+    }
+
+    @Test
+    fun otpIsBlocked() {
+        assertEquals(RiskLevel.BLOCK, guard.classifyFromInput("send me the OTP"))
+    }
+
+    @Test
+    fun autoSendIsBlocked() {
+        assertEquals(RiskLevel.BLOCK, guard.classifyFromInput("auto send the message now"))
+        assertEquals(RiskLevel.BLOCK, guard.classifyFromInput("send it automatically"))
+    }
+
+    @Test
+    fun genericSendWithoutDraftContextStillBlocked() {
+        // No whatsapp/email/draft context → treated as auto-send intent → BLOCK (unchanged posture).
+        assertEquals(RiskLevel.BLOCK, guard.classifyFromInput("send message to John"))
+    }
+
+    @Test
+    fun draftDoesNotExceedToolRisk() {
+        // send_whatsapp is STRONG_CONFIRM and the whatsapp-draft input is STRONG_CONFIRM: equal,
+        // so the pipeline (max) stays at STRONG_CONFIRM — the draft is confirmable, never blocked.
+        val toolRisk = guard.classify("send_whatsapp")
+        val inputRisk = guard.classifyFromInput("send a whatsapp message to mom")
+        assertEquals(toolRisk, inputRisk)
+    }
 }

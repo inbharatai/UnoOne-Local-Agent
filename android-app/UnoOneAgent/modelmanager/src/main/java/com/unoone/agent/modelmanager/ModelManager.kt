@@ -42,14 +42,23 @@ class ModelManager(
      * Verifies on-disk health of a model: every declared file must exist, match its declared size
      * (if any), and match its declared SHA-256 (if any). Missing/mismatched files are reported so the
      * UI can offer a re-install.
+     *
+     * **Integrity verification vs. presence (review 2026-06-26):** a file that is present and
+     * non-empty but whose manifest entry carries *no* SHA-256 and *no* size cannot be byte-verified.
+     * Such files are reported in [HealthResult.unverified] and cause [HealthResult.verified] to be
+     * false. For `type=llm` (Gemma) the manifest intentionally ships URL-only (manual import), so a
+     * manually pushed `.litertlm` is `healthy` (intact) but **not** `verified` — the UI must show
+     * "Present — not hash-verified (manual import)" rather than "verified". Do not call the LLM
+     * artifact production-ready until its exact sha256+size are added to the manifest and matched.
      */
     suspend fun modelHealth(id: String): HealthResult = withContext(Dispatchers.IO) {
         val descriptor = findModel(id)
-            ?: return@withContext HealthResult(id, healthy = false, missing = emptyList(), sizeMismatch = emptyList(), checksumMismatch = emptyList(), "Unknown model id")
+            ?: return@withContext HealthResult(id, healthy = false, verified = false, missing = emptyList(), sizeMismatch = emptyList(), checksumMismatch = emptyList(), unverified = emptyList(), message = "Unknown model id")
         val folder = File(appPrivateModelPath, descriptor.folder)
         val missing = mutableListOf<String>()
         val sizeMismatch = mutableListOf<String>()
         val checksumMismatch = mutableListOf<String>()
+        val unverified = mutableListOf<String>()
         for (file in descriptor.files) {
             // Archives are deleted after extraction, so health verifies the extracted directory
             // rather than the (deleted) archive. The directory is ModelFile.extractsTo when set
@@ -69,18 +78,29 @@ class ModelManager(
                 missing.add(file.name)
                 continue
             }
-            // When the manifest declares no integrity fields for a file we cannot verify bytes —
-            // require the file to at least be non-empty so a 0-byte / truncated artifact is not
-            // reported as healthy (and so the installer re-downloads it instead of trusting it).
-            if (file.sizeBytes == 0L && file.sha256.isBlank() && target.length() == 0L) {
+            // A 0-byte / truncated artifact is never healthy.
+            if (target.length() == 0L) {
                 missing.add(file.name)
+                continue
+            }
+            // Present and non-empty, but the manifest declares no integrity fields → we cannot
+            // byte-verify. Record as unverified (not missing) so the UI distinguishes "intact but
+            // not hash-checked" from "broken". For llm artifacts this is the manual-import case.
+            if (file.sizeBytes == 0L && file.sha256.isBlank()) {
+                unverified.add(file.name)
                 continue
             }
             if (file.sizeBytes > 0 && target.length() != file.sizeBytes) sizeMismatch.add(file.name)
             if (file.sha256.isNotBlank() && computeSha256(target.absolutePath) != file.sha256.lowercase()) checksumMismatch.add(file.name)
         }
         val healthy = missing.isEmpty() && sizeMismatch.isEmpty() && checksumMismatch.isEmpty()
-        HealthResult(id, healthy, missing, sizeMismatch, checksumMismatch, if (healthy) "OK" else "Needs repair")
+        val verified = healthy && unverified.isEmpty()
+        val message = when {
+            !healthy -> "Needs repair (missing/size/hash mismatch)"
+            unverified.isNotEmpty() -> "Present — not hash-verified (manual import; add sha256+size to manifest to verify)"
+            else -> "Verified"
+        }
+        HealthResult(id, healthy, verified, missing, sizeMismatch, checksumMismatch, unverified, message)
     }
 
     /** Downloads and verifies a model, streaming progress to [onProgress]. */
@@ -150,7 +170,7 @@ class ModelManager(
             val present = folder.exists() && folder.isDirectory && !realFiles.isNullOrEmpty()
             val sizeMb = if (present) folder.walkTopDown().filter { it.isFile }.map { it.length() }.sum() / (1024 * 1024) else 0L
             val descriptor = manifest.findByFolder(folderName)
-            val health = if (descriptor != null && present) modelHealth(descriptor.id).healthy else false
+            val health = if (descriptor != null && present) modelHealth(descriptor.id) else null
             models.add(
                 ModelStatus(
                     name = folderName,
@@ -160,7 +180,8 @@ class ModelManager(
                     sizeMb = sizeMb,
                     version = descriptor?.version ?: "",
                     expectedSha256 = descriptor?.files?.firstOrNull()?.sha256 ?: "",
-                    healthy = health
+                    healthy = health?.healthy ?: false,
+                    verified = health?.verified ?: false
                 )
             )
         }
@@ -245,16 +266,22 @@ class ModelManager(
         val sizeMb: Long,
         val version: String = "",
         val expectedSha256: String = "",
-        val healthy: Boolean = false
+        val healthy: Boolean = false,
+        /** Byte-verified (sha256/size matched). False for manual-import files with no hash (e.g. Gemma). */
+        val verified: Boolean = false
     )
 
     /** Result of verifying a model's on-disk files against its manifest. */
     data class HealthResult(
         val modelId: String,
         val healthy: Boolean,
+        /** True only when every file is intact AND byte-verifiable (has a matching sha256 or size). */
+        val verified: Boolean = false,
         val missing: List<String>,
         val sizeMismatch: List<String>,
         val checksumMismatch: List<String>,
+        /** Present, non-empty files the manifest could not byte-verify (no sha256 + no size). */
+        val unverified: List<String> = emptyList(),
         val message: String
     )
 }

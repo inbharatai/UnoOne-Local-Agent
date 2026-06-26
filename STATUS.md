@@ -1,8 +1,9 @@
 # UnoOne Build Status
 
-**Last updated:** 2026-06-15
-**Build:** `1.0.0-local` | **Target:** Android 14 (API 35) | **Min:** Android 9 (API 28)
-**Tested on:** Xiaomi 14, Samsung Galaxy S24, Pixel 8
+**Last updated:** 2026-06-26
+**Build:** `0.3.0-alpha-local` | **Target:** Android 14 (API 35) | **Min:** Android 9 (API 28)
+**Build/install/UI smoke-tested on:** Xiaomi 14, Samsung Galaxy S24, Pixel 8
+**Not yet verified end-to-end:** Gemma 3n E4B + Sherpa + Accessibility + Blind Aid on all of the above devices (see Next Steps).
 
 ---
 
@@ -140,4 +141,4 @@ Without models: STT falls back to Android SpeechRecognizer (needs internet), com
 1. Push Sherpa models and a Gemma 3n E4B `.litertlm` model to Xiaomi 14 and test the full voice + agent pipeline end-to-end (7 languages: English + Hindi/Bengali/Tamil/Telugu/Kannada/Malayalam).
 2. Verify Gemma-generated tool calls are correctly parsed, safety-classified, and executed.
 3. Build drag-and-drop skill editor UI.
-4. Test full flow on multiple devices (Xiaomi 14, Samsung Galaxy S24, Pixel 8) with all permissions granted.
+4. **Real-device end-to-end verification** (the open item above): run the full flow — Gemma 3n E4B planning + Sherpa STT/TTS (7 languages) + Accessibility control + Blind Aid — on Xiaomi 14, Samsung Galaxy S24, and Pixel 8 with all permissions granted, and record results + logs in [`DEVICE_VERIFICATION.md`](DEVICE_VERIFICATION.md). Until this matrix is populated, the app is an alpha, not production-verified.

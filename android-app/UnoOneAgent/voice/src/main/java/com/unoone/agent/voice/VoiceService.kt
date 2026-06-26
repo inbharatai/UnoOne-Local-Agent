@@ -87,7 +87,7 @@ class VoiceService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification("UnoOne is listening"))
+        startForeground(NOTIFICATION_ID, createNotification("Listening locally — Mic active. Say 'UnoOne' to give a command."))
         Logger.i("VoiceService: Created")
     }
 
@@ -335,9 +335,11 @@ class VoiceService : Service() {
         manager.createNotificationChannel(channel)
     }
 
-    private fun createNotification(text: String = "Say 'UnoOne' to give a command"): Notification {
+    private fun createNotification(text: String = "Listening locally — Mic active. Say 'UnoOne' to give a command."): Notification {
+        // User-perceptible microphone FGS notification (Play policy): makes background mic capture
+        // explicit and gives the user a visible, ongoing signal. No silent background voice mode.
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("UnoOne")
+            .setContentTitle("UnoOne listening locally")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setPriority(NotificationCompat.PRIORITY_LOW)

@@ -4,7 +4,7 @@
 
 ### *Your Phone. Your Intelligence. Your Privacy.*
 
-> A fully offline Android AI companion — voice commands, deep app control, sensory blind-aid navigation, and background voice routing — all running on-device with zero cloud dependency.
+> An offline-first Android AI companion — voice commands, deep app control, sensory blind-aid navigation, and background voice routing — running on-device. Core voice, notes, device control, and planning work locally with models installed; optional web search and Android system fallbacks are user-controlled, clearly labeled, and off by default.
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android">
@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/LiteRT--LM-0.13.1-0B7285?style=flat-square" alt="LiteRT-LM 0.13.1">
   <img src="https://img.shields.io/badge/Safety-4%20Tier%20Policy-EF4444?style=flat-square" alt="Safety levels">
   <img src="https://img.shields.io/badge/Voice-Sherpa--ONNX%20offline-0B7285?style=flat-square" alt="Sherpa-ONNX">
-  <img src="https://img.shields.io/badge/Tests-191%20passing-22C55E?style=flat-square" alt="191 tests passing">
+  <img src="https://img.shields.io/badge/Tests-203%20passing-22C55E?style=flat-square" alt="203 tests passing">
 </p>
 
 </div>
@@ -66,7 +66,7 @@
 
 ## 🏗️ About UnoOne
 
-UnoOne is a **modular, offline-first Android AI agent** that transforms a smartphone into a fully voice-controllable, accessibility-powered, spatially-aware companion — with zero cloud dependency. Built on 13 independent Gradle modules and powered by **Gemma 3n E4B via LiteRT-LM**, it combines:
+UnoOne is a **modular, offline-first Android AI agent** that transforms a smartphone into a fully voice-controllable, accessibility-powered, spatially-aware companion. Built on 13 independent Gradle modules and powered by **Gemma 3n E4B via LiteRT-LM**, it combines:
 
 - **Privacy-first command execution** — every action runs locally, no data leaves the device
 - **On-device LLM planning** — Gemma 3n E4B plans complex actions through LiteRT-LM manual tool calling, with automatic GPU→CPU backend fallback
@@ -380,7 +380,7 @@ The `RuleBasedParser` uses a priority-ordered `when` block that checks **domain-
 
 ### Test Coverage
 
-191 unit tests across 18 test files covering activation/deactivation triggers, note creation/deletion, compound `steps[]` serialization, domain-specific preservation, long press, async Gemma fallback routing, safety-guard tool coverage, **skill safety routing** (a `delete_all_notes` step → STRONG_CONFIRM), **compound per-step safety**, the **permission registry** mapping, the **model manifest** (parse, checksum, health-on-truncation, resume-from-partial, empty-file guard, complete-`.part` commit), prompt assembly, input sanitization, the `Result`/`RiskAssessment`/`CallbackMulticast` primitives, and the new `web_search`/`voice_recording` tool + parser rules — all passing.
+203 unit tests across 19 test files covering activation/deactivation triggers, note creation/deletion, compound `steps[]` serialization, domain-specific preservation, long press, async Gemma fallback routing, safety-guard tool coverage, **skill safety routing** (a `delete_all_notes` step → STRONG_CONFIRM), **compound per-step safety**, the **permission registry** mapping, the **model manifest** (parse, checksum, health-on-truncation, resume-from-partial, empty-file guard, complete-`.part` commit), prompt assembly, input sanitization, the `Result`/`RiskAssessment`/`CallbackMulticast` primitives, and the new `web_search`/`voice_recording` tool + parser rules — all passing.
 
 ---
 
@@ -420,7 +420,7 @@ A **single source of truth** — `core/safety/ToolPermissionRegistry` — is con
 | `open_camera` | `CAMERA` | |
 | `detect_objects` | `CAMERA` + **Accessibility** | Camera preview + accessibility context |
 | `voice_recording` | `RECORD_AUDIO` | Record a memo → offline STT → saved as a note |
-| `web_search` | `None` (INTERNET is a normal manifest permission) | Online DuckDuckGo lookup via `RAGManager`; offline-first guard in `ActionExecutor` |
+| `web_search` | `None` (INTERNET is a normal manifest permission) | **Experimental optional online tool — off by default.** DuckDuckGo HTML lookup via `RAGManager`; offline-first guard in `ActionExecutor` returns an explicit offline message when no network. Returns title + URL + snippet + source domain; never auto-opens links. See [docs/SAFETY.md](docs/SAFETY.md). |
 | `check_calendar` / `open_calendar_insert` | `READ_CALENDAR` / `WRITE_CALENDAR` | |
 | `open_dialer`, `share_text`, `open_url`, `open_app`, `open_chrome`, notes/skills/email/whatsapp | `None` | Intent-launched or local-only |
 
@@ -456,7 +456,7 @@ UnoOne ships **offline** STT/TTS for **7 languages**: English, Hindi, Bengali, T
 
 ## 🔧 Build & Test
 
-Toolchain: AGP 8.10.0, Kotlin 2.2.21, Gradle 8.11.1, JDK 17, Compose BOM 2025.12.01, LiteRT-LM 0.13.1, compile/target SDK 35, min SDK 28. Android SDK expected at `C:\Users\reetu\AppData\Local\Android\Sdk` (set in `local.properties`).
+Toolchain: AGP 8.10.0, Kotlin 2.2.21, Gradle 8.11.1, JDK 17, Compose BOM 2025.12.01, LiteRT-LM 0.13.1, compile/target SDK 35, min SDK 28. Create `android-app/UnoOneAgent/local.properties` with your SDK path, e.g. `sdk.dir=/path/to/Android/Sdk` (Windows: `sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk`, macOS: `~/Library/Android/sdk`, Linux: `~/Android/Sdk`). This file is git-ignored and machine-specific — never commit a hardcoded path.
 
 ```bash
 # From android-app/UnoOneAgent
@@ -464,7 +464,7 @@ Toolchain: AGP 8.10.0, Kotlin 2.2.21, Gradle 8.11.1, JDK 17, Compose BOM 2025.12
 # Full debug APK build
 ./gradlew assembleDebug
 
-# All unit tests (191 tests, 18 files)
+# All unit tests (203 tests across 19 files)
 ./gradlew test
 
 # Lint (abortOnError + warningsAsErrors; new issues fail the build)
@@ -565,10 +565,10 @@ UnoOne-Local-Agent/
 | Gemma 3n E4B brain via LiteRT-LM | ✅ Implemented | `GemmaPlanner`, `UnoOneToolSet`, manual tool calling, GPU→CPU fallback |
 | Crash-safe brain lifecycle | ✅ Implemented | Mutex load, createConversation-failure cleanup, onTrimMemory unload + onResume reload |
 | Enriched ContextSnapshot | ✅ Implemented | recent notes/skills/OCR/recent-commands/last-result/userMemory |
-| Unit tests | ✅ 191 passing | 18 test files: parser, safety, skills, compounds, permissions, manifest/installer, prompt, primitives |
+| Unit tests | ✅ 203 passing | 19 test files: parser, safety, skills, compounds, permissions, manifest/installer, prompt, primitives |
 | Lint | ✅ Clean | 0 new issues; 39 baselined staleness advisories; 0 StaticFieldLeak |
 | Manifest model URLs + integrity fields | ✅ Done (7 languages) | `sherpa-asr-en`/`sherpa-asr-whisper`/`sherpa-tts-{en,hin,ben,tam,tel,kan,mal}`/`vad` filled with verified HF/GitHub URLs + stream-computed SHA-256/size; espeak-ng-data bundled as app asset; `gemma-local`/`punctuation` URLs only. ASR for hi/bn/ta/te/kn/ml uses shared multilingual whisper-tiny int8; TTS uses per-language MMS VITS. Wake word (`vad`) stays English |
-| RAG / web search | ✅ Implemented | `RAGManager` wired as the safety-gated `web_search` tool (`UnoOneToolSet` + `ActionExecutor` + `SafetyGuard` CONFIRM + `ToolPermissionRegistry`); offline-first guard returns an explicit offline message, never auto-opens links |
+| RAG / web search | ⚠️ Experimental / optional online | `RAGManager` wired as the safety-gated `web_search` tool (`UnoOneToolSet` + `ActionExecutor` + `SafetyGuard` CONFIRM + `ToolPermissionRegistry`). This is an **optional online tool**, not part of the offline core: it scrapes DuckDuckGo HTML (fragile, attribution-bearing) only when the user enables online tools, returns an explicit offline message otherwise, and never auto-opens links. Marketed as experimental, not "world-class RAG." |
 | Bounding-box overlay | ✅ Implemented | `BlindAidManager` publishes normalized boxes + aspect ratio to a `StateFlow`; `BlindAidCameraPreview` draws a Compose `Canvas` overlay with FILL_CENTER mapping |
 | `voice_recording` tool | ✅ Implemented | Declared to Gemma in `UnoOneToolSet`; `ActionExecutor` records via `VoiceModule`, transcribes offline, saves as a note; `SafetyGuard` CONFIRM; `RECORD_AUDIO` gated by the safety pipeline |
 | `ObjectDetectionControl` | ✅ Removed | Dead single-image detector deleted; `BlindAidManager` owns its own ML Kit detector |
@@ -585,7 +585,8 @@ UnoOne-Local-Agent/
 # Unit tests (run on JVM — no device or model required)
 ./gradlew test
 
-# Lint (pre-existing issues baselined; new issues fail the build)
+# Lint (abortOnError + warningsAsErrors + baseline; new issues fail the build —
+# enforced identically in GitHub Actions CI, see .github/workflows/android-ci.yml)
 ./gradlew :app:lint
 
 # Full debug APK build
@@ -599,7 +600,7 @@ adb push /path/to/gemma-3n-e4b.litertlm \
 
 ### What is verified today
 
-- **Build & packaging**: `compileDebugKotlin`, `lint`, `assembleDebug`, and all unit tests pass (191 tests).
+- **Build & packaging**: `compileDebugKotlin`, `lint`, `assembleDebug`, and all unit tests pass (203 tests).
 - **Rule-based parser**: activation, deactivation, notes (create + delete), compound `steps[]`, long press, async routing, domain preservation.
 - **Safety coverage**: `SafetyGuardToolCoverageTest` confirms every tool `GemmaPlanner` can emit has an explicit risk tier, and destructive tools require `STRONG_CONFIRM`/`BLOCK`.
 - **Skill & compound safety routing**: a `delete_all_notes` step requires STRONG_CONFIRM; a blocked tool blocks the skill/compound.
@@ -631,16 +632,62 @@ Honest, current limitations (not papered over):
 
 ---
 
+## 🔒 Privacy & Your Data
+
+UnoOne is **offline-first**. Your notes, skills, memory, voice transcriptions, and action logs
+live **on your device** in app-private storage — no account, no server, no upload.
+
+- **Local by default:** voice, notes, device control, and Gemma planning run on-device.
+- **The only network path is opt-in:** `web_search` sends your query to DuckDuckGo over HTTPS only
+  when you enable Online tools and invoke it. **Off by default.** Never sends screen/camera/audio/
+  calendar content anywhere.
+- **Action logs are hashed:** the raw text you type/speak is one-way hashed before storage — not
+  kept in readable form.
+- **You control your data:** "delete all notes" (STRONG_CONFIRM), per-query note deletion,
+  `export_data` (JSON), uninstall any model from Model Status, and uninstalling the app wipes all
+  app-private data.
+- Full policy: [`docs/play-review/privacy-policy.md`](docs/play-review/privacy-policy.md) and
+  [`docs/play-review/data-safety.md`](docs/play-review/data-safety.md).
+
+## 🎯 Scope of This Release
+
+UnoOne `0.3.0-alpha` is a **private on-device Android agent for voice-controlled phone assistance
+and accessibility.** The deterministic command layer (parser, safety, permissions, executor,
+accessibility control, skills, memory, audit) is verified by 203 unit tests + lint + build. The
+on-device LLM (Gemma 3n E4B), Sherpa voice, and Blind Aid are implemented and degrade gracefully,
+but **end-to-end on-device verification across the test matrix is not yet complete** — see
+[`DEVICE_VERIFICATION.md`](DEVICE_VERIFICATION.md). Blind Aid and web search are optional modules,
+not the core pitch. Reserve `1.0.0` for post-E2E sign-off.
+
+## 🖼️ Screenshots
+
+> Placeholder — capture and drop into `screenshots/` before any public launch (reviewers and
+> judges need to see it, not just read it).
+
+```
+screenshots/model-status.png      # Model Status: Sherpa verified, Gemma "not hash-verified"
+screenshots/voice-test.png        # Offline voice command → spoken response
+screenshots/audit-viewer.png      # Hashed action audit trail
+screenshots/blind-aid.png         # Camera + bounding-box overlay + spoken guidance
+screenshots/confirmation-dialog.png  # STRONG_CONFIRM dialog for a system_control action
+```
+
 ## 📄 Documentation
 
 - **Root overview** (this file)
-- **Upgrade plan**: [`PLAN-Gemma4-LiteRT-LM-Upgrade.md`](PLAN-Gemma4-LiteRT-LM-Upgrade.md) (LiteRT-LM pinned at `0.13.1` — the latest published on Google Maven; the doc's earlier `1.0.1` reference was corrected)
+- **Quick start**: [`docs/quick-start.md`](docs/quick-start.md)
+- **Architecture**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) → [`docs/local-architecture.md`](docs/local-architecture.md) (deep walkthrough)
+- **Models**: [`docs/MODELS.md`](docs/MODELS.md) — install, integrity, profiles, YOLO path
+- **Safety**: [`docs/SAFETY.md`](docs/SAFETY.md) — tool risk model, control modes, escalation
+- **Play Store review pack**: [`docs/play-review/`](docs/play-review/) — `permissions-matrix.md`, `accessibility-justification.md`, `foreground-service-justification.md`, `data-safety.md`, `privacy-policy.md`, `demo-video-script.md`
+- **Device verification**: [`DEVICE_VERIFICATION.md`](DEVICE_VERIFICATION.md) — real-device E2E matrix (template, not yet populated)
+- **Migration plan (historical)**: [`PLAN-Gemma4-Migration.md`](PLAN-Gemma4-Migration.md) — point-in-time reference. Current runtime is Gemma 3n E4B. LiteRT-LM pinned at `0.13.1`.
 - **Android technical implementation**: [`android-app/UnoOneAgent/README.md`](android-app/UnoOneAgent/README.md)
 
 ---
 
 <div align="center">
 
-*UnoOne — One private AI agent for every phone action.*
+*UnoOne — One private, on-device AI agent for every phone action.*
 
 </div>

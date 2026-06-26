@@ -1,5 +1,11 @@
 # UnoOne Upgrade Plan: Gemma 4 E2B + LiteRT-LM Brain
 
+> **⚠️ This is a historical migration plan, not the current runtime.**
+> The current production brain is **Gemma 3n E4B via LiteRT-LM** (`gemma-3n-e4b.litertlm`).
+> This document captures the original plan to migrate from mock ONNX inference to a real
+> on-device LLM; the "Gemma 4 E2B" target below was the *planned* next step and has not been
+> shipped. Keep it as a point-in-time reference; for current status see [STATUS.md](STATUS.md).
+
 **Date:** 2026-06-15  
 **Scope:** Replace the mock ONNX inference path in `:localbrain` with a real on-device LLM brain using **Gemma 4 E2B** and **LiteRT-LM**, add manual tool-calling integration with the existing `SafetyGuard`/`AgentRouter`, and standardize the OCR stack. All other modules (voice, accessibility, phone control, safety, storage, skills) remain unchanged structurally.
 

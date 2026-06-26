@@ -15,13 +15,18 @@ android {
         applicationId = "com.unoone.agent"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0-local"
+        // Alpha: deterministic command layer is verified; on-device Gemma/Sherpa/Accessibility/Blind-Aid
+        // E2E is not yet verified across the test matrix (see DEVICE_VERIFICATION.md). Reserve 1.0.0
+        // for post-E2E production sign-off.
+        versionCode = 3
+        versionName = "0.3.0-alpha-local"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Privacy/security app: shrink + obfuscate the release artifact.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -154,12 +154,17 @@ private fun ModelRowCard(
             Spacer(modifier = Modifier.height(8.dp))
             HorizontalDivider()
             Spacer(modifier = Modifier.height(8.dp))
-            DetailLine("Status", if (row.healthy) "Present & verified" else if (row.present) "Present (needs repair)" else "Not installed")
+            DetailLine("Status", when {
+                row.verified -> "Present & verified"
+                row.healthy -> "Present — not hash-verified (manual import)"
+                row.present -> "Present (needs repair)"
+                else -> "Not installed"
+            })
             DetailLine("Size", if (row.sizeMb > 0) "${row.sizeMb} MB" else "—")
             DetailLine("Backend", row.backend)
             DetailLine("Min RAM", if (row.minRamMb > 0) "${row.minRamMb} MB" else "any")
             DetailLine("SHA-256", row.sha256Preview, mono = true)
-            if (!row.healthy) DetailLine("Health", row.healthMessage)
+            if (!row.verified) DetailLine("Health", row.healthMessage)
 
             Spacer(modifier = Modifier.height(12.dp))
             Row(

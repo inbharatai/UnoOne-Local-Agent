@@ -48,7 +48,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Expert Floating Service: Provides a 24/7 AI interface that stays on top of other apps.
- * World-class UI with drag-and-drop bubble and integrated chat/voice overlay.
+ * Drag-and-drop floating bubble with an integrated chat/voice overlay.
  */
 class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
 
@@ -233,9 +233,11 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
     }
 
     private fun createNotification(): Notification {
+        // User-perceptible FGS notification (Play policy): the user toggled the bubble on, and can
+        // pause/stop from the notification. No silent background surface.
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("UnoOne Agent")
-            .setContentText("Floating agent is active")
+            .setContentTitle("UnoOne active")
+            .setContentText("Floating agent is active — tap to pause / stop")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)

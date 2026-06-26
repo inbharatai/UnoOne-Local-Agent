@@ -58,35 +58,52 @@ class SafetyGuard {
     }
 
     /**
-     * Input-level risk classification. Scans the raw user input for dangerous keywords
-     * that might indicate higher risk than the tool name alone suggests.
-     * Used as a secondary check after tool-level classification.
+     * Input-level risk classification. Scans the raw user input for dangerous keywords that might
+     * indicate higher risk than the tool name alone suggests. Used as a secondary check after
+     * tool-level classification; the pipeline takes the max of the two.
      *
-     * NOTE (review 2026-06-24): the broad keyword→BLOCK escalations here (send/message/bank/
-     * password/install/credit card) are the project's deliberate, tested security posture
-     * (see SafetyGuardTest). They can over-block legitimately-worded requests that route to an
-     * already-STRONG_CONFIRM tool — e.g. "send a WhatsApp message to mom" hits "send "/"message"
-     * → BLOCK, which overrides send_whatsapp's STRONG_CONFIRM and hard-blocks it. That is a known
-     * UX trade-off, left in place because the tested intent is to block on these keywords; weakening
-     * it is a security-policy decision for the user, not a bug fix.
+     * Contextual model (review 2026-06-26): previously a blanket `"send " || "message" → BLOCK`
+     * hard-blocked even draft-style requests that route to an already-STRONG_CONFIRM tool
+     * (e.g. "send a WhatsApp message to mom" hit "send "/"message" → BLOCK, overriding
+     * `send_whatsapp`'s STRONG_CONFIRM and making the headline assistant task unusable). The
+     * classifier now distinguishes **draft** paths from **auto-send** paths:
+     *
+     * - BLOCK (never executed): money/pay/bank/credit-card/wire-transfer, passwords/OTP,
+     *   install, factory reset, and explicit auto-send ("auto send", "send automatically",
+     *   "send it now/for me").
+     * - STRONG_CONFIRM (draft, user still presses send): "draft …", or "send/… message" when the
+     *   target is WhatsApp/email — so `send_whatsapp` / `draft_email` proceed with strong
+     *   confirmation instead of being hard-blocked.
+     * - BLOCK: generic "send …" / "message" with no draft/app context (treated as auto-send intent).
+     *
+     * Auto-send of a final message is always blocked; only draft creation with confirmation is allowed.
      */
     fun classifyFromInput(input: String): RiskLevel {
         val lowered = input.lowercase()
         return when {
-            // Block-level keywords
-            lowered.contains("delete all") -> RiskLevel.STRONG_CONFIRM
-            lowered.contains("send ") || lowered.contains("message") -> RiskLevel.BLOCK
+            // 1. Always-block: money, credentials, destructive system, explicit auto-send.
             lowered.contains("payment") || lowered.contains("pay ") -> RiskLevel.BLOCK
-            lowered.contains("password") -> RiskLevel.BLOCK
+            lowered.contains("password") || lowered.contains("otp") || lowered.contains("one time password") -> RiskLevel.BLOCK
             lowered.contains("install") -> RiskLevel.BLOCK
-            lowered.contains("erase") || lowered.contains("wipe") -> RiskLevel.STRONG_CONFIRM
             lowered.contains("transfer money") || lowered.contains("wire transfer") -> RiskLevel.BLOCK
             lowered.contains("bank") || lowered.contains("credit card") -> RiskLevel.BLOCK
-
-            // Strong confirmation keywords
-            lowered.contains("delete") && !lowered.contains("delete all") -> RiskLevel.CONFIRM
-            lowered.contains("remove account") -> RiskLevel.STRONG_CONFIRM
             lowered.contains("format") || lowered.contains("factory reset") -> RiskLevel.BLOCK
+            lowered.contains("auto send") || lowered.contains("send automatically") ||
+                lowered.contains("send it now") || lowered.contains("send it for me") -> RiskLevel.BLOCK
+
+            // 2. Draft paths — allow with strong confirmation (the user still reviews + presses send).
+            lowered.contains("draft") -> RiskLevel.STRONG_CONFIRM
+            (lowered.contains("whatsapp") || lowered.contains("email")) &&
+                (lowered.contains("send") || lowered.contains("message")) -> RiskLevel.STRONG_CONFIRM
+
+            // 3. Generic send/message with no draft/app context — block the auto-send intent.
+            lowered.contains("send ") || lowered.contains("message") -> RiskLevel.BLOCK
+
+            // 4. Destructive-but-recoverable.
+            lowered.contains("delete all") -> RiskLevel.STRONG_CONFIRM
+            lowered.contains("erase") || lowered.contains("wipe") -> RiskLevel.STRONG_CONFIRM
+            lowered.contains("remove account") -> RiskLevel.STRONG_CONFIRM
+            lowered.contains("delete") -> RiskLevel.CONFIRM
 
             else -> RiskLevel.DIRECT
         }
