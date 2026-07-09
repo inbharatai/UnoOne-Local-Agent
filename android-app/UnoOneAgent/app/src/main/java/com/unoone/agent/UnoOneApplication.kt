@@ -5,6 +5,7 @@ import android.content.ComponentCallbacks2
 import android.content.Context
 import com.unoone.agent.core.util.Logger
 import dagger.hilt.android.HiltAndroidApp
+import com.unoone.agent.brain.BrainSelection
 import com.unoone.agent.di.DatabaseProvider
 import com.unoone.agent.modelmanager.ModelManager
 import com.unoone.agent.safety.AuditLogger
@@ -72,18 +73,20 @@ class UnoOneApplication : Application() {
         // Initialize audit logger with the action log DAO
         AuditLogger.initialize(db.actionLogDao())
 
-        // Auto-load Gemma 3n E4B .litertlm brain if a model file is present
+        // Auto-load the selected brain profile (.litertlm) if a model file is present. Default is
+        // Gemma 3n E4B (device-verified fallback); Gemma 4 E2B loads only if the user selected it.
         val modelManager = ModelManager(this, db.modelMetadataDao())
         modelManager.ensureModelDirectories()
-        val llmPath = modelManager.getLlmModelPath()
+        val brainSpec = BrainSelection.selected(this)
+        val llmPath = modelManager.getLlmModelPath(brainSpec)
         if (llmPath != null) {
             lastLlmPath = llmPath
             appScope.launch {
-                val result = orchestrator.loadLlmModel(llmPath)
+                val result = orchestrator.loadLlmModel(llmPath, brainSpec)
                 if (result is com.unoone.agent.core.model.Result.Success) {
-                    Logger.i("UnoOneApplication: Gemma brain loaded from $llmPath")
+                    Logger.i("UnoOneApplication: ${brainSpec.displayName} brain loaded from $llmPath")
                 } else {
-                    Logger.w("UnoOneApplication: Gemma brain failed to load: ${(result as? com.unoone.agent.core.model.Result.Error)?.message}")
+                    Logger.w("UnoOneApplication: ${brainSpec.displayName} brain failed to load: ${(result as? com.unoone.agent.core.model.Result.Error)?.message}")
                 }
             }
         }
@@ -150,13 +153,14 @@ class UnoOneApplication : Application() {
     fun reloadLlmIfUnloaded() {
         val path = lastLlmPath ?: return
         if (orchestrator.isLlmLoaded()) return
-        Logger.i("UnoOneApplication: reloading Gemma brain after memory pressure")
+        val spec = BrainSelection.selected(this)
+        Logger.i("UnoOneApplication: reloading ${spec.displayName} brain after memory pressure")
         appScope.launch {
-            val result = orchestrator.loadLlmModel(path)
+            val result = orchestrator.loadLlmModel(path, spec)
             if (result is com.unoone.agent.core.model.Result.Success) {
-                Logger.i("UnoOneApplication: Gemma brain reloaded from $path")
+                Logger.i("UnoOneApplication: ${spec.displayName} brain reloaded from $path")
             } else {
-                Logger.w("UnoOneApplication: Gemma brain reload failed: ${(result as? com.unoone.agent.core.model.Result.Error)?.message}")
+                Logger.w("UnoOneApplication: ${spec.displayName} brain reload failed: ${(result as? com.unoone.agent.core.model.Result.Error)?.message}")
             }
         }
     }

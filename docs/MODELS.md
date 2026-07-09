@@ -17,8 +17,13 @@ reports three states:
 
 ### Gemma (LLM) — honest status
 
-`gemma-local` ships **URL-only** (`sha256=""`, `sizeBytes=0`) because the exact `.litertlm` you
-push must be hash-verified against **your** shipped artifact. A manually imported Gemma therefore
+UnoOne now has **two selectable brain profiles** (see [Local Brain](../README.md#local-brain-gemma-via-litert-lm)):
+
+- **Gemma 3n E4B** — manifest id `gemma-3n-e4b`, folder `gemma-local/` (kept for migration continuity; a legacy `gemma-local` selection resolves to this profile). This is the **default, device-verified fallback**.
+- **Gemma 4 E2B** — manifest id `gemma-4-e2b`, folder `gemma-4-e2b/`, 128K context, ~2.58 GB. **Experimental opt-in, NOT device-verified.** It loads through the same safe code path as Gemma 3n, but no physical device has confirmed it loads + performs a tool call. Do not treat it as working until [`DEVICE_VERIFICATION.md`](../DEVICE_VERIFICATION.md) step 5b is green. The default stays Gemma 3n E4B.
+
+Both ship **URL-only** (`sha256=""`, `sizeBytes=0`) because the exact `.litertlm` you push must be
+hash-verified against **your** shipped artifact (no fabrication). A manually imported Gemma therefore
 shows **"Present — not hash-verified (manual import)"**, not "Verified."
 
 **To make it Verified:** compute the exact SHA-256 and byte size of the `.litertlm` you will ship
@@ -36,7 +41,8 @@ install. `punctuation` carries URL only.
 
 | Model | Type | Backend | Size | Hash | Languages |
 |---|---|---|---|---|---|
-| `gemma-3n-e4b.litertlm` | llm | any (GPU→CPU) | ~2–5 GB | **none (manual import)** | planning (multilingual) |
+| `gemma-3n-e4b.litertlm` | llm | any (GPU→CPU) | ~2–5 GB | **none (manual import)** | planning (multilingual) — **default brain** |
+| `gemma-4-e2b-it.litertlm` | llm | any (GPU→CPU) | ~2.58 GB | **none (manual import)** | planning (128K ctx) — **Experimental, not device-verified** |
 | `sherpa-asr-en` | asr | cpu | ~70 MB | ✅ | English |
 | `sherpa-asr-whisper` | asr | cpu | ~111 MB (.tar.bz2) | ✅ | hi/bn/ta/te/kn/ml (shared, runtime language select) |
 | `sherpa-tts-en` | tts | cpu | ~110 MB | ✅ | English (Coqui VITS + espeak-ng-data) |
@@ -51,7 +57,8 @@ the wake phrase is English.
 
 - **In-app:** Model Status screen → Install (streaming progress + integrity check) or Uninstall.
 - **Manual (ADB):** `scripts/adb-push-models/push-models.{bat,sh}` push the per-language folders.
-- **Gemma:** push the `.litertlm` into `models/gemma-local/` (manual import; no hash yet).
+- **Gemma (default 3n E4B):** push the `.litertlm` into `models/gemma-local/` (manual import; no hash yet). Manifest id `gemma-3n-e4b`.
+- **Gemma (Experimental 4 E2B):** push `gemma-4-e2b-it.litertlm` into `models/gemma-4-e2b/`, then select the profile in Settings → Model Status → Brain Model and run the self-test. Manifest id `gemma-4-e2b` — **not device-verified**.
 
 ## 4. Download source abstraction (spec)
 

@@ -43,6 +43,8 @@ class ActionExecutor(
 ) : IActionExecutor {
 
     private val dataExporter = DataExporter(context, noteDao, skillDao, memoryDao, actionLogDao)
+    /** Own screenshot capturer for the `describe_scene` vision path (shares the static MediaProjection). */
+    private val screenshotCapture = ScreenshotCapture(context)
 
     override suspend fun executeTool(toolCall: ToolCall): Result<String> {
         return try {
@@ -163,6 +165,7 @@ class ActionExecutor(
                 "system_control" -> executeSystemAction(toolCall)
                 "ocr_screen" -> readScreenWithOcr()
                 "read_screen" -> readScreenWithAccessibility()
+                "describe_scene" -> describeScene(toolCall)
                 "detect_objects" -> {
                     _setBlindAidActive?.invoke(true)
                     Result.Success("Blind Aid activated.")
@@ -232,6 +235,15 @@ class ActionExecutor(
      * RECORD_AUDIO runtime permission is checked by the safety pipeline before this runs.
      */
     var _recordVoiceNote: (suspend (durationSeconds: Int) -> Result<String>)? = null
+    /**
+     * Optional multimodal-vision path for `describe_scene`: when set AND a vision-capable Gemma
+     * model is loaded, the orchestrator supplies a callback that describes a screenshot image via
+     * LiteRT-LM `Content.ImageBytes`. Null by default → vision is inactive (the shipped Gemma 3n E4B
+     * / Gemma 4 E2B models are text-only), so `describe_scene` falls back to the always-available
+     * OCR + foreground-context description built by [com.unoone.agent.core.agent.SceneDescriptionBuilder].
+     * Device-time-only; not exercised by unit tests.
+     */
+    var _describeSceneWithVision: (suspend (imageBytes: ByteArray, aspect: String) -> Result<String>)? = null
 
     /**
      * True when the device has an active internet connection. Used by [web_search] so the
@@ -306,6 +318,76 @@ class ActionExecutor(
             }
             is Result.Error -> Result.Error(ocrResult.message)
         }
+    }
+
+    /**
+     * describe_scene: produces a short, spoken scene description of the current screen. The
+     * MediaProjection permission is already gated by the safety pipeline before this runs.
+     *
+     * Two paths, in priority order:
+     *  1. Multimodal vision (device-time, INACTIVE with the shipped text-only models): when
+     *     [_describeSceneWithVision] is wired by the orchestrator AND a vision-capable Gemma model
+     *     is loaded, the screenshot bytes are described by LiteRT-LM `Content.ImageBytes`. On any
+     *     Error (no vision weights, inference failure), this degrades to path 2 — never fails the
+     *     tool solely because vision is unavailable.
+     *  2. Always-available fallback: OCR text + foreground app/activity, framed by the JVM-tested
+     *     [com.unoone.agent.core.agent.SceneDescriptionBuilder]. This is what runs today.
+     *
+     * Honesty: the fallback is a structured description from OCR + context, not true visual
+     * understanding of objects/layout; it never fabricates screen content (the builder says "could
+     * not read" when there are no signals). Vision understanding is pending a vision-capable
+     * `.litertlm` artifact and a device matrix — see DEVICE_VERIFICATION.md.
+     */
+    private suspend fun describeScene(toolCall: ToolCall): Result<String> {
+        if (!ScreenshotCapture.hasPermission()) {
+            return Result.Error("Scene description requires MediaProjection permission. Grant it in Settings.")
+        }
+        val aspect = toolCall.args["aspect"]?.jsonPrimitive?.content ?: ""
+
+        // Path 1: multimodal vision, if wired. Best-effort; any failure falls through to the
+        // always-available OCR + context description.
+        val vision = _describeSceneWithVision
+        if (vision != null) {
+            val bitmap = (screenshotCapture.captureScreen() as? Result.Success)?.data
+            if (bitmap != null) {
+                val bytes = bitmapToJpeg(bitmap)
+                if (bytes != null) {
+                    try {
+                        val v = vision(bytes, aspect)
+                        if (v is Result.Success && v.data.isNotBlank()) return Result.Success(v.data)
+                    } catch (e: Exception) {
+                        Logger.w("describe_scene: vision path failed, using OCR fallback (${e.message})")
+                    }
+                }
+            }
+        }
+
+        // Path 2: OCR + foreground context → SceneDescriptionBuilder.
+        val contextStr = try { accessibilityControl.getCurrentContext() ?: "" } catch (_: Exception) { "" }
+        val pkg = contextStr.substringBefore("/").ifBlank { "" }
+        val activity = contextStr.substringAfter("/", "").ifBlank { "" }
+        val ocrText = try {
+            (ocrControl.recognizeScreen() as? Result.Success)?.data ?: ""
+        } catch (_: Exception) { "" }
+        val description = com.unoone.agent.core.agent.SceneDescriptionBuilder.build(
+            com.unoone.agent.core.agent.SceneInput(
+                currentPackage = pkg,
+                currentActivity = activity,
+                ocrText = ocrText,
+                aspect = aspect
+            )
+        )
+        return Result.Success(description)
+    }
+
+    /** Encodes a screenshot Bitmap to JPEG bytes for the LiteRT-LM `Content.ImageBytes` vision path. */
+    private fun bitmapToJpeg(bitmap: android.graphics.Bitmap): ByteArray? = try {
+        val baos = java.io.ByteArrayOutputStream()
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, baos)
+        baos.toByteArray()
+    } catch (e: Exception) {
+        Logger.w("describe_scene: bitmap encode failed (${e.message})")
+        null
     }
 
     private suspend fun executeSystemAction(toolCall: ToolCall): Result<String> {

@@ -131,4 +131,9 @@ class UnoOneToolSet : ToolSet {
 
     @Tool(description = "Deactivate blind-aid camera and obstacle detection")
     fun deactivate_blind_aid(): String = "Blind Aid deactivated."
+
+    @Tool(description = "Describe the current screen as a short scene (foreground app + visible text); optionally narrow what to look for with aspect. Sensitive: captures the screen.")
+    fun describe_scene(
+        @ToolParam(description = "Optional what to focus on, e.g. 'buttons', 'the total', 'any OTP'") aspect: String? = null
+    ): String = "Scene described."
 }

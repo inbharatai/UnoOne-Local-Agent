@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity() {
         val skillsViewModel = SkillsViewModel(agentOrchestrator.skillsModule)
         val settingsViewModel = SettingsViewModel(this)
         val privacySettingsViewModel = PrivacySettingsViewModel(this)
-        val modelStatusViewModel = ModelStatusViewModel(this, database.modelMetadataDao())
+        val modelStatusViewModel = ModelStatusViewModel(this, database.modelMetadataDao(), agentOrchestrator)
         val voiceTestViewModel = VoiceTestViewModel(voiceModule)
         val auditViewerViewModel = AuditViewerViewModel(database.actionLogDao())
 

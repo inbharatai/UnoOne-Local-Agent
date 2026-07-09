@@ -2,6 +2,8 @@ package com.unoone.agent.modelmanager
 
 import android.content.Context
 import android.os.Environment
+import com.unoone.agent.core.model.BrainModelRegistry
+import com.unoone.agent.core.model.BrainModelSpec
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.storage.dao.ModelMetadataDao
 import kotlinx.coroutines.Dispatchers
@@ -248,14 +250,26 @@ class ModelManager(
     }
 
     /**
-     * Returns the absolute path of the first Gemma 3n E4B `.litertlm` model found,
-     * or null if none is present.
+     * Returns the absolute path of the `.litertlm` for the legacy default profile
+     * (Gemma 3n E4B, on-disk folder "gemma-local"), or null if none is present. Kept for back-compat;
+     * new callers should pass an explicit [BrainModelSpec] via [getLlmModelPath].
      */
-    fun getLlmModelPath(): String? {
-        val gemmaFolder = File(appPrivateModelPath, "gemma-local")
-        return gemmaFolder.listFiles { file ->
-            file.isFile && file.name.endsWith(".litertlm", ignoreCase = true)
-        }?.firstOrNull()?.absolutePath
+    fun getLlmModelPath(): String? = getLlmModelPath(BrainModelRegistry.defaultProfile)
+
+    /**
+     * Returns the absolute path of the `.litertlm` installed for [spec], or null if none is present.
+     * Prefers the file whose name matches [BrainModelSpec.fileName]; otherwise returns the largest
+     * matching file in the profile's folder (deterministic when more than one is present). Each
+     * profile has its own folder, so this globs only within [BrainModelSpec.modelFolder].
+     */
+    fun getLlmModelPath(spec: BrainModelSpec): String? {
+        val folder = File(appPrivateModelPath, spec.modelFolder)
+        val candidates = folder.listFiles { file ->
+            file.isFile && file.name.endsWith(spec.fileExtension, ignoreCase = true)
+        } ?: return null
+        if (candidates.isEmpty()) return null
+        return candidates.firstOrNull { it.name.equals(spec.fileName, ignoreCase = true) }?.absolutePath
+            ?: candidates.maxByOrNull { it.length() }!!.absolutePath
     }
 
     data class ModelStatus(

@@ -53,6 +53,10 @@ object ToolPermissionRegistry {
         // Screenshot OCR — MediaProjection (NOT overlay). Camera not required for screenshots.
         "ocr_screen" to listOf(PermissionRequirement.MediaProjection),
 
+        // Scene description captures a screenshot (MediaProjection) for OCR/vision; same access
+        // surface as ocr_screen. STRONG_CONFIRM risk (in SafetyGuard) gates the sensitivity.
+        "describe_scene" to listOf(PermissionRequirement.MediaProjection),
+
         // Voice capture.
         "voice_recording" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.RECORD_AUDIO)),
 

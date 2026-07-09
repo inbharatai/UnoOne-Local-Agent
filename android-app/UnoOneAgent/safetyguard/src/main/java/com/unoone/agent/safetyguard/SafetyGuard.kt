@@ -42,6 +42,9 @@ class SafetyGuard {
         "system_control" to RiskLevel.STRONG_CONFIRM,
         "find_and_click" to RiskLevel.STRONG_CONFIRM,
         "fill" to RiskLevel.STRONG_CONFIRM,
+        // Captures + analyzes the whole screen, which can read sensitive content (passwords, OTP,
+        // banking) → strong confirmation, never silent.
+        "describe_scene" to RiskLevel.STRONG_CONFIRM,
 
         // Risk 3 — Block (never executed)
         "send_message" to RiskLevel.BLOCK,

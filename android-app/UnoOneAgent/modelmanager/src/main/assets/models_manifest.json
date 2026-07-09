@@ -1,19 +1,39 @@
 {
   "manifestVersion": 1,
-  "_comment": "UnoOne offline model manifest — per-language voice models. English: sherpa-asr-en (streaming zipformer transducer int8) + sherpa-tts-en (Coqui VITS + espeak-ng-data bundled as an app asset). Indian languages (Hindi/Bengali/Tamil/Telugu/Kannada/Malayalam): sherpa-asr-whisper (a single multilingual whisper-tiny int8 tarball — the 'language' field selects the language at runtime; no Sherpa transducer exists for these) + sherpa-tts-<lang> (MMS VITS from willwade/mms-tts-multilingual-models-onnx, character frontend, no espeak). The wake-word (vad) is always English (no Indic KWS model exists). Every sha256 + sizeBytes below is stream-computed from the actual artifact bytes (no fabrication) so the installer performs strict integrity checking; gemma-local / punctuation carry URLs only (size/sha left empty — the installer still validates download completeness via the HTTP response and extraction success). The whisper tarball is a .tar.bz2 (commons-compress extracts it); its 'extractsTo' names the top directory the tar expands to (sherpa-onnx-whisper-tiny), which differs from the archive name — the strip-last-extension fallback would not work for .tar.bz2. STT and the wake-word (vad) share the same public streaming-zipformer-int8 English transducer (encoder/decoder/joiner/tokens).",
+  "_comment": "UnoOne offline model manifest — per-language voice models. English: sherpa-asr-en (streaming zipformer transducer int8) + sherpa-tts-en (Coqui VITS + espeak-ng-data bundled as an app asset). Indian languages (Hindi/Bengali/Tamil/Telugu/Kannada/Malayalam): sherpa-asr-whisper (a single multilingual whisper-tiny int8 tarball — the 'language' field selects the language at runtime; no Sherpa transducer exists for these) + sherpa-tts-<lang> (MMS VITS from willwade/mms-tts-multilingual-models-onnx, character frontend, no espeak). The wake-word (vad) is always English (no Indic KWS model exists). Every sha256 + sizeBytes below is stream-computed from the actual artifact bytes (no fabrication) so the installer performs strict integrity checking. Two LLM profiles ship URL-only: gemma-3n-e4b (legacy stable, on-disk folder 'gemma-local') and gemma-4-e2b (Experimental, recommended-but-not-default, not device-verified); punctuation also carries URLs only (size/sha left empty — the installer still validates download completeness via the HTTP response and extraction success). The whisper tarball is a .tar.bz2 (commons-compress extracts it); its 'extractsTo' names the top directory the tar expands to (sherpa-onnx-whisper-tiny), which differs from the archive name — the strip-last-extension fallback would not work for .tar.bz2. STT and the wake-word (vad) share the same public streaming-zipformer-int8 English transducer (encoder/decoder/joiner/tokens).",
   "models": [
     {
-      "id": "gemma-local",
+      "id": "gemma-3n-e4b",
       "folder": "gemma-local",
       "type": "llm",
       "version": "gemma-3n-e4b-litertlm",
       "minRamMb": 4096,
       "backend": "any",
       "defaultLanguage": "en",
+      "_comment": "Legacy stable brain profile (Gemma 3n E4B). The id migrated from 'gemma-local' to 'gemma-3n-e4b'; the on-disk folder stays 'gemma-local' so existing installs (adb-pushed gemma-3n-e4b.litertlm) are not orphaned. URL-only: sha256/size left empty (no fabrication) — the installer still validates download completeness via the HTTP response. Device-verified fallback.",
       "files": [
         {
           "name": "gemma-3n-e4b.litertlm",
           "url": "https://huggingface.co/litert-community/Gemma-3n-E4B-it-litertlm/resolve/main/gemma-3n-e4b.litertlm",
+          "sha256": "",
+          "sizeBytes": 0,
+          "archive": false
+        }
+      ]
+    },
+    {
+      "id": "gemma-4-e2b",
+      "folder": "gemma-4-e2b",
+      "type": "llm",
+      "version": "gemma-4-e2b-it-litertlm",
+      "minRamMb": 3072,
+      "backend": "any",
+      "defaultLanguage": "en",
+      "_comment": "Newer, lighter brain profile (Gemma 4 E2B). Experimental — NOT the default and NOT device-verified until the DEVICE_VERIFICATION.md matrix passes. URL-only (sha256/size empty; no fabrication); integrity is download-completeness until a verified hash is added at release time. Auto GPU→CPU fallback.",
+      "files": [
+        {
+          "name": "gemma-4-e2b-it.litertlm",
+          "url": "https://huggingface.co/litert-community/gemma-4-E2B-it-litertlm/resolve/main/gemma-4-e2b-it.litertlm",
           "sha256": "",
           "sizeBytes": 0,
           "archive": false

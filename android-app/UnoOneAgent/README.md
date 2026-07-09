@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Min%20SDK-28-success?style=for-the-badge" alt="Min SDK 28">
   <img src="https://img.shields.io/badge/Modules-13-0ea5e9?style=for-the-badge" alt="13 Modules">
   <img src="https://img.shields.io/badge/Voice-Sherpa--ONNX%20offline-0b7285?style=for-the-badge" alt="Sherpa-ONNX">
-  <img src="https://img.shields.io/badge/Tests-204%20passing-22c55e?style=for-the-badge" alt="204 Tests">
+  <img src="https://img.shields.io/badge/Tests-289%20passing-22c55e?style=for-the-badge" alt="289 Tests">
 </p>
 
 </div>
@@ -28,6 +28,8 @@
 - [Blind Aid Vision Deep Dive](#blind-aid-vision-deep-dive)
 - [Voice Runtime Behavior](#voice-runtime-behavior)
 - [Local Brain (Gemma via LiteRT-LM)](#local-brain-gemma-via-litert-lm)
+- [Agentic Loop, Safety Judge & Eval Harness](#agentic-loop-safety-judge--eval-harness)
+- [Innovations #4–#8: Vision, Memory, Streaming, Self-Heal, Integrity](#innovations-48-vision-memory-streaming-self-heal-integrity)
 - [Command Parser](#command-parser)
 - [Safety Framework](#safety-framework)
 - [Permissions](#permissions)
@@ -57,9 +59,19 @@
 | Permission registry | ✅ Single source of truth | `ToolPermissionRegistry`; corrected read_screen/ocr_screen/system_control gates |
 | Tool coverage | ✅ Complete | Every `UnoOneToolSet` tool has a real `ActionExecutor` branch |
 | New Settings screens | ✅ Implemented | Model Status, Voice Test, Audit Viewer — reachable from Settings |
-| Gemma 3n E4B via LiteRT-LM | ✅ Implemented | `GemmaPlanner`, manual tool calling, GPU→CPU fallback, Mutex load, onTrimMemory unload + onResume reload |
+| Gemma brain via LiteRT-LM (dual profile) | ✅ Implemented | `GemmaPlanner` is model-profile-aware: default **Gemma 3n E4B** (`gemma-3n-e4b`) + **Gemma 4 E2B** (`gemma-4-e2b`) Experimental opt-in. Manual tool calling, GPU→CPU fallback, Mutex load, inference Mutex + 30s timeout, onTrimMemory unload + onResume reload |
+| ReAct agentic loop (#1) | ✅ Implemented (control JVM-tested) | After an LLM-planned observation-producing call, the model sees the tool result and plans the next step (bounded `MAX_STEPS=3`, every step through `runValidatedToolCall`). Pure control logic in `ReActLoopController` is JVM-tested; the LiteRT-LM multi-turn `planNext` is device-time-only (not yet device-verified) |
+| LLM safety judge (#2) | ✅ Implemented (control JVM-tested) | A second on-device pass on a **dedicated judge conversation** (no tools, classifier prompt) returns a `SafetyVerdict` merged **escalate-only** with the keyword tier via `SafetyJudgePolicy` — never weakens the keyword block. Policy is JVM-tested; `judgeSafety` inference is device-time-only |
+| Calibration / eval harness (#3) | ✅ Implemented (scoring JVM-tested) | Fixed `EvalPromptSet` (~18 cases incl. paraphrased harm) + pure-JVM `EvalScorer` (tool-match + arg-match → accuracy) + device `BrainEvalHarnessTest` runner that prints a real summary for Gemma 3n vs 4. Scoring is JVM-tested; the runner is device-time-only and **not yet run on a physical device** (no fabricated accuracy numbers) |
+| Outcome-learned memory (#5) | ✅ Implemented (control JVM-tested) | Per-(command-signature, tool) outcomes are stored in Room and surfaced to the planner as a hint ("prior avoid: …", "prior worked: …"). Signature + token-overlap retrieval + rendering are pure-JVM in `OutcomeMemoryPolicy`; Room I/O is in `MemoryModule`. No schema migration (reuses the free-string `type` column) |
+| Diagnostics self-heal (#7) | ✅ Implemented (control JVM-tested) | A rolling `ToolHealthTracker` flags a tool flaky after enough recent failures; the brain is auto-reloaded when found down (it self-closes on a 30s timeout). `BrainHealthPolicy.shouldReload` + the tracker are JVM-tested; the reload + timeline surfacing are device-time-only |
+| Streaming inference (#6) | ✅ Implemented (control JVM-tested) | First-turn LLM planning can stream partial text to the timeline via LiteRT-LM `sendMessageAsync` (`Flow<Message>`). Delta reduction (`StreamingTextReducer`, robust to cumulative vs delta snapshots) is JVM-tested; the `Flow` collection + UI surfacing are device-time-only, with a try/catch fallback to the synchronous `plan()` path |
+| Multimodal vision (#4) | ✅ Implemented (control JVM-tested) | New `describe_scene` tool (26th canonical, **STRONG_CONFIRM** + MediaProjection) builds a screen scene from OCR + foreground context via JVM-tested `SceneDescriptionBuilder`. The LiteRT-LM `Content.ImageBytes` vision path is wired against the real AAR but **INACTIVE** (shipped Gemma models are text-only); it lights up only with a vision-capable `.litertlm` artifact, falling back to the OCR description otherwise |
+| Signed manifest integrity (#8) | ✅ Implemented (control JVM-tested) | `ModelManifest` carries an Ed25519 `manifestSignature`; `ManifestSignatureVerifier` canonicalizes + verifies (platform EdDSA, API 33+; minSdk 28 falls back to accept + log). `ManifestSigningKey.PUBLIC_KEY_BASE64` is intentionally blank → **wired but INACTIVE** until the publisher activates the chain. No fabricated keys; canonicalization + verify round-trip are JVM-tested |
+| CanonicalToolRegistry (26 tools) | ✅ Implemented | Unknown-tool rejection + required-arg validation in `GemmaPlanner` before safety/execution; `CanonicalToolRegistryTest` + `ToolRegistryAgreementTest` |
+| Brain selection UI + self-test | ✅ Implemented | Settings → Model Status → Brain Model: select profile + Run Self-Test (load + read-only tool-call probe), persisted in `unoone_settings` |
 | Parser blind-aid fixes | ✅ Implemented & verified | Activation/deactivation disambiguation, negative-intent patterns |
-| Parser unit tests | ✅ 204 passing across 19 files | See [Validation Commands](#validation-commands) |
+| Unit tests | ✅ 289 passing across 29 files | See [Validation Commands](#validation-commands) |
 | Safety framework | ✅ Implemented | 4-tier: DIRECT, CONFIRM, STRONG_CONFIRM, BLOCK (per-step for compounds & skills) |
 | Lint | ✅ Clean | 0 new issues; 39 baselined staleness advisories; 0 StaticFieldLeak |
 
@@ -158,7 +170,7 @@ No cross-app `Intent` broadcast is used — transcribed speech never leaves the 
 
 `modelmanager` ships a real manifest + installer replacing loose folder detection.
 
-**Manifest** (`src/main/assets/models_manifest.json`): array of model descriptors (`id, folder, type, version, minRamMb, backend, defaultLanguage, files[]`), each file `{name, url, sha256, sizeBytes, archive, asset?, extractsTo?}`. `asset` names a file bundled in the app's `assets/` (copied from the APK instead of downloaded); `extractsTo` names the top directory an archive extracts to (required for tarballs like `sherpa-onnx-whisper-tiny.tar.bz2` whose top dir differs from the archive name). Models: `gemma-local` (LLM), `sherpa-asr-en` (English ASR), `sherpa-asr-whisper` (multilingual whisper ASR for hi/bn/ta/te/kn/ml), `vad` (English wake-word), `sherpa-tts-en` (English TTS), `sherpa-tts-hin/ben/tam/tel/kan/mal` (MMS TTS per Indic language), `punctuation`, `ocr-optional`.
+**Manifest** (`src/main/assets/models_manifest.json`): array of model descriptors (`id, folder, type, version, minRamMb, backend, defaultLanguage, files[]`), each file `{name, url, sha256, sizeBytes, archive, asset?, extractsTo?}`. `asset` names a file bundled in the app's `assets/` (copied from the APK instead of downloaded); `extractsTo` names the top directory an archive extracts to (required for tarballs like `sherpa-onnx-whisper-tiny.tar.bz2` whose top dir differs from the archive name). Models: `gemma-3n-e4b` (default LLM, folder `gemma-local/` for migration continuity; a legacy `gemma-local` selection resolves to it), `gemma-4-e2b` (Experimental LLM, folder `gemma-4-e2b/`, 128K ctx, ~2.58 GB — **not device-verified**, `sha256`/`sizeBytes` empty until a real artifact is measured), `sherpa-asr-en` (English ASR), `sherpa-asr-whisper` (multilingual whisper ASR for hi/bn/ta/te/kn/ml), `vad` (English wake-word), `sherpa-tts-en` (English TTS), `sherpa-tts-hin/ben/tam/tel/kan/mal` (MMS TTS per Indic language), `punctuation`, `ocr-optional`.
 
 **`ModelInstaller`** (plain `HttpURLConnection`, no deps):
 - Resume via `Range:` header against `.part`; appends on 206, restarts on 200
@@ -175,7 +187,7 @@ No cross-app `Intent` broadcast is used — transcribed speech never leaves the 
 - `loadManifest()` / `findModel(id)` / `modelHealth(id): HealthResult` (reports `missing`/`sizeMismatch`/`checksumMismatch`)
 - `installModel(id, onProgress)` / `uninstallModel(id)` with a **canonical path-traversal guard** (folder must stay inside the models root)
 - `detectModels()` merges manifest info into `ModelStatus` (version, expected vs actual size/checksum, `healthy`)
-- `getLlmModelPath()` finds the first `.litertlm`
+- `getLlmModelPath()` finds the first `.litertlm` for the default profile (Gemma 3n E4B, folder `gemma-local/`); `getLlmModelPath(spec)` finds it for any `BrainModelSpec`
 
 **✅ Shipped models (verified, 7 languages):** `sherpa-asr-en` and `vad` share the public streaming-zipformer English int8 transducer (`csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26`) with verified SHA-256/size; STT uses Sherpa's **Online (streaming) recognizer** drained single-shot (`while (isReady) decode`) — the only public ungated English transducer on HF is the streaming one. `sherpa-tts-en` is the Coqui en-ljspeech VITS (`csukuangfj/vits-coqui-en-ljspeech`) plus **espeak-ng-data bundled as an app asset** (`espeak-ng-data.zip`, ~9 MB, extracted at install). For Hindi/Bengali/Tamil/Telugu/Kannada/Malayalam: `sherpa-asr-whisper` is a single shared multilingual **whisper-tiny int8** tarball (`k2-fsa/sherpa-onnx`, extracted via commons-compress to `sherpa-onnx-whisper-tiny/`, integrity verified against the tarball SHA-256; the `language` field selects the language at runtime) and `sherpa-tts-{hin,ben,tam,tel,kan,mal}` are per-language **MMS VITS** models (`willwade/mms-tts-multilingual-models-onnx`, character frontend, no espeak) — all with stream-computed SHA-256/size. `gemma-local`/`punctuation` carry real HF URLs but leave hashes empty (completeness still validated); `ocr-optional` has no URL. The wake-word (`vad`) stays English (no public Indic KWS model exists). The Model Status screen surfaces all of this in the UI; the active STT/TTS language is chosen in Settings → Voice language.
 
@@ -278,17 +290,96 @@ This is **fully wired end-to-end** — background voice commands reach the orche
 
 ## Local Brain (Gemma via LiteRT-LM)
 
-`GemmaPlanner` loads a Gemma 3n E4B `.litertlm` via LiteRT-LM `0.13.1` and keeps a reusable `Conversation` with `UnoOneToolSet` registered (`automaticToolCalling = false` — manual tool calling).
+`GemmaPlanner` loads a Gemma `.litertlm` via LiteRT-LM `0.13.1` and keeps a reusable `Conversation` with `UnoOneToolSet` registered (`automaticToolCalling = false` — manual tool calling). It is **model-profile aware**: `BrainModelRegistry` defines the selectable profiles, `PromptBuilder` emits a family-correct system instruction (Gemma 4 vs Gemma 3n), and `load(modelPath, spec)` tries the profile's preferred backend order.
 
+- **Dual profile**: default **Gemma 3n E4B** (`gemma-3n-e4b`, folder `gemma-local/` — device-verified fallback; a legacy `gemma-local` selection resolves here) + **Gemma 4 E2B** (`gemma-4-e2b`, folder `gemma-4-e2b/`, 128K ctx, ~2.58 GB — **Experimental opt-in, not device-verified**). The user picks the active brain in Settings → Model Status → Brain Model (persisted in `unoone_settings`, key `brain_model_manifest_id`).
+- **Unknown-tool rejection + arg validation**: every model-proposed call is checked against `CanonicalToolRegistry` (26 tools). A tool not in the registry (`make_payment`, `send_message`, `install_app`, `access_passwords`, `silent_control`, …) is rejected with `Result.Error` and never executed; required args are schema-validated before forwarding. One tool per turn (the compound-step architecture, not the model, handles multi-step).
 - **GPU→CPU fallback**: `tryLoadBackend(GPU) ?: tryLoadBackend(CPU)`; winner recorded in `activeBackend()`.
-- **`lastLoadError()`** surfaces device-compatibility status to the UI.
-- **Crash-safe load**: `Mutex` serializes concurrent loads; a `createConversation` failure closes the half-built engine (no native LiteRT engine + GPU delegate leak); `isLoaded`/`activeBackend`/`lastLoadError` are `@Volatile`.
-- **Memory pressure**: `UnoOneApplication.onTrimMemory(RUNNING_LOW | RUNNING_CRITICAL)` unloads the brain; `MainActivity.onResume` reloads it if it was previously loaded (transparent recovery).
+- **Inference timeout (30s)**: each `plan()` is bounded by `INFERENCE_TIMEOUT_MS`; a stuck JNI call closes the brain and it rebuilds on next load (no hang). An **inference `Mutex`** serializes `sendMessage` across the live command path and the read-only self-test probe (LiteRT-LM Conversation is not guaranteed thread-safe).
+- **`lastLoadError()`** surfaces device-compatibility status to the UI; `loadedProfile()`/`loadedBrainBackend()` expose the active profile + backend.
+- **Crash-safe load**: a `Mutex` serializes concurrent loads; a `createConversation` failure closes the half-built engine (no native LiteRT engine + GPU delegate leak); `isLoaded`/`activeBackend`/`lastLoadError`/`loadedSpec` are `@Volatile`.
+- **Memory pressure**: `UnoOneApplication.onTrimMemory(RUNNING_LOW | RUNNING_CRITICAL)` unloads the brain; `MainActivity.onResume` reloads the selected profile if it was previously loaded (transparent recovery).
+- **On-device self-test**: Settings → Model Status → Brain Model → Run Self-Test loads a profile (if installed), runs a probe command that bypasses `RuleBasedParser` (forcing the LLM path), and reports backend + load time + proposed tool + whether the tool is canonical (`toolAccepted`). It restores the previously-selected brain afterward. The read-only probe uses `AgentOrchestrator.planToolCall`.
 - **`LocalBrain.runInference`** is a real thin wrapper around `GemmaPlanner.plan` — no mock output. Rule-based fallback via `RuleBasedParser` when no model is loaded.
 
 ---
 
-## Command Parser
+## Agentic Loop, Safety Judge & Eval Harness
+
+Three additions that move UnoOne from a *planner with a safety gate* toward a *measurable, self-correcting agent*. All three split **pure control logic (JVM-tested)** from **LiteRT-LM inference (device-time-only)** — the AAR ships bytecode newer than the JDK 17 test JVM can load, so no JVM unit test can instantiate `UnoOneToolSet`. Honest testability, not a gap papered over.
+
+### 1. ReAct agentic loop (Reason → Act → Observe)
+
+When the LLM plans an observation-producing tool (`search_notes`, `summarize_text`, `web_search`, `read_screen`, `ocr_screen`, `detect_objects`, `voice_recording`, `check_calendar`), the orchestrator feeds the tool result back into the live conversation and asks the model to plan the next step, up to `MAX_STEPS = 3`. Every step goes through the same `runValidatedToolCall` — permissions, risk, confirm, execute, audit — so the loop cannot bypass safety.
+
+- **Provenance gate**: the loop only engages when the first call came from the LLM (`ParseOutcome.Llm`). A `RuleBasedParser` match never started a conversation, so it cannot be continued with an observation.
+- **Termination** (`ReActLoopController.decide`): `speak_response` → stop and speak; planner error → stop; identical re-proposal (same tool + args) → `STALL_DETECTED`; `stepsExecuted >= MAX_STEPS` → stop; null plan → `NO_PLAN`.
+- **Honest scope**: `ReActLoopController` (engagement gate + decision logic) is JVM-tested (`ReActLoopControllerTest`, 13 tests). The LiteRT-LM multi-turn `planNext` is device-time-only and **not yet device-verified** — no physical device has run the full loop.
+
+### 2. LLM safety judge (escalate-only second pass)
+
+A second on-device inference over a **dedicated `judgeConversation`** (same engine weights, no tools, a classifier system prompt) returns a `SafetyVerdict { SAFE, NEEDS_CONFIRM, UNSAFE, UNCERTAIN }` for the proposed action. The orchestrator merges it with the keyword-classified risk via `SafetyJudgePolicy.escalate`:
+
+- `UNSAFE` → `max(current, BLOCK)`; `NEEDS_CONFIRM` → `max(current, CONFIRM)`; `SAFE`/`UNCERTAIN` → unchanged.
+- The judge **never de-escalates** — it can only raise the tier, so it cannot weaken the keyword filter's hard blocks (`make_payment`, `send_message`, `install_app`, `access_passwords`, `silent_control`).
+- The judge conversation is separate from the planning conversation so judging never pollutes the ReAct loop's context. `SAFETY_JUDGE_ENABLED` exists to disable it if per-step latency cost is unacceptable.
+- **Honest scope**: `SafetyJudgePolicy` (the escalation contract) is JVM-tested (`SafetyJudgePolicyTest`, 7 tests). The `judgeSafety` inference is device-time-only; on the classifier's "always UNSAFE for deleting/wiping/erasing notes, payments, passwords, OTPs, account removal, app install/uninstall, silent control" instructions, the verdict is only as good as the loaded model.
+
+### 3. Calibration / eval harness (measurement, not vibes)
+
+A fixed prompt set + scorer + device runner so "is Gemma good enough?" becomes a number rather than an impression:
+
+- `EvalPromptSet` — ~18 cases phrased the way users actually speak, spanning notes, navigation, comms, media, and destructive actions, including a paraphrased-harm case ("wipe everything in my notes" → `delete_all_notes`).
+- `EvalScorer` — pure-JVM scoring: tool-match + required-arg-match (case-insensitive, substring-tolerant) → per-case `EvalVerdict`, aggregated to an `EvalSummary` with separate **accuracy** (full correct) and **toolAccuracy** (tool selection alone), so a profile can be diagnosed as "right tool, wrong args." Tested by `EvalScorerTest` (9 tests).
+- `BrainEvalHarnessTest` (instrumented) — loads whichever `.litertlm` profile is on the device, runs the prompt set through `planner.plan(...)`, scores, and **prints** a real summary (profile, backend, per-case OK/arg/MISS, accuracy). To compare Gemma 3n E4B vs Gemma 4 E2B: push one model → run → record → push the other → run. It asserts only that the harness executed every case; it does **not** gate on an accuracy threshold — a profile being evaluated is allowed to score low, and that low number is the point.
+- **Honest scope**: the scorer + prompt set are JVM-tested. The runner is device-time-only and **has not been run on a physical device** — no Gemma accuracy numbers are claimed or committed.
+
+---
+
+## Innovations #4–#8: Vision, Memory, Streaming, Self-Heal, Integrity
+
+Five more innovations, each split the same honest way as #1–#3: the **deterministic control/scoring logic is in `:core` and JVM-tested**; the **LiteRT-LM inference / device wiring is device-time-only and not claimed until a physical device runs it**. The `litertlm-android` AAR ships bytecode newer than the JDK 17 test JVM can load, so no JVM test can load `UnoOneToolSet` / `GemmaPlanner` — that is the hard line that forces this split.
+
+### 4. Multimodal vision (`describe_scene`)
+
+A new **26th canonical tool** that produces a short, spoken scene description of the current screen:
+
+- **Working path (today, JVM-tested control):** `describe_scene` captures a screenshot (MediaProjection, already gated), runs OCR (`OcrControl`), reads the foreground app/activity, and frames a compact description via `SceneDescriptionBuilder` (pure-JVM in `:core`). It never fabricates screen content — when OCR and context are both empty it says "I could not read any text on the screen" rather than inventing a scene. Tested by `SceneDescriptionBuilderTest` (9 tests).
+- **Multimodal path (wired, INACTIVE):** `GemmaPlanner.describeSceneWithVision` sends `Message.user(Contents.of(Content.Text(prompt), Content.ImageBytes(bytes)))` to the loaded conversation — the real LiteRT-LM multimodal AAR API (`Content.ImageBytes` + `EngineConfig.visionBackend`/`maxNumImages`). The shipped Gemma 3n E4B / Gemma 4 E2B `.litertlm` artifacts are **text-only** (no vision weights), so this path is gated by `VISION_MODEL_ENABLED = false` and never called at runtime; on any failure the executor falls back to the OCR + context description. It lights up without code changes when a vision-capable `.litertlm` ships.
+- **Safety:** `describe_scene` is **STRONG_CONFIRM** (capturing + analyzing the whole screen can read passwords/OTP/banking) and gated behind MediaProjection — it goes through the full pipeline like every other tool. It is advertised in the **Gemma 4** instruction only; the legacy Gemma 3n instruction is unchanged (byte-identical, 23 tools).
+
+### 5. Outcome-learned memory
+
+The planner is now told what **worked** and what **failed** for similar past requests, so it avoids repeating a known-bad action and leans on a known-good one:
+
+- `OutcomeMemoryPolicy` (`:core`, JVM-tested, 10 tests) normalizes a command to a stopword-free signature, retrieves the most relevant prior outcomes by token overlap (failures ranked above successes at equal overlap, then recency), and renders a compact hint ("prior avoid: open_app (app not installed); prior worked: open_chrome").
+- `MemoryModule.storeOutcome` / `getRelevantContext` persist + retrieve these via Room, keyed `outcome:<signature>:<tool>` and upserted. **No schema migration** — it reuses the free-string `type` column on `MemoryEntity`. Failures are logged and swallowed; memory never breaks a command.
+
+### 6. Streaming inference
+
+First-turn LLM planning can surface partial text to the timeline as it streams, instead of waiting for the full inference:
+
+- `GemmaPlanner.planStreaming` collects LiteRT-LM's cold `Conversation.sendMessageAsync(Message, Map)` → `Flow<Message>`, feeding each partial's text to `StreamingTextReducer` (`:core`, JVM-tested, 8 tests) which is robust to **both** cumulative (full-text-so-far) and delta (new-tokens-only) snapshot semantics, and the final message is validated through the same `extractValidatedToolCall` as the synchronous path.
+- The orchestrator uses `parseStreamingWithProvenance` when `STREAMING_INFERENCE_ENABLED`, evolving a single "Thinking" timeline step on each delta (added lazily, so rule-handled commands get no streaming step). Any streaming failure degrades gracefully to the synchronous `parseAsyncWithProvenance` path. The `Flow` + UI surfacing are device-time-only; TTS-streaming is a documented follow-up.
+
+### 7. Diagnostics self-heal
+
+The brain closes itself on a 30s inference timeout and otherwise nothing reloads it until `onResume` — self-heal closes that gap:
+
+- `ToolHealthTracker` (`:core`, JVM-tested, 7 tests) keeps a rolling per-tool outcome window and flags a tool flaky after enough recent failures (old failures evict as the window slides). `BrainHealthPolicy.shouldReload` fires after `RELOAD_THRESHOLD` consecutive inference failures.
+- The orchestrator proactively reloads the brain from its remembered load path/spec when it is found down at the start of a command, records inference failures mid-ReAct-loop and reloads once the threshold fires, and surfaces flaky tools to the timeline + audit log. The reload + spoken diagnostic are device-time-only; the decision contract is JVM-tested.
+
+### 8. Signed manifest integrity
+
+`ModelManifest` now carries an Ed25519 `manifestSignature`, so a tampered model file can be rejected at load time once the publisher activates the chain:
+
+- `ManifestSignatureVerifier` (`:modelmanager`, JVM-tested, 9 tests) canonicalizes the manifest (deterministic kotlinx.serialization, blanked signature field) and verifies the Ed25519 signature via platform `java.security` EdDSA. Canonicalization is stable and signature-independent; tampered bytes / signatures / wrong keys are rejected.
+- `ManifestSigner` is a CLI (`--generate-key`, `--sign`) for the publisher. **`ManifestSigningKey.PUBLIC_KEY_BASE64` is intentionally blank → wired but INACTIVE** — no fabricated keys; until the publisher sets a public key, `ModelManifestLoader` accepts unsigned manifests (and on `SDK_INT < 33` logs + accepts, since platform EdDSA is API 33+; minSdk 28 devices fall back). No Bouncy Castle added (avoids ~6MB APK cost for an inactive feature).
+
+---
+
+---
+
 
 ### Priority ordering
 
@@ -323,7 +414,7 @@ Compound commands serialize as a single `steps` JSON array of `{tool, args}` obj
 
 ### Test coverage
 
-204 unit tests across 19 files. Parser-relevant tests cover: 6 activation phrases → `detect_objects`; 8 deactivation phrases → `deactivate_blind_aid`; note creation with/without colon; "remember to" stripping; compound `steps[]` (2- and 3-part); domain-specific preservation (skill steps, email, whatsapp, calendar); long press target extraction; activation/deactivation disambiguation; note deletion routing; "search for X" → `open_url` Google search; compound `open chrome and search for cats`.
+289 unit tests across 29 files. Parser-relevant tests cover: 6 activation phrases → `detect_objects`; 8 deactivation phrases → `deactivate_blind_aid`; note creation with/without colon; "remember to" stripping; compound `steps[]` (2- and 3-part); domain-specific preservation (skill steps, email, whatsapp, calendar); long press target extraction; activation/deactivation disambiguation; note deletion routing; "search for X" → `open_url` Google search; compound `open chrome and search for cats`. `CanonicalToolRegistryTest` (exactly 26 tools, unique names, unknown-tool rejection, required-arg validation), `ToolRegistryAgreementTest` (Gemma 4 instruction advertises exactly the canonical 26; legacy Gemma 3n instruction unchanged), and `ModelManifestTest` (dual-profile `gemma-local`→`gemma-3n-e4b` migration invariant + `gemma-4-e2b` empty-integrity parse). Agent-capability tests: `ReActLoopControllerTest` (engagement gate, continue/stop, speak-response extraction, stall detection, max-steps, precedence), `SafetyJudgePolicyTest` (escalate-only merge, never-lower, unsafe→block), `EvalScorerTest` (tool+arg scoring, case-insensitive arg match, summary counts, empty-set safety, prompt-set invariants). New this pass (#4–#8): `ToolHealthTrackerTest` (rolling flaky-tool window + brain-reload threshold), `StreamingTextReducerTest` (cumulative vs delta delta-reduction, final-text convergence), `SceneDescriptionBuilderTest` (describe_scene OCR + context framing + honest "could not read" fallback), `OutcomeMemoryPolicyTest` (outcome signature, token-overlap retrieval, failure-first ranking, rendering), and `ManifestSignatureTest` (Ed25519 canonicalization + verify round-trip, tamper/wrong-key rejection, signing key inactive by default).
 
 ---
 
@@ -335,7 +426,7 @@ Compound commands serialize as a single `steps` JSON array of `{tool, args}` obj
 |---|---|---|
 | **DIRECT** | Execute immediately | `create_note`, `search_notes`, `summarize_text`, `speak_response`, `open_chrome`, `open_app`, `deactivate_blind_aid`, `check_calendar` |
 | **CONFIRM** | Single confirmation dialog | `open_url`, `open_calendar_insert`, `open_dialer`, `share_text`, `read_screen`, `ocr_screen`, `open_camera`, `create_skill`, `click`, `type`, `long_press` |
-| **STRONG_CONFIRM** | Must type "confirm" | `delete_notes`, `delete_all_notes`, `export_data`, `detect_objects`, `draft_email`, `send_whatsapp`, `system_control`, `find_and_click`, `fill` |
+| **STRONG_CONFIRM** | Must type "confirm" | `delete_notes`, `delete_all_notes`, `export_data`, `detect_objects`, `describe_scene`, `draft_email`, `send_whatsapp`, `system_control`, `find_and_click`, `fill` |
 | **BLOCK** | Hard block — never executed | `send_message`, `make_payment`, `install_app`, `access_passwords`, `silent_control` |
 
 **Default**: Any tool not in the map → `STRONG_CONFIRM`.
@@ -356,6 +447,7 @@ Compound commands serialize as a single `steps` JSON array of `{tool, args}` obj
 |---|---|---|
 | `read_screen`, `system_control` | **Accessibility** | was wrongly `SYSTEM_ALERT_WINDOW` |
 | `ocr_screen` | **MediaProjection** | was wrongly `SYSTEM_ALERT_WINDOW`; camera not required for screenshots |
+| `describe_scene` | **MediaProjection** | captures the screen for OCR + scene description (vision path wired but INACTIVE) |
 | `open_camera` | `CAMERA` | |
 | `detect_objects` | `CAMERA` + **Accessibility** | |
 | `voice_recording` | `RECORD_AUDIO` | records a memo → offline STT → saved as a note |
@@ -418,7 +510,8 @@ All `AccessibilityNodeInfo` objects are recycled using `try/finally` patterns:
 
 App-managed model directories under app external files (`Android/data/com.unoone.agent/files/models/`):
 
-- `gemma-local` — Gemma 3n E4B `.litertlm`
+- `gemma-local` — Gemma 3n E4B `.litertlm` (default brain; manifest id `gemma-3n-e4b`, folder unchanged for migration continuity)
+- `gemma-4-e2b` — Gemma 4 E2B `.litertlm` (Experimental opt-in, 128K ctx; **not device-verified**)
 - `sherpa-asr-en` — offline ASR (English, streaming zipformer transducer int8)
 - `sherpa-asr-whisper` — offline ASR (multilingual whisper-tiny int8; shared by hi/bn/ta/te/kn/ml — the `language` field selects the language). Extracts to `sherpa-onnx-whisper-tiny/`
 - `sherpa-tts-en` — offline TTS (English, Coqui VITS + espeak-ng-data)
@@ -436,7 +529,7 @@ Installable from the **Model Status** screen or dropped in manually.
 Run from this directory (`android-app/UnoOneAgent`):
 
 ```bash
-# All unit tests (204 tests across 19 files)
+# All unit tests (289 tests across 29 files)
 ./gradlew test
 
 # Full debug APK build
@@ -449,7 +542,7 @@ Run from this directory (`android-app/UnoOneAgent`):
 ./gradlew compileDebugKotlin
 ```
 
-### Test files (16)
+### Test files (29 JVM + 2 instrumented)
 
 | File | Covers |
 |---|---|
@@ -464,11 +557,35 @@ Run from this directory (`android-app/UnoOneAgent`):
 | `app/.../skills/SkillSafetyRoutingTest.kt` | skill steps honor block/confirm |
 | `app/.../core/model/{Result,RiskAssessment}Test.kt` | core primitives |
 | `app/.../core/util/{CallbackMulticast,InputSanitizer}Test.kt` | multicast dedup, sanitization |
+| `core/.../model/CanonicalToolRegistryTest.kt` | exactly 26 canonical tools, unique names, unknown-tool rejection, required-arg validation |
 | `core/.../safety/ToolPermissionRegistryTest.kt` | full tool→requirement mapping |
+| `core/.../agent/ReActLoopControllerTest.kt` | ReAct engagement gate + decide (continue/stop, speak-response extraction, stall detection, max-steps, precedence) |
+| `core/.../agent/SafetyJudgePolicyTest.kt` | safety-judge escalate-only merge (unsafe→block, needs-confirm→confirm, never-lower) |
+| `core/.../agent/ToolHealthTrackerTest.kt` | rolling flaky-tool window + brain-reload threshold (self-heal contract) |
+| `core/.../agent/StreamingTextReducerTest.kt` | streaming delta reduction (cumulative vs delta snapshots, final-text convergence) |
+| `core/.../agent/SceneDescriptionBuilderTest.kt` | describe_scene OCR + context framing + honest "could not read" fallback |
+| `core/.../memory/OutcomeMemoryPolicyTest.kt` | outcome signature, token-overlap retrieval, failure-first ranking, rendering |
+| `core/.../eval/EvalScorerTest.kt` | tool+arg scoring, case-insensitive substring arg match, summary accuracy/toolAccuracy, empty-set safety, prompt-set invariants |
 | `localbrain/.../PromptBuilderTest.kt` | prompt assembly + tool names |
-| `modelmanager/.../ModelManifestTest.kt` | manifest parse, checksum, health, per-language `extractsTo`/`asset` fields |
+| `localbrain/.../ToolRegistryAgreementTest.kt` | Gemma 4 instruction advertises exactly the canonical 26; legacy Gemma 3n instruction unchanged (no `UnoOneToolSet` reflection — AAR bytecode is newer than the JDK 17 test JVM can load) |
+| `localbrain/.../RAGManagerTest.kt` | web-search RAG utility |
+| `modelmanager/.../ModelManifestTest.kt` | manifest parse, checksum, health, per-language `extractsTo`/`asset` fields, dual-profile `gemma-local`→`gemma-3n-e4b` migration invariant + `gemma-4-e2b` empty-integrity parse |
+| `modelmanager/.../ManifestSignatureTest.kt` | Ed25519 canonicalization + verify round-trip, tamper rejection, wrong-key rejection, signing key inactive by default |
 | `modelmanager/.../ModelInstallerTest.kt` | resume, corrupt-recovery, zip + tar.bz2 extraction, `extractsTo` archive health/skip, idempotent skip, empty-file guard, complete-`.part` commit |
 | `voice/.../VoiceLanguageMappingTest.kt` | en→transducer, Indic→whisper, per-language TTS folder mapping |
+
+### Device-time tests (instrumented, run on a physical device with a model pushed)
+
+```bash
+# Brain accuracy + calibration eval (prints a real EvalSummary; needs a .litertlm on device)
+./gradlew :app:connectedDebugAndroidTest --tests '*.GemmaPlannerAccuracyTest'
+./gradlew :app:connectedDebugAndroidTest --tests '*.BrainEvalHarnessTest'
+```
+
+| File | Covers |
+|---|---|
+| `app/.../localbrain/GemmaPlannerAccuracyTest.kt` | loads a pushed model, probes `open_chrome` / `create_note` tool calls (skips when no model present) |
+| `app/.../localbrain/BrainEvalHarnessTest.kt` | runs the full `EvalPromptSet` through `GemmaPlanner.plan`, scores via `EvalScorer`, prints profile + backend + per-case + accuracy (skips when no model present; does not gate on accuracy) |
 
 ---
 
@@ -478,7 +595,14 @@ These are honest, current limitations (not papered over):
 
 | Component | Status | Detail |
 |---|---|---|
-| Manifest model URLs + integrity fields | ✅ Done (7 languages) | `sherpa-asr-en`/`sherpa-asr-whisper`/`sherpa-tts-{en,hin,ben,tam,tel,kan,mal}`/`vad` filled with verified HF/GitHub URLs + stream-computed SHA-256/size; espeak-ng-data bundled as app asset; `gemma-local`/`punctuation` URLs only. ASR for hi/bn/ta/te/kn/ml uses shared multilingual whisper-tiny int8 (language selected at runtime); TTS uses per-language MMS VITS. Wake word (`vad`) stays English. |
+| Manifest model URLs + integrity fields | ✅ Done (7 languages) | `sherpa-asr-en`/`sherpa-asr-whisper`/`sherpa-tts-{en,hin,ben,tam,tel,kan,mal}`/`vad` filled with verified HF/GitHub URLs + stream-computed SHA-256/size; espeak-ng-data bundled as app asset; `gemma-3n-e4b`/`gemma-4-e2b`/`punctuation` URLs only (hashes intentionally empty — no fabrication). ASR for hi/bn/ta/te/kn/ml uses shared multilingual whisper-tiny int8 (language selected at runtime); TTS uses per-language MMS VITS. Wake word (`vad`) stays English. |
+| Gemma 4 E2B not device-verified | ⚠️ Experimental | The `gemma-4-e2b` profile loads through the same code path as Gemma 3n, but no physical device has confirmed it loads + performs a tool call. Selectable + self-testable; default stays Gemma 3n E4B. See [`DEVICE_VERIFICATION.md`](../../DEVICE_VERIFICATION.md) step 5b. |
+| ReAct loop / safety judge inference device-time-only | ⚠️ Control JVM-tested, inference not device-verified | `ReActLoopController` + `SafetyJudgePolicy` are JVM-tested. The LiteRT-LM multi-turn `planNext` and `judgeSafety` are device-time-only — no physical device has run the full loop or the judge. The judge's verdict quality depends entirely on the loaded model. |
+| Eval harness not run on device | ⚠️ Scoring JVM-tested, runner not run | `EvalScorer` + `EvalPromptSet` are JVM-tested. `BrainEvalHarnessTest` is instrumented and ready, but has not been run against a real model — **no Gemma accuracy numbers are claimed or committed**. Run it on a device to get real Gemma 3n vs Gemma 4 numbers. |
+| Streaming inference device-time-only | ⚠️ Reducer JVM-tested, Flow not device-verified | `StreamingTextReducer` is JVM-tested. `GemmaPlanner.planStreaming` collects the LiteRT-LM `sendMessageAsync` `Flow<Message>` — device-time-only, not yet run on a physical device. The synchronous `plan()` path remains the fallback, so command planning never depends on streaming working. |
+| Multimodal vision INACTIVE | ⚠️ Control JVM-tested, vision path wired-but-inactive | `describe_scene` works today via the JVM-tested `SceneDescriptionBuilder` (OCR + context). The LiteRT-LM `Content.ImageBytes` vision path is wired against the real AAR but gated by `VISION_MODEL_ENABLED = false` — the shipped Gemma models are text-only. No vision understanding is claimed until a vision-capable `.litertlm` ships and is device-verified. |
+| Outcome memory device-time-only | ⚠️ Policy JVM-tested, planner benefit not measured | `OutcomeMemoryPolicy` + Room plumbing are JVM-tested. Whether the hint actually changes Gemma's tool selection on-device is not yet measured (run the eval harness with memory on/off). |
+| Manifest signing INACTIVE | ⚠️ Verifier JVM-tested, signing key not set | `ManifestSignatureVerifier` + `ManifestSigner` are JVM-tested. `ManifestSigningKey.PUBLIC_KEY_BASE64` is intentionally blank → signatures are not enforced. No fabricated keys; activate by setting a public key after a device proves EdDSA at API 33+ (minSdk 28 falls back to accept + log). |
 | `ttsState` before `initTts` | ⚠️ Minor | State reported before init fully completes |
 
 **Fully resolved** (previously listed as gaps):

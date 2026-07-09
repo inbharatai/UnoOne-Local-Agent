@@ -11,6 +11,12 @@ import com.unoone.agent.core.model.onError
 import com.unoone.agent.core.model.ToolCall
 import com.unoone.agent.core.model.getOrNull
 import com.unoone.agent.core.model.compoundSteps
+import com.unoone.agent.core.agent.LoopDecision
+import com.unoone.agent.core.agent.ReActLoopController
+import com.unoone.agent.core.agent.SafetyJudgePolicy
+import com.unoone.agent.core.agent.StopReason
+import com.unoone.agent.core.agent.ToolHealthTracker
+import com.unoone.agent.core.agent.BrainHealthPolicy
 import com.unoone.agent.core.safety.PermissionRequirement
 import com.unoone.agent.core.util.CallbackMulticast
 import com.unoone.agent.core.util.ConfirmationListener
@@ -20,6 +26,7 @@ import com.unoone.agent.core.util.PermissionListener
 import com.unoone.agent.core.util.SystemPermissionListener
 import com.unoone.agent.execution.ActionExecutor
 import com.unoone.agent.parsing.CommandParser
+import com.unoone.agent.parsing.ParseOutcome
 import com.unoone.agent.safety.AuditLogger
 import com.unoone.agent.safety.SafetyPipeline
 import com.unoone.agent.skills.SkillsModule
@@ -44,6 +51,43 @@ import java.util.concurrent.atomic.AtomicReference
 
 /** Max wall-clock time to wait for a user confirmation before denying for safety (avoids a hung agent). */
 private const val CONFIRMATION_TIMEOUT_MS = 60_000L
+
+/**
+ * Enables the second-pass LLM safety judge on every validated tool step when the brain is loaded.
+ * The judge only escalates risk (never weakens it); this flag exists so the per-step latency cost of
+ * an extra on-device inference can be disabled without removing the feature. Default on: the whole
+ * point of the judge is to catch paraphrased harm the keyword filter misses.
+ */
+private const val SAFETY_JUDGE_ENABLED = true
+
+/**
+ * Enables diagnostics self-heal: (a) a tool is flagged flaky and surfaced after enough recent
+ * failures (ToolHealthTracker), and (b) the brain is auto-reloaded when it is found down after having
+ * been loaded (it closes itself on a 30s inference timeout and otherwise nothing reloads it until
+ * onResume). The control decisions are JVM-tested; the reload + spoken diagnostic are device-time.
+ */
+private const val SELF_HEAL_ENABLED = true
+
+/**
+ * Enables streaming first-turn LLM planning: when the LLM path is taken (no rule matched + a model
+ * is loaded), partial model text is surfaced to the timeline as it streams, instead of waiting for
+ * the full inference. On any streaming failure the orchestrator falls back to the synchronous
+ * [com.unoone.agent.parsing.CommandParser.parseAsyncWithProvenance] path, so the device-verified
+ * behavior is preserved. The pure delta reduction is JVM-tested; the LiteRT-LM `Flow` is
+ * device-time-only (see [com.unoone.agent.core.agent.StreamingTextReducer]).
+ */
+private const val STREAMING_INFERENCE_ENABLED = true
+
+/**
+ * Multimodal vision gate for `describe_scene`. False by default: the shipped Gemma 3n E4B / Gemma 4
+ * E2B `.litertlm` artifacts are text-only (no vision weights), so the LiteRT-LM
+ * `Content.ImageBytes` path ([com.unoone.agent.localbrain.GemmaPlanner.describeSceneWithVision]) is
+ * wired against the real AAR but INACTIVE. `describe_scene` instead uses the always-available OCR
+ * + foreground-context description ([com.unoone.agent.core.agent.SceneDescriptionBuilder]), which is
+ * JVM-tested and works today. Flip this true only after a vision-capable `.litertlm` artifact is
+ * loaded AND verified on the device matrix — never silently.
+ */
+private const val VISION_MODEL_ENABLED = false
 
 /**
  * Central orchestrator that coordinates command parsing, safety checks, and action execution.
@@ -108,6 +152,15 @@ class AgentOrchestrator(
         actionExecutor._setBlindAidActive = { active -> setBlindAidActive(active) }
         actionExecutor._speak = { text -> speakText(text) }
         actionExecutor._recordVoiceNote = { durationSeconds -> recordVoiceNote(durationSeconds) }
+        // Multimodal vision for describe_scene — INACTIVE until a vision-capable .litertlm artifact
+        // ships (the loaded Gemma 3n E4B / Gemma 4 E2B models are text-only). When VISION_MODEL_ENABLED
+        // is false the callback stays null and describe_scene uses the always-available OCR + context
+        // fallback ([com.unoone.agent.core.agent.SceneDescriptionBuilder]).
+        if (VISION_MODEL_ENABLED) {
+            actionExecutor._describeSceneWithVision = { imageBytes, aspect ->
+                commandParser.describeSceneWithVision(imageBytes, aspect)
+            }
+        }
     }
 
     /** Speaks text via the shared VoiceModule, used by the speak_response tool. */
@@ -167,6 +220,13 @@ class AgentOrchestrator(
     private val recentCommands = java.util.ArrayDeque<String>()
     private var lastToolResult = ""
 
+    // Self-heal state (diagnostics): rolling per-tool health + remembered brain load for auto-reload.
+    private val toolHealthTracker = ToolHealthTracker()
+    private val flaggedFlakyTools = mutableSetOf<String>()
+    private var lastLoadedPath: String? = null
+    private var lastLoadedSpec: com.unoone.agent.core.model.BrainModelSpec? = null
+    private var consecutiveInferenceFailures = 0
+
     /**
      * Injects the shared VoiceModule from the Application/ViewModel layer.
      * Called once at startup to eliminate the dual-instance problem.
@@ -176,11 +236,33 @@ class AgentOrchestrator(
     }
 
     /**
-     * Loads a Gemma 3n E4B `.litertlm` model into the command parser's LiteRT-LM brain.
+     * Loads a `.litertlm` brain model (default profile) into the command parser's LiteRT-LM engine.
      * Should be called from a coroutine (engine init is slow).
      */
     suspend fun loadLlmModel(modelPath: String): com.unoone.agent.core.model.Result<Unit> {
-        return commandParser.loadModel(modelPath)
+        val result = commandParser.loadModel(modelPath)
+        if (result is Result.Success) {
+            lastLoadedPath = modelPath
+            consecutiveInferenceFailures = 0
+        }
+        return result
+    }
+
+    /**
+     * Profile-aware load — loads [modelPath] as [spec] (Gemma 4 E2B or the legacy Gemma 3n E4B)
+     * through the same safe GemmaPlanner interface. Should be called from a coroutine.
+     */
+    suspend fun loadLlmModel(
+        modelPath: String,
+        spec: com.unoone.agent.core.model.BrainModelSpec
+    ): com.unoone.agent.core.model.Result<Unit> {
+        val result = commandParser.loadModel(modelPath, spec)
+        if (result is Result.Success) {
+            lastLoadedPath = modelPath
+            lastLoadedSpec = spec
+            consecutiveInferenceFailures = 0
+        }
+        return result
     }
 
     /**
@@ -191,8 +273,54 @@ class AgentOrchestrator(
         commandParser.unloadModel()
     }
 
+    /**
+     * Self-heal reload: the brain was loaded but is now down (it auto-closes on a 30s inference
+     * timeout, and nothing else reloads it until onResume). Reloads from the remembered path/spec,
+     * surfaces a timeline step, and audit-logs the outcome. Returns true on a successful reload.
+     * Device-time; the decision to call it is made by the caller (processCommand proactive check or
+     * the ReAct loop's inference-failure check via [BrainHealthPolicy]).
+     */
+    private suspend fun selfHealReloadBrain(): Boolean {
+        val path = lastLoadedPath ?: return false
+        addStep(AgentStatus.EXECUTING, "Recovering", "Brain dropped — reloading…")
+        val result = if (lastLoadedSpec != null) commandParser.loadModel(path, lastLoadedSpec!!)
+                     else commandParser.loadModel(path)
+        val ok = result is Result.Success
+        if (ok) {
+            consecutiveInferenceFailures = 0
+            AuditLogger.log("brain_reload", RiskLevel.DIRECT, "recovered", "self-heal")
+            addStep(AgentStatus.VERIFYING, "Recovered", "Brain reloaded.")
+        } else {
+            AuditLogger.log("brain_reload", RiskLevel.DIRECT, "recovery_failed", "self-heal")
+            addStep(AgentStatus.FAILED, "Recovery Failed", "Brain could not reload — rule-only mode.")
+        }
+        return ok
+    }
+
     /** True when the Gemma brain is loaded and available for LLM-backed planning. */
     fun isLlmLoaded(): Boolean = commandParser.isModelLoaded()
+
+    /** The profile currently loaded into the brain, or null when no model is loaded. */
+    fun loadedBrainProfile(): com.unoone.agent.core.model.BrainModelSpec? = commandParser.loadedProfile()
+
+    /** Actual runtime backend ("GPU"/"CPU") of the loaded brain, or "" if not loaded. */
+    fun loadedBrainBackend(): String = commandParser.activeBackend()
+
+    /** Last load error (empty on success) — surfaces device-compatibility status to the UI. */
+    fun lastBrainLoadError(): String = commandParser.lastLoadError()
+
+    /**
+     * Plans a single tool call for [command] **without executing it**. A read-only probe used by the
+     * Brain Self-Test to verify on-device that the loaded brain loads and produces an accepted tool
+     * call. Tries the rule-based fast path first, then the Gemma planner. No safety gate, no
+     * permissions, no execution — this never performs a phone action. Returns the proposed
+     * [com.unoone.agent.core.model.ToolCall] or an error when nothing could be planned.
+     */
+    suspend fun planToolCall(command: String): com.unoone.agent.core.model.Result<com.unoone.agent.core.model.ToolCall> {
+        val call = commandParser.parseAsync(command, emptyList(), "")
+        return if (call != null) com.unoone.agent.core.model.Result.Success(call)
+        else com.unoone.agent.core.model.Result.Error("No tool call proposed for: $command")
+    }
 
     fun setBlindAidActive(active: Boolean) {
         _isBlindAidActive.value = active
@@ -241,6 +369,13 @@ class AgentOrchestrator(
             addStep(AgentStatus.FAILED, "Empty Input", "No command detected after sanitization.")
             releaseProcessingLock()
             return
+        }
+
+        // Self-heal: if the brain was loaded but has dropped (it auto-closes on a 30s inference
+        // timeout and otherwise only reloads on onResume), reload it now so this command can use LLM
+        // planning instead of falling back to rule-only. Driven by remembered load state.
+        if (SELF_HEAL_ENABLED && lastLoadedPath != null && !isLlmLoaded()) {
+            selfHealReloadBrain()
         }
 
         val startTime = System.currentTimeMillis()
@@ -324,8 +459,39 @@ class AgentOrchestrator(
                 return
             }
 
-            // Step 2: Planning / Intent Extraction — delegate to CommandParser
-            val toolCall = commandParser.parseAsync(sanitizedText, contextCommands, lastToolResult)
+            // Step 2: Planning / Intent Extraction — delegate to CommandParser.
+            // We ask for provenance (rule-based vs LLM) because the ReAct loop may only continue a
+            // conversation that the LLM actually started — a rule match never opened one.
+            //
+            // Streaming: when enabled and the LLM path is taken, partial model text is surfaced to
+            // the timeline as it streams (an evolving "Thinking" step). Any streaming failure
+            // degrades gracefully to the synchronous provenance parse, so the device-verified
+            // planning behavior is preserved. A rule match never reaches the LLM, so rule-handled
+            // commands stream nothing — identical to before.
+            val streamingBuffer = StringBuilder()
+            var streamingStepAdded = false
+            val parseOutcome = try {
+                if (STREAMING_INFERENCE_ENABLED) {
+                    commandParser.parseStreamingWithProvenance(sanitizedText, contextCommands, lastToolResult) { delta ->
+                        // Add the "Thinking" step lazily on the first delta, so rule-handled commands
+                        // (which short-circuit before the LLM) get no streaming step at all.
+                        if (!streamingStepAdded) {
+                            addStep(AgentStatus.UNDERSTANDING, "Thinking", delta)
+                            streamingStepAdded = true
+                            streamingBuffer.append(delta)
+                        } else {
+                            streamingBuffer.append(delta)
+                            updateLastStepDetail(streamingBuffer.toString())
+                        }
+                    }
+                } else {
+                    commandParser.parseAsyncWithProvenance(sanitizedText, contextCommands, lastToolResult)
+                }
+            } catch (e: Exception) {
+                Logger.w("Orchestrator: streaming plan unavailable, falling back to sync plan (${e.message})")
+                commandParser.parseAsyncWithProvenance(sanitizedText, contextCommands, lastToolResult)
+            }
+            val toolCall = parseOutcome.toolCallOrNull()
             if (toolCall == null) {
                 addStep(AgentStatus.FAILED, "Accuracy Alert", "Intent not clear. Please rephrase.")
                 saveLog(log.copy(status = "failed", errorMessage = "Extraction failed"))
@@ -385,17 +551,40 @@ class AgentOrchestrator(
                     }
 
                     // Step 6: Feedback & Verification
-                    val responseText = if (result is Result.Success) result.data.toString() else "Action completed."
+                    val observation = if (result is Result.Success) result.data.toString() else "Action completed."
+
+                    // ReAct continuation: when the LLM (not the rule path) planned the first call AND
+                    // the tool's result is something the model can reason over, feed the observation
+                    // back and let the model propose the next step, bounded to MAX_STEPS. Every
+                    // follow-up re-enters runValidatedToolCall, so the full safety pipeline
+                    // (permissions → risk → block → confirm → execute → audit) applies to each
+                    // continuation exactly as it does to the first call — safety is never bypassed.
+                    // One-shot side-effect tools (open_app, create_note, …) skip the loop: the model
+                    // has nothing to react to, so continuing would only add latency.
+                    if (parseOutcome is ParseOutcome.Llm && ReActLoopController.shouldEngage(toolCall.tool)) {
+                        addStep(AgentStatus.VERIFYING, "Agent Reasoning", "Reviewing result; planning next step…")
+                        val finalSpoken = continueAgentLoop(
+                            firstCall = toolCall,
+                            firstObservation = observation,
+                            sanitizedText = sanitizedText,
+                            inputType = inputType,
+                            log = log,
+                            startTime = startTime
+                        )
+                        lastToolResult = finalSpoken
+                        releaseProcessingLock()
+                        return
+                    }
 
                     // speak_response already produced audio via ActionExecutor._speak; don't double-speak.
                     if (toolCall.tool == "speak_response") {
-                        addStep(AgentStatus.DONE, "Done", responseText)
+                        addStep(AgentStatus.DONE, "Done", observation)
                     } else if (inputType == InputType.VOICE) {
-                        addStep(AgentStatus.SPEAKING, "Response", responseText)
-                        voiceModule.speak(responseText)
+                        addStep(AgentStatus.SPEAKING, "Response", observation)
+                        voiceModule.speak(observation)
                             .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: Response speak failed: $msg") }
                     } else {
-                        addStep(AgentStatus.DONE, "Done", responseText)
+                        addStep(AgentStatus.DONE, "Done", observation)
                     }
 
                     saveLog(log.copy(
@@ -404,7 +593,7 @@ class AgentOrchestrator(
                         status = "success",
                         modelLatencyMs = System.currentTimeMillis() - startTime
                     ))
-                    lastToolResult = responseText
+                    lastToolResult = observation
                 }
             }
         } catch (e: Exception) {
@@ -518,6 +707,144 @@ class AgentOrchestrator(
     }
 
     /**
+     * Bounded ReAct continuation. After the first LLM-planned, observation-producing tool executes,
+     * feeds its result back to the model ([commandParser.planNext]) and lets the model propose the
+     * next step, up to [ReActLoopController.MAX_STEPS] total. Every proposed step re-enters
+     * [runValidatedToolCall], so the full safety pipeline (permissions → risk → block → confirm →
+     * execute → audit) applies to follow-ups identically — safety is never bypassed, and nothing
+     * the model proposes is executed directly (manual tool calling stays in force).
+     *
+     * The loop stops on: the model emitting `speak_response` (the natural end of a chain), no plan,
+     * a planner error (unknown tool / malformed args / inference failure — rejected, never run), a
+     * detected stall (the model re-proposes the identical call), the [ReActLoopController.MAX_STEPS]
+     * ceiling, a blocked/cancelled/needs-access step (surfaced for re-execution like the first
+     * call), or a step that fails to execute. Returns the final text spoken to the user.
+     */
+    private suspend fun continueAgentLoop(
+        firstCall: ToolCall,
+        firstObservation: String,
+        sanitizedText: String,
+        inputType: InputType,
+        log: ActionLogEntity,
+        startTime: Long
+    ): String {
+        var lastCall = firstCall
+        var lastObservation = firstObservation
+        var stepsExecuted = 1 // the first call already executed before the loop was entered.
+        val toolsUsed = mutableListOf(firstCall.tool)
+
+        while (true) {
+            val proposal = commandParser.planNext(lastCall.tool, lastObservation)
+            // Self-heal: an Error proposal means the brain became unreachable mid-loop (auto-closed on
+            // timeout). Track consecutive inference failures and, once BrainHealthPolicy fires, attempt
+            // a reload from the remembered path/spec — then stop this loop rather than spinning against
+            // an unloaded model. A Success resets the streak.
+            if (proposal is Result.Error) {
+                consecutiveInferenceFailures++
+                if (BrainHealthPolicy.shouldReload(consecutiveInferenceFailures) && !isLlmLoaded()) {
+                    selfHealReloadBrain()
+                    saveLog(log.copy(
+                        selectedTool = toolsUsed.joinToString("→"),
+                        status = "failed",
+                        errorMessage = "agent brain reloaded mid-loop after inference failure"
+                    ))
+                    return lastObservation
+                }
+            } else {
+                consecutiveInferenceFailures = 0
+            }
+            val decision = ReActLoopController.decide(stepsExecuted, lastCall, proposal)
+            when (decision) {
+                is LoopDecision.Continue -> {
+                    addStep(AgentStatus.TOOL_SELECTED, "Agent Plan", "Follow-up: ${decision.call.tool}")
+                    toolsUsed.add(decision.call.tool)
+                    val outcome = runValidatedToolCall(decision.call, sanitizedText)
+                    when (outcome) {
+                        is StepOutcome.NeedsSystemAccess -> {
+                            addStep(AgentStatus.FAILED, "Agent Paused", "Needs system access for ${decision.call.tool}")
+                            onSystemPermissionRequired?.invoke(outcome.missing)
+                            onSystemPermissionRequiredMulticast.invokeAll { it(outcome.missing) }
+                            saveLog(log.copy(selectedTool = toolsUsed.joinToString("→"), status = "blocked"))
+                            pendingCommand.set(sanitizedText)
+                            pendingInputType.set(inputType)
+                            return lastObservation
+                        }
+                        is StepOutcome.NeedsRuntimeAccess -> {
+                            addStep(AgentStatus.FAILED, "Agent Paused", "Needs runtime permissions for ${decision.call.tool}")
+                            pendingCommand.set(sanitizedText)
+                            pendingInputType.set(inputType)
+                            onPermissionRequired?.invoke(outcome.missing)
+                            onPermissionRequiredMulticast.invokeAll { it(outcome.missing) }
+                            saveLog(log.copy(selectedTool = toolsUsed.joinToString("→"), status = "blocked"))
+                            return lastObservation
+                        }
+                        is StepOutcome.Blocked -> {
+                            addStep(AgentStatus.FAILED, "Security Block", "Agent step '${decision.call.tool}' blocked for security.")
+                            saveLog(log.copy(selectedTool = toolsUsed.joinToString("→"), status = "blocked"))
+                            return lastObservation
+                        }
+                        is StepOutcome.Cancelled -> {
+                            addStep(AgentStatus.FAILED, "Cancelled", "User declined agent confirmation")
+                            saveLog(log.copy(selectedTool = toolsUsed.joinToString("→"), status = "cancelled"))
+                            return lastObservation
+                        }
+                        is StepOutcome.Executed -> {
+                            val execResult = outcome.result
+                            if (execResult is Result.Error) {
+                                addStep(AgentStatus.FAILED, "Execution Error", execResult.message)
+                                saveLog(log.copy(
+                                    selectedTool = toolsUsed.joinToString("→"),
+                                    status = "failed",
+                                    errorMessage = execResult.message
+                                ))
+                                return lastObservation
+                            }
+                            // Success → observe and let the controller decide whether to continue.
+                            lastObservation = if (execResult is Result.Success) execResult.data.toString() else "Action completed."
+                            lastCall = decision.call
+                            stepsExecuted++
+                        }
+                    }
+                }
+                is LoopDecision.Stop -> {
+                    val spoken = when (decision.reason) {
+                        StopReason.SPOKE_RESPONSE -> decision.spokenText ?: lastObservation
+                        StopReason.PLANNER_ERROR -> {
+                            addStep(AgentStatus.FAILED, "Agent Halted", decision.plannerErrorText ?: "planner error")
+                            lastObservation
+                        }
+                        StopReason.NO_PLAN -> {
+                            addStep(AgentStatus.DONE, "Agent Halted", "No further plan.")
+                            lastObservation
+                        }
+                        StopReason.STALL_DETECTED -> {
+                            addStep(AgentStatus.DONE, "Agent Halted", "No new action proposed.")
+                            lastObservation
+                        }
+                        StopReason.MAX_STEPS -> {
+                            addStep(AgentStatus.DONE, "Agent Halted", "Reached step limit.")
+                            lastObservation
+                        }
+                    }
+                    if (inputType == InputType.VOICE) {
+                        addStep(AgentStatus.SPEAKING, "Response", spoken)
+                        voiceModule.speak(spoken)
+                            .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: ReAct speak failed: $msg") }
+                    } else {
+                        addStep(AgentStatus.DONE, "Done", spoken)
+                    }
+                    saveLog(log.copy(
+                        selectedTool = toolsUsed.joinToString("→"),
+                        status = "success",
+                        modelLatencyMs = System.currentTimeMillis() - startTime
+                    ))
+                    return spoken
+                }
+            }
+        }
+    }
+
+    /**
      * Outcome of running one tool call through the full safety pipeline. Shared by the normal
      * command path and the skill-step path so neither can bypass safety.
      */
@@ -560,7 +887,26 @@ class AgentOrchestrator(
         }
 
         // 3. Risk classification (tool risk + input risk, max wins)
-        val riskLevel = safetyPipeline.classifyRisk(toolCall.tool, sanitizedText)
+        var riskLevel = safetyPipeline.classifyRisk(toolCall.tool, sanitizedText)
+
+        // 3b. LLM safety judge — a second on-device pass that catches paraphrased harm the keyword
+        // filter misses (e.g. "wipe everything" → delete_all_notes). Only ever ESCALATES the tier
+        // (see [SafetyJudgePolicy.escalate]); it can never weaken the keyword result. Skipped when
+        // the brain is not loaded (offline / no model) or the judge conversation is unavailable —
+        // the keyword tier then stands unchanged, so this never creates a safety hole. Gated by a
+        // flag so the per-step latency cost of an extra inference can be turned off if needed.
+        if (SAFETY_JUDGE_ENABLED && commandParser.isModelLoaded()) {
+            val verdict = commandParser.judgeSafety(toolCall.tool, toolCall.args.toString(), sanitizedText)
+            if (verdict is Result.Success) {
+                val judged = SafetyJudgePolicy.escalate(riskLevel, verdict.data)
+                if (judged != riskLevel) {
+                    addStep(AgentStatus.SAFETY_CHECK, "Safety Judge", "Escalated ${riskLevel.name} → ${judged.name}")
+                    AuditLogger.log(toolCall.tool, judged, "escalated", sanitizedText)
+                    riskLevel = judged
+                }
+            }
+        }
+
         addStep(AgentStatus.SAFETY_CHECK, "Safety Filter", "Risk: ${riskLevel.name}")
 
         if (safetyPipeline.isBlocked(riskLevel)) {
@@ -587,6 +933,30 @@ class AgentOrchestrator(
         com.unoone.agent.observability.Diagnostics.recordToolExecution(
             toolCall.tool, System.currentTimeMillis() - execStart, result is Result.Success
         )
+        // Outcome-learned memory: record this attempt so future similar requests can avoid a known-bad
+        // tool and lean on a known-good one. Non-fatal — storeOutcome swallows Room failures so memory
+        // can never break a command.
+        try {
+            memoryModule.storeOutcome(
+                command = sanitizedText,
+                tool = toolCall.tool,
+                success = result is Result.Success,
+                errorMessage = (result as? Result.Error)?.message
+            )
+        } catch (_: Exception) { }
+        // Self-heal: track per-tool health and surface a flaky tool once (e.g. an action that
+        // consistently fails on this device) so the user knows it is unreliable. Pure decision in
+        // ToolHealthTracker; this is the device-time wiring + audit record.
+        if (SELF_HEAL_ENABLED) {
+            toolHealthTracker.record(toolCall.tool, result is Result.Success)
+            if (toolHealthTracker.isFlaky(toolCall.tool) && flaggedFlakyTools.add(toolCall.tool)) {
+                addStep(AgentStatus.SAFETY_CHECK, "Flaky Tool",
+                    "${toolCall.tool} has failed repeatedly — marked unreliable.")
+                AuditLogger.log(toolCall.tool, RiskLevel.CONFIRM, "tool_marked_flaky", sanitizedText)
+            } else if (result is Result.Success) {
+                flaggedFlakyTools.remove(toolCall.tool) // recovered: clear the flag
+            }
+        }
         if (result is Result.Error) {
             addStep(AgentStatus.FAILED, "Execution Error", result.message)
         } else {
@@ -644,6 +1014,22 @@ class AgentOrchestrator(
             _timelineSteps.value = _timelineSteps.value + TimelineStep(status, label, detail)
         } catch (e: Exception) {
             Logger.e("Orchestrator: Failed to add timeline step", e)
+        }
+    }
+
+    /**
+     * Updates the most recent timeline step's detail to [detail] (used to evolve the single
+     * "Thinking" step as streamed LLM text arrives, instead of appending a new step per token).
+     * If the timeline is empty, this is a no-op. Best-effort: never throws into the command path.
+     */
+    private fun updateLastStepDetail(detail: String) {
+        try {
+            val steps = _timelineSteps.value
+            if (steps.isEmpty()) return
+            val updated = steps.dropLast(1) + steps.last().copy(detail = detail)
+            _timelineSteps.value = updated
+        } catch (e: Exception) {
+            Logger.w("Orchestrator: updateLastStepDetail failed (non-fatal): ${e.message}")
         }
     }
 

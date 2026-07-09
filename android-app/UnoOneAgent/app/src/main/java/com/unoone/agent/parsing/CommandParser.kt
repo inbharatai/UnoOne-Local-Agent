@@ -2,6 +2,8 @@ package com.unoone.agent.parsing
 
 import com.unoone.agent.accessibilitycontrol.AccessibilityControl
 import com.unoone.agent.core.interfaces.ICommandParser
+import com.unoone.agent.core.agent.SafetyVerdict
+import com.unoone.agent.core.model.BrainModelSpec
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
 import com.unoone.agent.core.util.InputSanitizer
@@ -43,23 +45,87 @@ class CommandParser(
 
     /**
      * Asynchronous parse path. Tries rules first, then falls back to Gemma when loaded, passing
-     * the recent-commands / last-result context to enrich the snapshot.
+     * the recent-commands / last-result context to enrich the snapshot. Returns a plain [ToolCall]?
+     * with no provenance — callers that need to know whether the LLM produced the call (the ReAct
+     * loop) must use [parseAsyncWithProvenance].
      */
     override suspend fun parseAsync(
         text: String,
         recentCommands: List<String>,
         lastToolResult: String
-    ): ToolCall? {
+    ): ToolCall? = parseAsyncWithProvenance(text, recentCommands, lastToolResult).toolCallOrNull()
+
+    /**
+     * Same parse path as [parseAsync] but returns the **origin** of the call too. The ReAct loop
+     * only engages when the call came from the LLM ([ParseOutcome.Llm]); a rule-based match
+     * ([ParseOutcome.Rule]) never started a conversation, so it cannot be continued with an
+     * observation.
+     */
+    suspend fun parseAsyncWithProvenance(
+        text: String,
+        recentCommands: List<String>,
+        lastToolResult: String
+    ): ParseOutcome {
         val ruleResult = RuleBasedParser.parse(text)
-        if (ruleResult != null) return ruleResult
+        if (ruleResult != null) return ParseOutcome.Rule(ruleResult)
 
         if (localBrain.isModelLoaded()) {
             val snapshot = buildContextSnapshot(text, recentCommands, lastToolResult)
             val inferenceResult = localBrain.runInference(text, snapshot)
-            if (inferenceResult is Result.Success) return inferenceResult.data
+            if (inferenceResult is Result.Success) return ParseOutcome.Llm(inferenceResult.data)
         }
-        return null
+        return ParseOutcome.None
     }
+
+    /**
+     * Same parse path as [parseAsyncWithProvenance] (rules first, then the loaded LLM) but, when the
+     * LLM path is taken, streams the model's partial text via [onDelta] as it is generated. A rule
+     * match short-circuits before the LLM is reached, so no deltas are emitted for rule-handled
+     * commands. The returned [ParseOutcome] is identical to [parseAsyncWithProvenance].
+     *
+     * Streaming is device-time-only; the caller wraps this in a try/catch fallback to
+     * [parseAsyncWithProvenance] so a streaming failure degrades gracefully to the synchronous path.
+     */
+    suspend fun parseStreamingWithProvenance(
+        text: String,
+        recentCommands: List<String>,
+        lastToolResult: String,
+        onDelta: (String) -> Unit
+    ): ParseOutcome {
+        val ruleResult = RuleBasedParser.parse(text)
+        if (ruleResult != null) return ParseOutcome.Rule(ruleResult)
+
+        if (localBrain.isModelLoaded()) {
+            val snapshot = buildContextSnapshot(text, recentCommands, lastToolResult)
+            val inferenceResult = localBrain.runInferenceStreaming(text, snapshot, onDelta)
+            if (inferenceResult is Result.Success) return ParseOutcome.Llm(inferenceResult.data)
+        }
+        return ParseOutcome.None
+    }
+
+    /**
+     * ReAct "Observe" step for the orchestrator: feeds the [observation] (result of [prevTool])
+     * back into the live LLM conversation and returns the model's next proposed, validated tool
+     * call. Only valid when a model is loaded; the orchestrator calls this only inside the bounded
+     * loop after an LLM-planned call. Device-time verified.
+     */
+    suspend fun planNext(prevTool: String, observation: String): Result<ToolCall> =
+        localBrain.planNext(prevTool, observation)
+
+    /**
+     * Second on-device safety-judge pass over a proposed action. Returns a [SafetyVerdict] the
+     * orchestrator merges (escalate-only) with the keyword-classified risk. Device-time verified.
+     */
+    suspend fun judgeSafety(toolName: String, argsJson: String, inputText: String): Result<SafetyVerdict> =
+        localBrain.judgeSafety(toolName, argsJson, inputText)
+
+    /**
+     * Multimodal vision description of a screenshot, for the `describe_scene` tool. INACTIVE with
+     * the shipped text-only models; the orchestrator only calls this when `VISION_MODEL_ENABLED`.
+     * On any Error the executor falls back to the OCR + context description. Device-time-only.
+     */
+    suspend fun describeSceneWithVision(imageBytes: ByteArray, aspect: String): Result<String> =
+        localBrain.describeSceneWithVision(imageBytes, aspect)
 
     override fun sanitizeAndParse(rawInput: String): ToolCall? {
         val sanitized = InputSanitizer.sanitize(rawInput)
@@ -69,10 +135,26 @@ class CommandParser(
 
     override fun isModelLoaded(): Boolean = localBrain.isModelLoaded()
 
+    /** The profile currently loaded into the brain, or null when no model is loaded. */
+    fun loadedProfile(): BrainModelSpec? = localBrain.loadedProfile()
+
+    /** Actual runtime backend ("GPU"/"CPU") of the loaded brain, or "" if not loaded. */
+    fun activeBackend(): String = localBrain.activeBackend()
+
+    /** Last load error (empty on success) — surfaces device-compatibility status to the UI. */
+    fun lastLoadError(): String = localBrain.lastLoadError()
+
     /**
      * Exposed so callers (e.g., tests) can load a model into this parser's brain.
      */
     suspend fun loadModel(modelPath: String): Result<Unit> = localBrain.loadModel(modelPath)
+
+    /**
+     * Profile-aware load — loads [modelPath] as [spec] (Gemma 4 E2B or Gemma 3n E4B) through the
+     * same safe [GemmaPlanner] interface.
+     */
+    suspend fun loadModel(modelPath: String, spec: BrainModelSpec): Result<Unit> =
+        localBrain.loadModel(modelPath, spec)
 
     /**
      * Unloads the Gemma brain, freeing native memory. Used by [com.unoone.agent.AgentOrchestrator]

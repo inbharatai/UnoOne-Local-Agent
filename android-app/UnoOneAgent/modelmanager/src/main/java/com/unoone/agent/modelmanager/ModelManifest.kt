@@ -66,7 +66,17 @@ data class ModelDescriptor(
 @Serializable
 data class ModelManifest(
     val manifestVersion: Int,
-    val models: List<ModelDescriptor>
+    val models: List<ModelDescriptor>,
+    /**
+     * Optional Ed25519 signature over the canonical manifest bytes (the manifest re-serialized with
+     * this field blanked). When present AND [com.unoone.agent.modelmanager.ManifestSigningKey] has a
+     * compiled-in public key, [ModelManifestLoader] verifies it at load and rejects a tampered
+     * manifest. When blank (the default / today), the manifest is accepted as before — SHA-256
+     * per-file integrity only. No signature is fabricated here; the field ships empty until the
+     * publisher signs a manifest (see [com.unoone.agent.modelmanager.ManifestSigner]).
+     */
+    val manifestSignature: String = "",
+    val signatureAlgorithm: String = "Ed25519"
 ) {
     fun find(id: String): ModelDescriptor? = models.firstOrNull { it.id == id }
     fun findByFolder(folder: String): ModelDescriptor? = models.firstOrNull { it.folder == folder }

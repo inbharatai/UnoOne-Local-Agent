@@ -17,10 +17,16 @@ class ModelManifestTest {
           "_comment": "ignored",
           "models": [
             {
-              "id": "gemma-local", "folder": "gemma-local", "type": "llm",
+              "id": "gemma-3n-e4b", "folder": "gemma-local", "type": "llm",
               "version": "gemma-3n-e4b-litertlm", "minRamMb": 4096, "backend": "any",
               "defaultLanguage": "en",
-              "files": [ { "name": "gemma-3n-e4b.litertlm", "url": "https://example.org/g.litertlm", "sha256": "", "sizeBytes": 0 } ]
+              "files": [ { "name": "gemma-3n-e4b.litertlm", "url": "https://example.org/g3n.litertlm", "sha256": "", "sizeBytes": 0 } ]
+            },
+            {
+              "id": "gemma-4-e2b", "folder": "gemma-4-e2b", "type": "llm",
+              "version": "gemma-4-e2b-it-litertlm", "minRamMb": 3072, "backend": "any",
+              "defaultLanguage": "en",
+              "files": [ { "name": "gemma-4-e2b-it.litertlm", "url": "https://example.org/g4.litertlm", "sha256": "", "sizeBytes": 0 } ]
             },
             {
               "id": "sherpa-tts", "folder": "sherpa-tts", "type": "tts",
@@ -38,14 +44,23 @@ class ModelManifestTest {
     fun parsesAllModelsAndFiles() {
         val manifest = loader.parse(sample)
         assertEquals(1, manifest.manifestVersion)
-        assertEquals(2, manifest.models.size)
+        assertEquals(3, manifest.models.size)
 
-        val llm = manifest.find("gemma-local")
-        assertNotNull(llm)
-        assertEquals(ModelType.llm, llm!!.type)
-        assertEquals(ModelBackend.any, llm.backend)
-        assertEquals(1, llm.files.size)
-        assertTrue(llm.files.first().sha256.isEmpty())
+        val llm3n = manifest.find("gemma-3n-e4b")
+        assertNotNull(llm3n)
+        assertEquals(ModelType.llm, llm3n!!.type)
+        assertEquals(ModelBackend.any, llm3n.backend)
+        assertEquals(1, llm3n.files.size)
+        assertTrue(llm3n.files.first().sha256.isEmpty())
+        // Migration invariant: the Gemma 3n id migrated to "gemma-3n-e4b" but its on-disk folder
+        // stays "gemma-local" so existing installs are not orphaned.
+        assertEquals("gemma-local", llm3n.folder)
+
+        val llm4 = manifest.find("gemma-4-e2b")
+        assertNotNull(llm4)
+        assertEquals(ModelType.llm, llm4!!.type)
+        assertEquals("gemma-4-e2b", llm4.folder)
+        assertTrue(llm4.files.first().sha256.isEmpty())
 
         val tts = manifest.find("sherpa-tts")
         assertNotNull(tts)
@@ -57,7 +72,9 @@ class ModelManifestTest {
     @Test
     fun findByFolderWorks() {
         val manifest = loader.parse(sample)
-        assertEquals("gemma-local", manifest.findByFolder("gemma-local")!!.id)
+        // The legacy Gemma 3n profile resolves by its (unchanged) folder "gemma-local" to the new id.
+        assertEquals("gemma-3n-e4b", manifest.findByFolder("gemma-local")!!.id)
+        assertEquals("gemma-4-e2b", manifest.findByFolder("gemma-4-e2b")!!.id)
         assertNull(manifest.findByFolder("does-not-exist"))
     }
 
@@ -65,7 +82,7 @@ class ModelManifestTest {
     fun unknownKeysAreIgnored() {
         // "_comment" above must not break parsing; if it did, parse() would throw and the test fail.
         val manifest = loader.parse(sample)
-        assertEquals(2, manifest.models.size)
+        assertEquals(3, manifest.models.size)
     }
 
     @Test
