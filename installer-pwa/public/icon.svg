@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">UnoOne</title>
+  <desc id="desc">UnoOne U1 monogram</desc>
+  <rect width="512" height="512" rx="128" fill="#08111f"/>
+  <rect x="48" y="48" width="416" height="416" rx="108" fill="#101c2e" stroke="#79e8c4" stroke-width="18"/>
+  <path d="M145 154v119c0 64 37 101 111 101s111-37 111-101V154h-60v116c0 36-16 52-51 52s-51-16-51-52V154z" fill="#79e8c4"/>
+  <path d="M329 194h39v158h-55V249h-34v-38c22-2 38-8 50-17z" fill="#e8eef7"/>
+</svg>
