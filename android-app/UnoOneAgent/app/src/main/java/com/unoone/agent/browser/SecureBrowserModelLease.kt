@@ -76,7 +76,7 @@ class SecureBrowserModelLease(
                         )
                     )
                     is Result.Error -> kotlin.Result.failure(
-                        result.throwable ?: IllegalStateException(result.message)
+                        result.cause ?: IllegalStateException(result.message)
                     )
                 }
             }
