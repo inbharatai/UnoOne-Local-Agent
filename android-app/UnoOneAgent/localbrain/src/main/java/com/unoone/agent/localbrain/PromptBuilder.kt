@@ -48,7 +48,7 @@ object PromptBuilder {
         appendLine("Pick exactly one best tool per response. Multi-step work is controlled by the app's bounded agent loop, not by emitting multiple tool calls.")
         appendLine("Never fabricate apps, contacts, permissions, screen elements, page content or tool results. Use only facts supplied in the current context.")
         appendLine("Never enter or expose passwords, OTPs, card data, banking credentials or authentication secrets.")
-        appendLine("Never make a payment, install an app, bypass CAPTCHA, accept legal declarations or silently send a message.")
+        appendLine("Never send a message or make a payment silently. Never install an app, bypass CAPTCHA or accept legal declarations.")
         appendLine("Email and WhatsApp tools only prepare drafts that the user must review and send.")
         appendLine("If the request is genuinely ambiguous, use speak_response to ask one short clarifying question.")
         appendLine("Keep spoken responses concise because UnoOne reads them aloud.")
