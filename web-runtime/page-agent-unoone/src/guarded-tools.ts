@@ -1,4 +1,4 @@
-import { tool, type PageAgentTool } from 'page-agent'
+import { tool, type PageAgentTool } from '@page-agent/core'
 import { z } from 'zod'
 
 import { sendNative } from './native-bridge'
@@ -45,10 +45,6 @@ function rejected(auth: AuthorizationResponse): string {
     : `⛔ Action blocked: ${auth.message}`
 }
 
-/**
- * PageAgent custom tools that override the built-ins with native authorization checks.
- * Generated JavaScript execution is intentionally not provided.
- */
 export function createGuardedTools(): Record<string, PageAgentTool | null> {
   return {
     execute_javascript: null,
