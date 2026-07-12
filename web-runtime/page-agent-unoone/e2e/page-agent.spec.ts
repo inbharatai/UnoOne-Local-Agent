@@ -24,6 +24,7 @@ async function installMockNativeBridge(
     message: string
   }
 ): Promise<void> {
+  await page.exposeFunction('__unooneAuthorizeNode', authorize)
   await page.addInitScript(
     ({ testOrigin, plannedDecisions }) => {
       const session = Object.freeze({
@@ -41,7 +42,7 @@ async function installMockNativeBridge(
       let decisionIndex = 0
       const bridge = {
         onmessage: null as ((event: MessageEvent<string>) => void) | null,
-        postMessage(raw: string) {
+        async postMessage(raw: string): Promise<void> {
           const request = JSON.parse(raw) as {
             requestId: string
             type: string
@@ -59,10 +60,10 @@ async function installMockNativeBridge(
               payload = JSON.stringify(decision)
             } else if (request.type === 'AUTHORIZE_ACTION') {
               const actionRequest = JSON.parse(request.payload) as { actionName: string; summary: string }
-              const handler = (window as any).__authorizeForTest as (
+              const handler = (window as any).__unooneAuthorizeNode as (
                 value: { actionName: string; summary: string }
-              ) => unknown
-              payload = JSON.stringify(handler(actionRequest))
+              ) => Promise<unknown>
+              payload = JSON.stringify(await handler(actionRequest))
             } else if (request.type === 'ASK_USER') {
               payload = 'test answer'
             } else if (request.type === 'USER_TAKEOVER') {
@@ -98,12 +99,6 @@ async function installMockNativeBridge(
     },
     { testOrigin: origin, plannedDecisions: decisions }
   )
-
-  await page.exposeFunction('__unooneAuthorizeNode', authorize)
-  await page.addInitScript(() => {
-    ;(window as any).__authorizeForTest = (request: { actionName: string; summary: string }) =>
-      (window as any).__unooneAuthorizeNode(request)
-  })
 }
 
 async function loadFixture(page: Page, html: string): Promise<void> {
