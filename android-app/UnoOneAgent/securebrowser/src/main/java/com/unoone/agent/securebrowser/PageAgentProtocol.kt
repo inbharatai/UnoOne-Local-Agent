@@ -94,5 +94,7 @@ data class BrowserAuditEvent(
     val actionName: String,
     val actionClass: BrowserActionClass,
     val summary: String,
+    val decision: String,
+    val message: String,
     val timestampEpochMs: Long
 )
