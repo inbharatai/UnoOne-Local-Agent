@@ -4,6 +4,7 @@ import com.unoone.agent.accessibilitycontrol.AccessibilityControl
 import com.unoone.agent.core.interfaces.ICommandParser
 import com.unoone.agent.core.agent.SafetyVerdict
 import com.unoone.agent.core.model.BrainModelSpec
+import com.unoone.agent.core.model.ExclusiveBrainLeaseState
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
 import com.unoone.agent.core.util.InputSanitizer
@@ -22,10 +23,11 @@ import kotlinx.coroutines.withContext
  * Parses user input into structured [ToolCall]s.
  *
  * - [RuleBasedParser] is always tried first: it is fast, deterministic, and works offline.
- * - If no rule matches and a Gemma model is loaded, the input + an enriched context snapshot are
- *   sent to [LocalBrain] via LiteRT-LM for planning. The snapshot pulls in recent notes, active
- *   skills, an OCR fallback, plus the recent-commands / last-result ring buffer the orchestrator
- *   maintains, so the model can disambiguate follow-up commands.
+ * - If no rule matches and Gemma 4 is loaded by the phone-agent mode, the input and enriched context
+ *   are sent to [LocalBrain].
+ * - When Gemma is exclusively leased to Secure Browser, rules remain available but phone-agent LLM
+ *   planning stays intentionally unavailable. [isModelLoaded] still reports occupied so the
+ *   orchestrator does not misclassify the lease as a crash and self-heal a second model copy.
  */
 class CommandParser(
     private val localBrain: LocalBrain = LocalBrain(),
@@ -36,31 +38,14 @@ class CommandParser(
     private val skillDao: SkillDao? = null
 ) : ICommandParser {
 
-    /**
-     * Synchronous parse path. Only uses [RuleBasedParser]; it never blocks on LLM inference.
-     */
-    override fun parse(text: String): ToolCall? {
-        return RuleBasedParser.parse(text)
-    }
+    override fun parse(text: String): ToolCall? = RuleBasedParser.parse(text)
 
-    /**
-     * Asynchronous parse path. Tries rules first, then falls back to Gemma when loaded, passing
-     * the recent-commands / last-result context to enrich the snapshot. Returns a plain [ToolCall]?
-     * with no provenance — callers that need to know whether the LLM produced the call (the ReAct
-     * loop) must use [parseAsyncWithProvenance].
-     */
     override suspend fun parseAsync(
         text: String,
         recentCommands: List<String>,
         lastToolResult: String
     ): ToolCall? = parseAsyncWithProvenance(text, recentCommands, lastToolResult).toolCallOrNull()
 
-    /**
-     * Same parse path as [parseAsync] but returns the **origin** of the call too. The ReAct loop
-     * only engages when the call came from the LLM ([ParseOutcome.Llm]); a rule-based match
-     * ([ParseOutcome.Rule]) never started a conversation, so it cannot be continued with an
-     * observation.
-     */
     suspend fun parseAsyncWithProvenance(
         text: String,
         recentCommands: List<String>,
@@ -77,15 +62,6 @@ class CommandParser(
         return ParseOutcome.None
     }
 
-    /**
-     * Same parse path as [parseAsyncWithProvenance] (rules first, then the loaded LLM) but, when the
-     * LLM path is taken, streams the model's partial text via [onDelta] as it is generated. A rule
-     * match short-circuits before the LLM is reached, so no deltas are emitted for rule-handled
-     * commands. The returned [ParseOutcome] is identical to [parseAsyncWithProvenance].
-     *
-     * Streaming is device-time-only; the caller wraps this in a try/catch fallback to
-     * [parseAsyncWithProvenance] so a streaming failure degrades gracefully to the synchronous path.
-     */
     suspend fun parseStreamingWithProvenance(
         text: String,
         recentCommands: List<String>,
@@ -103,27 +79,12 @@ class CommandParser(
         return ParseOutcome.None
     }
 
-    /**
-     * ReAct "Observe" step for the orchestrator: feeds the [observation] (result of [prevTool])
-     * back into the live LLM conversation and returns the model's next proposed, validated tool
-     * call. Only valid when a model is loaded; the orchestrator calls this only inside the bounded
-     * loop after an LLM-planned call. Device-time verified.
-     */
     suspend fun planNext(prevTool: String, observation: String): Result<ToolCall> =
         localBrain.planNext(prevTool, observation)
 
-    /**
-     * Second on-device safety-judge pass over a proposed action. Returns a [SafetyVerdict] the
-     * orchestrator merges (escalate-only) with the keyword-classified risk. Device-time verified.
-     */
     suspend fun judgeSafety(toolName: String, argsJson: String, inputText: String): Result<SafetyVerdict> =
         localBrain.judgeSafety(toolName, argsJson, inputText)
 
-    /**
-     * Multimodal vision description of a screenshot, for the `describe_scene` tool. INACTIVE with
-     * the shipped text-only models; the orchestrator only calls this when `VISION_MODEL_ENABLED`.
-     * On any Error the executor falls back to the OCR + context description. Device-time-only.
-     */
     suspend fun describeSceneWithVision(imageBytes: ByteArray, aspect: String): Result<String> =
         localBrain.describeSceneWithVision(imageBytes, aspect)
 
@@ -133,43 +94,29 @@ class CommandParser(
         return parse(sanitized)
     }
 
-    override fun isModelLoaded(): Boolean = localBrain.isModelLoaded()
+    /**
+     * Reports model availability to orchestration and lifecycle code.
+     *
+     * An external lease counts as intentionally occupied, preventing the normal self-heal path from
+     * loading another Gemma engine. Actual phone-agent inference methods still check
+     * [localBrain.isModelLoaded] directly and therefore never call the browser-owned conversation.
+     */
+    override fun isModelLoaded(): Boolean =
+        localBrain.isModelLoaded() || ExclusiveBrainLeaseState.isActive()
 
-    /** The profile currently loaded into the brain, or null when no model is loaded. */
     fun loadedProfile(): BrainModelSpec? = localBrain.loadedProfile()
 
-    /** Actual runtime backend ("GPU"/"CPU") of the loaded brain, or "" if not loaded. */
     fun activeBackend(): String = localBrain.activeBackend()
 
-    /** Last load error (empty on success) — surfaces device-compatibility status to the UI. */
     fun lastLoadError(): String = localBrain.lastLoadError()
 
-    /**
-     * Exposed so callers (e.g., tests) can load a model into this parser's brain.
-     */
     suspend fun loadModel(modelPath: String): Result<Unit> = localBrain.loadModel(modelPath)
 
-    /**
-     * Profile-aware load — loads [modelPath] as [spec] (Gemma 4 E2B or Gemma 3n E4B) through the
-     * same safe [GemmaPlanner] interface.
-     */
     suspend fun loadModel(modelPath: String, spec: BrainModelSpec): Result<Unit> =
         localBrain.loadModel(modelPath, spec)
 
-    /**
-     * Unloads the Gemma brain, freeing native memory. Used by [com.unoone.agent.AgentOrchestrator]
-     * on system memory pressure (see [com.unoone.agent.UnoOneApplication.onTrimMemory]). Safe to call
-     * when no model is loaded; [LocalBrain.unloadModel] / [com.unoone.agent.localbrain.GemmaPlanner.close]
-     * are idempotent.
-     */
     fun unloadModel() = localBrain.unloadModel()
 
-    /**
-     * Builds a context snapshot for the LLM. Runs on [Dispatchers.Default] so that
-     * accessibility / OCR / DAO / memory work does not block the caller thread. `internal` so
-     * the enrichment (recent notes / active skills / recent commands / last result) is unit-testable
-     * with fake DAOs without spinning up Robolectric or a real model.
-     */
     internal suspend fun buildContextSnapshot(
         command: String,
         recentCommands: List<String>,
@@ -181,8 +128,6 @@ class CommandParser(
         val visibleText = accessibilityControl?.captureScreenText()
             ?.let { if (it is Result.Success) it.data.take(2_000) else "" } ?: ""
 
-        // OCR is expensive (MediaProjection screenshot + ML Kit) — only run it as a fallback
-        // when the accessibility tree gave us nothing on screen.
         val ocrText = if (visibleText.isBlank()) {
             try {
                 ocrControl?.recognizeScreen()
