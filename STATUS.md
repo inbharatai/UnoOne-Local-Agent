@@ -1,148 +1,137 @@
-# UnoOne Build Status
+# UnoOne V2 Status
 
-**Last updated:** 2026-07-09
-**Build:** `0.3.0-alpha-local` | **Target:** Android 14 (API 35) | **Min:** Android 9 (API 28)
-**Build/install/UI smoke-tested on:** Xiaomi 14, Samsung Galaxy S24, Pixel 8
-**Brain:** Default **Gemma 3n E4B** (`gemma-3n-e4b`, device-verified fallback). **Gemma 4 E2B** (`gemma-4-e2b`) is an **Experimental opt-in, not device-verified** — selectable + self-testable in Settings → Model Status → Brain Model.
-**Not yet verified end-to-end:** Gemma 3n E4B + Sherpa + Accessibility + Blind Aid on all of the above devices; Gemma 4 E2B specifically not yet loaded/planned on any device (see Next Steps). **ReAct loop, safety judge, eval-harness, streaming, self-heal reload, outcome-memory benefit, multimodal vision, and manifest-signature enforcement are implemented but not device-run / partly inactive** — their control/scoring logic is JVM-tested (289 unit tests pass), but no physical device has run `planNext`, `judgeSafety`, `BrainEvalHarnessTest`, `planStreaming`, or the `describe_scene` vision path, and the Ed25519 manifest signature is wired but the signing key is intentionally blank (no fabricated keys) — so no ReAct outcome, judge verdict, Gemma accuracy, streaming behavior, or vision-understanding claim is made.
+**Updated:** 2026-07-12  
+**Branch:** `feature/unoone-v2-gemma4-pageagent`  
+**Pull request:** Draft PR #1  
+**Release state:** **Alpha / not production-ready**
 
----
+The full mandatory completion plan is maintained in [README.md](README.md). This file records the current evidence state and must not contain unverified claims.
 
-## Module Status
+## Status legend
 
-| # | Module | Status | Notes |
-|---|--------|--------|-------|
-| 1 | `app` | **DONE** | Compose UI, ViewModels, FloatingService, Permissions, MainActivity |
-| 2 | `core` | **DONE** | Result, ToolCall, TimelineStep, RiskLevel, Logger |
-| 3 | `storage` | **DONE** | Room DB with 5 entities, 5 DAOs, migrations ready |
-| 4 | `modelmanager` | **DONE** | Model detection, checksum verification, storage usage |
-| 5 | `localbrain` | **DONE** | RuleBasedParser, PromptBuilder, model-profile-aware GemmaPlanner (LiteRT-LM; Gemma 3n E4B default / Gemma 4 E2B experimental), LocalBrain wrapper, manual tool calling, inference Mutex + 30s timeout. **New:** ReAct `planNext` (multi-turn observe), `judgeSafety` (dedicated judge conversation), eval-harness runner, `planStreaming` (LiteRT-LM `sendMessageAsync` `Flow<Message>`), and `describeSceneWithVision` (`Content.ImageBytes`, gated `VISION_MODEL_ENABLED=false`) — control/scoring JVM-tested, LiteRT-LM inference device-time-only |
-| 6 | `voice` | **DONE** | SherpaSttEngine, SherpaTtsEngine, KeywordSpotterEngine, AudioRecorder, AndroidSttEngine fallback |
-| 7 | `agentrouter` | **DONE** | Tool registry, 10+ built-in tools |
-| 8 | `safetyguard` | **DONE** | 4-tier risk classifier with confirmation dialogs |
-| 9 | `phonecontrol` | **DONE** | PhoneControl, CalendarControl, OcrControl, PackageResolver |
-| 10 | `memory` | **DONE** | Keyword context matching, preferences, corrections, patterns |
-| 11 | `skills` | **DONE** | JSON step storage, trigger matching, CRUD, SkillsScreen wired |
-| 12 | `observability` | **DONE** | Latency metrics, success rates, crash logs |
-| 13 | `accessibilitycontrol` | **DONE** | Click, type, fill, scroll, swipe, long press, back, home, read screen, find+click, context tracking |
+- **Implemented** — code exists on the V2 branch.
+- **Automated gate** — CI/test exists; only the latest green head counts.
+- **Device pending** — requires physical Android evidence.
+- **Blocked** — release must not proceed.
 
----
+## Current architecture
 
-## What Works Right Now (Without Models)
+| Area | Current state | Evidence still required |
+|---|---|---|
+| Android project | Implemented, 15 Gradle modules | latest lint, JVM tests and APK build green |
+| Planning brain | Gemma 4 E2B only | Xiaomi 14 + secondary-device load/performance tests |
+| Model artifact | exact filename, size and SHA-256 recorded | self-hosted production mirror and device qualification |
+| Phone tools | preserved in V2 | regression matrix on devices |
+| Offline speech | baseline English + six Indic packs | per-language accuracy, latency and thermal evidence |
+| Assamese | planned, non-downloadable | exact STT/TTS artifacts, licence and benchmarks |
+| Blind Aid | preserved independently of Gemma | camera/object/haptic/spoken device tests |
+| Language packs | dependency-aware manager and UI implemented | clean-device install/repair/uninstall tests |
+| Secure Browser | Alibaba PageAgent + local Gemma bridge implemented | controlled workflows + approved-domain device tests |
+| Browser safety | native authorization implemented | bypass/prompt-injection/device testing |
+| Installer PWA | signed-catalogue flow implemented | latest distribution CI green and production deployment |
+| Distribution API | read-only Worker/R2 design implemented | real buckets, bindings, signed catalogues and download tests |
+| Production signing | not configured | protected APK key + Ed25519 catalogue release key |
 
-### Text Commands (100% offline)
-- "Create a note: buy milk tomorrow" → saves to Room DB
-- "Open Chrome" → launches Chrome
-- "Open WhatsApp" → launches WhatsApp
-- "Open calendar" / "check calendar" → opens/reads calendar
-- "Open camera" → launches camera
-- "Read screen" / "what's on my screen" → reads all visible text
-- "Scroll down" / "scroll up" → scrolls current app
-- "Go back" / "go home" → navigates back/home
-- "Swipe left/right/up/down" → gesture swipes
-- "Find and click Login" → scrolls to find and taps text
-- "Fill username with john@example.com" → types into fields
-- "Open notifications" / "open recents" → system UI
-- "Send whatsapp to 1234 saying hello" → WhatsApp with number
-- "Create skill called Morning to open Chrome then read screen" → saves skill
-- "Morning" → triggers saved skill
+## Gemma 4 E2B
 
-### Voice Input (with models pushed)
-- Sherpa-ONNX STT for offline transcription (English streaming transducer; Indic whisper-tiny int8)
-- Sherpa-ONNX VITS TTS for offline speech output (English Coqui; Indic MMS — 7 languages total)
-- Keyword spotting for "UnoOne" wake word (English)
-- Android SpeechRecognizer fallback (requires internet)
+| Field | Value |
+|---|---|
+| Manifest id | `gemma-4-e2b` |
+| File | `gemma-4-E2B-it.litertlm` |
+| Size | `2,588,147,712` bytes |
+| SHA-256 | `181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c` |
+| Context limit | 32,768 tokens |
+| Minimum product RAM gate | 6 GB |
+| Recommended product RAM gate | 8 GB |
+| Device-qualified | **No** |
+| Production-approved | **No** |
 
-### UI
-- Floating bubble overlay with chat input
-- Waveform visualizer during recording
-- Animated timeline with color-coded steps
-- Confirmation dialogs for risky actions
-- Skills screen with create, toggle, delete
-- Notes screen with search
-- Logs screen with action audit trail
-- Settings screen with model status
+The phone agent and Secure Browser use an exclusive model lease. They must never hold separate Gemma engines simultaneously.
 
-### Accessibility
-- Click, type, fill, scroll, swipe, long press
-- Go back, go home, open notifications/recents
-- Read all visible text from accessibility tree
-- Track current foreground package/activity
-- Find and click (scroll to find, then tap)
+## Secure Browser policy
 
-### Robustness
-- Permission denial → "Go to Settings" for permanent denials
-- Re-execute command after permissions granted
-- Battery optimization exemption request
-- Manufacturer-specific autostart prompts (Xiaomi, Huawei, Oppo, Vivo, OnePlus, Asus)
-- Service restart on `onTaskRemoved`
-- Android 14 foreground service type declarations
+| Operation | Policy |
+|---|---|
+| Read/wait/scroll | allow |
+| Ordinary input | allow after native classification |
+| Sensitive/unknown action | confirm |
+| File transfer | confirm + Android takeover |
+| Final submission | confirm |
+| Password/OTP/CAPTCHA/legal acceptance | manual takeover |
+| Payment/banking/card/UPI PIN | block |
+| Arbitrary JavaScript execution | unavailable |
 
----
+The bridge is exposed only to approved exact HTTPS origins. Browser audits store bounded action summaries and decisions, not typed values.
 
-## What Requires Model Files
+## Language packs
 
-| Feature | Model Needed | Size | Push Command |
-|---------|-------------|------|-------------|
-| Offline STT (English) | Sherpa streaming-zipformer transducer int8 | ~70 MB | `adb push models/sherpa-asr-en/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-asr-en/` |
-| Offline STT (Indic: hi/bn/ta/te/kn/ml) | Sherpa whisper-tiny int8 (shared, multilingual) | ~111 MB | `adb push models/sherpa-asr-whisper/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-asr-whisper/` |
-| Offline TTS (English) | Sherpa VITS Coqui en-ljspeech + espeak-ng-data | ~110 MB | `adb push models/sherpa-tts-en/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-tts-en/` |
-| Offline TTS (Indic, per language) | Sherpa MMS VITS (one per language) | ~109 MB each | `adb push models/sherpa-tts-hin/ /sdcard/Android/data/com.unoone.agent/files/models/sherpa-tts-hin/` (and `-ben`/`-tam`/`-tel`/`-kan`/`-mal`) |
-| Wake word | Keyword spotter (English) | ~70 MB | `adb push models/vad/ /sdcard/Android/data/com.unoone.agent/files/models/vad/` |
-| LLM inference (default) | Gemma 3n E4B `.litertlm` | ~2-5 GB | `adb push /path/to/gemma-3n-e4b.litertlm /sdcard/Android/data/com.unoone.agent/files/models/gemma-local/` |
-| LLM inference (Experimental) | Gemma 4 E2B `.litertlm` (128K ctx) | ~2.58 GB | `adb push /path/to/gemma-4-e2b-it.litertlm /sdcard/Android/data/com.unoone.agent/files/models/gemma-4-e2b/` — **opt-in, not device-verified**; select it in Settings → Model Status → Brain Model |
+| Language | State |
+|---|---|
+| English | required baseline |
+| Hindi | baseline |
+| Bengali | baseline |
+| Tamil | baseline |
+| Telugu | baseline |
+| Kannada | baseline |
+| Malayalam | baseline |
+| Assamese | planned, priority, disabled |
+| Marathi | planned, disabled |
+| Gujarati | planned, disabled |
+| Punjabi | planned, disabled |
+| Odia | planned, disabled |
+| Urdu | planned, disabled |
 
-Without models: STT falls back to Android SpeechRecognizer (needs internet), command parsing uses RuleBasedParser (works offline), no TTS output, no Gemma planning.
+A language is not promoted from `planned` or `baseline` based only on model presence. Exact integrity, licence, Android load and language benchmark evidence are required.
 
----
+## Automated gates
 
-## Implementation Steps Status
+### Android CI
 
-| Step | Task | Status |
-|------|------|--------|
-| 1 | Android project skeleton | **DONE** |
-| 2 | Basic UI shell (Compose) | **DONE** |
-| 3 | Room database (5 entities) | **DONE** |
-| 4 | ModelManager | **DONE** |
-| 5 | Phone setup test | **DONE** |
-| 6 | Sherpa STT wrapper | **DONE** |
-| 7 | Sherpa TTS wrapper | **DONE** |
-| 8 | LocalBrain (rule-based + Gemma 3n E4B via LiteRT-LM) | **DONE** |
-| 9 | ToolRouter | **DONE** |
-| 10 | SafetyGuard | **DONE** |
-| 11 | First tools (notes, Chrome, etc.) | **DONE** |
-| 12 | Phone action tools | **DONE** |
-| 13 | Full voice loop wired | **DONE** |
-| 14 | Agent timeline logs | **DONE** |
-| 15 | Skill storage + UI | **DONE** |
-| 16 | Local memory + context matching | **DONE** |
-| 17 | Diagnostics | **DONE** |
-| 18 | Accessibility deep control | **DONE** |
-| 19 | Confirmation flow (CONFIRM/STRONG_CONFIRM) | **DONE** |
-| 20 | Waveform visualizer | **DONE** |
-| 21 | Permission robustness + manufacturer battery | **DONE** |
-| 22 | Keyword spotting (wake word) | **DONE** |
-| 23 | OCR wired to orchestrator | **DONE** |
-| 24 | Skills screen connected to real data | **DONE** |
-| 25 | Accessibility gestures (scroll, swipe, back, home) | **DONE** |
-| 26 | Memory keyword context | **DONE** |
+- PageAgent dependency installation
+- PageAgent TypeScript typecheck
+- PageAgent unit tests
+- PageAgent Android bundle generation
+- Playwright form-fill and payment-block tests
+- Android lint
+- Android JVM unit tests
+- Debug APK assembly
+- diagnostic artifact upload on failure
 
----
+### Distribution CI
 
-## Known Limitations
+- distribution API typecheck and tests
+- Cloudflare Worker dry-run bundle
+- installer PWA typecheck and tests
+- installer PWA build
+- catalogue signing round-trip
+- tampered-catalogue rejection
 
-1. **Gemma brain** is implemented via LiteRT-LM with two selectable profiles, but the `.litertlm` model file(s) must be pushed manually (or installed from the Model Status screen). The **default is Gemma 3n E4B**; **Gemma 4 E2B** is an Experimental opt-in that is **not yet device-verified** — it loads through the same safe code path, but no physical device has confirmed it loads + performs a tool call. RuleBasedParser remains the fast offline fallback. Every model-proposed tool call is checked against the **CanonicalToolRegistry** (26 tools, incl. the new `describe_scene`: unknown tools rejected, required args validated) before safety/execution.
-2. **Sherpa-ONNX models** install in-app from `models_manifest.json` (verified URLs + SHA-256; the Model Status screen downloads and integrity-checks them) or can be pushed manually via ADB.
-3. **Screenshot OCR** uses MediaProjection and requires a one-time user grant via a transparent permission activity.
-4. **Skills screen** does not yet have a drag-and-drop step editor — steps are entered as text in a dialog.
+Only the latest commit status is authoritative. An older green run does not make a newer head green.
 
----
+## Release blockers
 
-## Next Steps
+- [ ] Latest Android CI is green.
+- [ ] Latest Distribution CI is green.
+- [ ] Gemma loads and plans correctly on Xiaomi 14.
+- [ ] Secondary Android device passes the same Gemma and browser gates.
+- [ ] Offline speech baseline matrix is recorded.
+- [ ] Blind Aid regression matrix is recorded.
+- [ ] Controlled PageAgent workflows and takeover paths pass on device.
+- [ ] Production model mirror is available from UnoOne-controlled storage.
+- [ ] Real production catalogue public key is embedded in the installer build.
+- [ ] Stable and beta catalogues are signed with the protected release key.
+- [ ] Release APK is signed and locally checksum-verified.
+- [ ] Security, privacy, dependency, licence and SBOM reviews are complete.
+- [ ] Rollback instructions and archived pre-V2 branch are confirmed.
 
-1. Push Sherpa models and a Gemma 3n E4B `.litertlm` model to Xiaomi 14 and test the full voice + agent pipeline end-to-end (7 languages: English + Hindi/Bengali/Tamil/Telugu/Kannada/Malayalam).
-2. Verify Gemma-generated tool calls are correctly parsed, safety-classified, and executed, and that unknown/non-canonical tools are rejected by `GemmaPlanner`.
-3. **Verify Gemma 4 E2B on-device** (Experimental): install `gemma-4-e2b`, run the Brain Self-Test (Settings → Model Status → Brain Model), confirm it loads + proposes a canonical tool on each test device. Passing this **does not** make Gemma 4 the default — the default stays Gemma 3n E4B until Gemma 4 is verified across the full matrix **and** the calibration eval harness (step 5c in DEVICE_VERIFICATION) shows it matching/beating Gemma 3n on the prompt set.
-4. **Run the agent capabilities on a device.** The ReAct agentic loop, LLM safety judge, calibration eval harness, streaming inference, self-heal reload, outcome-learned memory, multimodal-vision `describe_scene`, and Ed25519 manifest-signature enforcement are implemented with their control/scoring logic JVM-tested (289 unit tests pass), but the LiteRT-LM inference (`planNext`, `judgeSafety`, `planStreaming`) and the `BrainEvalHarnessTest` runner are device-time-only and **have not been run on a physical device**. The vision path and manifest-signature enforcement are additionally wired-but-INACTIVE (shipped Gemma models are text-only; signing key intentionally blank). Run `BrainEvalHarnessTest` on a device with each profile pushed to get real Gemma 3n vs Gemma 4 accuracy numbers — no accuracy numbers are claimed until then.
-5. Build drag-and-drop skill editor UI.
-6. **Real-device end-to-end verification** (the open item above): run the full flow — Gemma 3n E4B planning + Sherpa STT/TTS (7 languages) + Accessibility control + Blind Aid — on Xiaomi 14, Samsung Galaxy S24, and Pixel 8 with all permissions granted, and record results + logs in [`DEVICE_VERIFICATION.md`](DEVICE_VERIFICATION.md). Until this matrix is populated, the app is an alpha, not production-verified.
+## Do not claim yet
+
+Until the blockers above are completed, do not claim that UnoOne V2 is:
+
+- production-ready;
+- fully device-verified;
+- accurate in Assamese or any other unbenchmarked language;
+- thermally stable under sustained Gemma/PageAgent use;
+- safe for autonomous payments, credentials, OTP, CAPTCHA or legal acceptance;
+- independent of third-party model hosting in production;
+- available as a final public installer.
