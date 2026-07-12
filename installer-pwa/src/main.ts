@@ -1,4 +1,5 @@
 import './styles.css'
+import './channel.css'
 
 import {
   INSTALLER_VERSION,
@@ -314,7 +315,7 @@ async function verifySelectedApk(): Promise<void> {
 }
 
 function selectedChannel(): 'stable' | 'beta' {
-  return channelSelect?.value === 'beta' ? 'beta' : 'stable'
+  return channelSelect.value === 'beta' ? 'beta' : 'stable'
 }
 
 function replayStorageKey(channel: 'stable' | 'beta'): string {
