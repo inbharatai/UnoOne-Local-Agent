@@ -16,8 +16,9 @@ import kotlinx.coroutines.sync.withLock
  *
  * Mobile memory cannot safely hold separate phone-agent and browser-agent copies of Gemma. Acquiring
  * this lease closes the main UnoOne brain, loads the same qualified artifact into a browser-only
- * planner, and exposes a [BrowserModelPort]. Releasing closes the browser planner and restores the
- * main brain only when it was loaded before acquisition.
+ * planner, and exposes a [BrowserModelPort]. Normal release restores the main brain when it was loaded
+ * before acquisition. Emergency release skips restoration so memory-pressure handling cannot
+ * immediately reallocate the model it just freed.
  */
 class SecureBrowserModelLease(
     context: Context,
@@ -83,13 +84,13 @@ class SecureBrowserModelLease(
         )
     }
 
-    suspend fun release(): Result<Unit> = mutex.withLock {
+    suspend fun release(restore: Boolean = true): Result<Unit> = mutex.withLock {
         if (!active && leasedModelPath == null) return@withLock Result.Success(Unit)
 
         planner.close()
         active = false
         val path = leasedModelPath
-        val shouldRestore = restoreMainBrain
+        val shouldRestore = restore && restoreMainBrain
         leasedModelPath = null
         restoreMainBrain = false
 
