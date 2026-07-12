@@ -3,8 +3,8 @@ package com.unoone.agent
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
-import com.unoone.agent.brain.BrainSelection
 import com.unoone.agent.browser.SecureBrowserModelLease
+import com.unoone.agent.core.model.BrainModelRegistry
 import com.unoone.agent.core.model.ExclusiveBrainLeaseState
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
@@ -68,11 +68,9 @@ class UnoOneApplication : Application() {
 
         AuditLogger.initialize(db.actionLogDao())
 
-        // Gemma 4 E2B is the sole brain. A file being present is not the same as production
-        // qualification; Model Status continues to display whether it is hash/device verified.
         val modelManager = ModelManager(this, db.modelMetadataDao())
         modelManager.ensureModelDirectories()
-        val brainSpec = BrainSelection.selected(this)
+        val brainSpec = BrainModelRegistry.GEMMA_4_E2B
         val llmPath = modelManager.getLlmModelPath(brainSpec)
         if (llmPath != null) {
             lastLlmPath = llmPath
@@ -110,12 +108,6 @@ class UnoOneApplication : Application() {
         _commandFlow.tryEmit(command)
     }
 
-    /**
-     * Under active memory pressure, release whichever mode owns Gemma.
-     *
-     * Secure Browser uses `restore=false`: restoring the phone brain immediately would defeat the
-     * memory-pressure response. The browser UI receives model errors and must end/restart the task.
-     */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         val runningPressure =
@@ -148,7 +140,7 @@ class UnoOneApplication : Application() {
         if (ExclusiveBrainLeaseState.isActive() || secureBrowserModelLease.isActive()) return
         val path = lastLlmPath ?: return
         if (orchestrator.isLlmLoaded()) return
-        val spec = BrainSelection.selected(this)
+        val spec = BrainModelRegistry.GEMMA_4_E2B
         Logger.i("UnoOneApplication: reloading ${spec.displayName} after memory pressure")
         appScope.launch {
             val result = orchestrator.loadLlmModel(path, spec)
