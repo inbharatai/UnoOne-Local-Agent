@@ -22,6 +22,7 @@ import com.unoone.agent.ui.navigation.UnoOneNavHost
 import com.unoone.agent.ui.theme.UnoOneTheme
 import com.unoone.agent.ui.viewmodel.AgentViewModel
 import com.unoone.agent.ui.viewmodel.AuditViewerViewModel
+import com.unoone.agent.ui.viewmodel.LanguagePacksViewModel
 import com.unoone.agent.ui.viewmodel.LogsViewModel
 import com.unoone.agent.ui.viewmodel.ModelStatusViewModel
 import com.unoone.agent.ui.viewmodel.NotesViewModel
@@ -85,6 +86,7 @@ class MainActivity : ComponentActivity() {
         val settingsViewModel = SettingsViewModel(this)
         val privacySettingsViewModel = PrivacySettingsViewModel(this)
         val modelStatusViewModel = ModelStatusViewModel(this, database.modelMetadataDao(), agentOrchestrator)
+        val languagePacksViewModel = LanguagePacksViewModel(this)
         val voiceTestViewModel = VoiceTestViewModel(voiceModule)
         val auditViewerViewModel = AuditViewerViewModel(database.actionLogDao())
         val secureBrowserViewModel = SecureBrowserViewModel(this, app.secureBrowserModelLease)
@@ -103,6 +105,7 @@ class MainActivity : ComponentActivity() {
                         settingsViewModel = settingsViewModel,
                         privacySettingsViewModel = privacySettingsViewModel,
                         modelStatusViewModel = modelStatusViewModel,
+                        languagePacksViewModel = languagePacksViewModel,
                         voiceTestViewModel = voiceTestViewModel,
                         auditViewerViewModel = auditViewerViewModel,
                         secureBrowserViewModel = secureBrowserViewModel
@@ -188,7 +191,6 @@ class MainActivity : ComponentActivity() {
         if (Settings.canDrawOverlays(this)) {
             startService(Intent(this, FloatingAgentService::class.java))
         }
-        // Application suppresses this reload while Secure Browser exclusively owns Gemma.
         (application as? UnoOneApplication)?.reloadLlmIfUnloaded()
     }
 }
@@ -202,6 +204,7 @@ fun UnoOneApp(
     settingsViewModel: SettingsViewModel,
     privacySettingsViewModel: PrivacySettingsViewModel,
     modelStatusViewModel: ModelStatusViewModel,
+    languagePacksViewModel: LanguagePacksViewModel,
     voiceTestViewModel: VoiceTestViewModel,
     auditViewerViewModel: AuditViewerViewModel,
     secureBrowserViewModel: SecureBrowserViewModel
@@ -216,6 +219,7 @@ fun UnoOneApp(
         settingsViewModel = settingsViewModel,
         privacySettingsViewModel = privacySettingsViewModel,
         modelStatusViewModel = modelStatusViewModel,
+        languagePacksViewModel = languagePacksViewModel,
         voiceTestViewModel = voiceTestViewModel,
         auditViewerViewModel = auditViewerViewModel,
         secureBrowserViewModel = secureBrowserViewModel
