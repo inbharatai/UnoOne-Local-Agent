@@ -1,8 +1,10 @@
 import './styles.css'
 
 import {
+  INSTALLER_VERSION,
   type AppRelease,
   type CatalogPayload,
+  type CatalogReplayState,
   artifactUrl,
   formatBytes,
   loadSignedCatalog,
@@ -26,12 +28,18 @@ const fileInput = requiredElement<HTMLInputElement>('apk-file')
 const fileVerification = requiredElement<HTMLDivElement>('file-verification')
 const reloadButton = requiredElement<HTMLButtonElement>('reload-button')
 const installPwaButton = requiredElement<HTMLButtonElement>('install-pwa-button')
+const channelSelect = requiredElement<HTMLSelectElement>('release-channel')
 
 let currentApp: AppRelease | null = null
+let currentChannel: 'stable' | 'beta' = selectedChannel()
 let downloadsUnlocked = false
 let deferredInstall: BeforeInstallPromptEvent | null = null
 
 reloadButton.addEventListener('click', () => void refreshCatalogue())
+channelSelect.addEventListener('change', () => {
+  currentChannel = selectedChannel()
+  void refreshCatalogue()
+})
 fileInput.addEventListener('change', () => void verifySelectedApk())
 installPwaButton.addEventListener('click', async () => {
   if (!deferredInstall) return
@@ -56,8 +64,10 @@ if ('serviceWorker' in navigator) {
 void refreshCatalogue()
 
 async function refreshCatalogue(): Promise<void> {
-  setStatus('Loading signed release catalogue…', 'loading')
+  const channel = currentChannel
+  setStatus(`Loading signed ${channel} release catalogue…`, 'loading')
   reloadButton.disabled = true
+  channelSelect.disabled = true
   appRelease.replaceChildren(textBlock('Waiting for catalogue…'))
   modelGrid.replaceChildren()
   languageGrid.replaceChildren()
@@ -70,49 +80,63 @@ async function refreshCatalogue(): Promise<void> {
   try {
     const loaded = await loadSignedCatalog({
       apiBase,
-      channel: 'stable',
+      channel,
       publicKeySpkiBase64: publicKey,
-      allowUnsignedDevelopment
+      allowUnsignedDevelopment,
+      installerVersion: INSTALLER_VERSION,
+      previousState: loadReplayState(channel)
     })
+    if (channel !== currentChannel) return
+
     downloadsUnlocked = loaded.verified || allowUnsignedDevelopment
+    if (loaded.verified) saveReplayState(channel, loaded.replayState)
     renderCatalogue(loaded.envelope.payload)
     setStatus(
-      loaded.verificationMessage,
+      `${loaded.verificationMessage} · ${humanize(channel)} channel`,
       loaded.verified ? 'verified' : 'warning'
     )
-    catalogVersion.textContent = `Catalogue v${loaded.envelope.payload.catalogVersion} · ${loaded.envelope.keyId}`
+    catalogVersion.textContent = [
+      `Installer v${INSTALLER_VERSION}`,
+      `Catalogue v${loaded.envelope.payload.catalogVersion}`,
+      loaded.envelope.keyId,
+      formatTimestamp(loaded.envelope.payload.generatedAt)
+    ].join(' · ')
   } catch (error) {
+    if (channel !== currentChannel) return
     const message = error instanceof Error ? error.message : String(error)
     setStatus(`Downloads locked: ${message}`, 'error')
     appRelease.replaceChildren(
-      textBlock('No release is available until the signed catalogue passes verification.')
+      textBlock('No release is available until the signed catalogue passes every verification gate.')
     )
     catalogVersion.textContent = 'Catalogue verification failed'
   } finally {
-    reloadButton.disabled = false
+    if (channel === currentChannel) {
+      reloadButton.disabled = false
+      channelSelect.disabled = false
+    }
   }
 }
 
 function renderCatalogue(payload: CatalogPayload): void {
   const apps = [...payload.apps].sort((left, right) => right.versionCode - left.versionCode)
   currentApp = apps[0] ?? null
-  renderApp(currentApp)
+  renderApp(currentApp, payload.channel)
   renderModels(payload)
   renderLanguages(payload)
 }
 
-function renderApp(app: AppRelease | null): void {
+function renderApp(app: AppRelease | null, channel: 'stable' | 'beta'): void {
   appRelease.className = 'release-card'
   appRelease.replaceChildren()
   if (!app) {
-    appRelease.append(textBlock('The verified catalogue contains no Android release.'))
+    appRelease.append(textBlock(`The verified ${channel} catalogue contains no Android release.`))
     return
   }
 
   const heading = node('div', 'release-title')
   const titleGroup = node('div')
   titleGroup.append(
-    node('p', 'eyebrow', 'UnoOne for Android'),
+    node('p', 'eyebrow', `UnoOne for Android · ${humanize(channel)}`),
     node('h3', '', `Version ${app.versionName}`),
     node(
       'p',
@@ -121,7 +145,11 @@ function renderApp(app: AppRelease | null): void {
     )
   )
   const badge = node('span', downloadsUnlocked ? 'badge badge-ok' : 'badge badge-locked')
-  badge.textContent = downloadsUnlocked ? 'Verified release' : 'Download locked'
+  badge.textContent = downloadsUnlocked
+    ? channel === 'stable'
+      ? 'Verified stable release'
+      : 'Verified beta release'
+    : 'Download locked'
   heading.append(titleGroup, badge)
 
   const facts = node('dl', 'facts')
@@ -140,8 +168,9 @@ function renderApp(app: AppRelease | null): void {
     const download = document.createElement('a')
     download.className = 'button button-primary'
     download.href = artifactUrl(apiBase, app.artifact.path)
-    download.textContent = 'Download verified APK'
-    download.rel = 'noopener'
+    download.textContent = channel === 'stable' ? 'Download verified APK' : 'Download verified beta APK'
+    download.rel = 'noopener noreferrer'
+    download.referrerPolicy = 'no-referrer'
     actions.append(download)
   } else {
     const locked = node('button', 'button button-primary', 'Download locked') as HTMLButtonElement
@@ -152,15 +181,28 @@ function renderApp(app: AppRelease | null): void {
   const copy = node('button', 'button button-secondary', 'Copy SHA-256') as HTMLButtonElement
   copy.type = 'button'
   copy.addEventListener('click', async () => {
-    await navigator.clipboard.writeText(app.artifact.sha256)
-    copy.textContent = 'Checksum copied'
+    try {
+      await copyText(app.artifact.sha256)
+      copy.textContent = 'Checksum copied'
+    } catch {
+      copy.textContent = 'Copy failed'
+    }
     window.setTimeout(() => {
       copy.textContent = 'Copy SHA-256'
     }, 1800)
   })
   actions.append(copy)
 
-  appRelease.append(heading, facts, notes, actions)
+  if (channel === 'beta') {
+    const warning = node(
+      'p',
+      'channel-warning',
+      'Beta releases may be incomplete or unstable. Keep backups and do not use them for safety-critical workflows.'
+    )
+    appRelease.append(heading, facts, notes, warning, actions)
+  } else {
+    appRelease.append(heading, facts, notes, actions)
+  }
 }
 
 function renderModels(payload: CatalogPayload): void {
@@ -188,6 +230,11 @@ function renderModels(payload: CatalogPayload): void {
         model.license ? `Licence: ${model.license}` : 'Licence metadata pending'
       )
     )
+    if (model.qualificationStatus !== 'production-approved') {
+      card.append(
+        node('p', 'catalog-detail', 'Not offered as a public production download until device qualification is complete.')
+      )
+    }
     modelGrid.append(card)
   }
 }
@@ -213,7 +260,7 @@ function renderLanguages(payload: CatalogPayload): void {
       node(
         'p',
         'catalog-detail',
-        pack.downloadable ? 'Downloadable inside the Android app' : 'Qualification pending'
+        pack.downloadable ? 'Downloadable and health-checked inside the Android app' : 'Qualification pending'
       )
     )
     if (pack.notes) card.append(node('p', 'catalog-detail', pack.notes))
@@ -228,13 +275,13 @@ async function verifySelectedApk(): Promise<void> {
     fileVerification.className = 'verification-result'
     return
   }
-  if (!currentApp) {
+  if (!currentApp || !downloadsUnlocked) {
     fileVerification.textContent = 'Load a verified catalogue before checking an APK.'
     fileVerification.className = 'verification-result verification-error'
     return
   }
   if (file.size > 768 * 1024 * 1024) {
-    fileVerification.textContent = 'This browser verifier is limited to files below 768 MB.'
+    fileVerification.textContent = 'This browser verifier is limited to APK files below 768 MB.'
     fileVerification.className = 'verification-result verification-error'
     return
   }
@@ -266,6 +313,60 @@ async function verifySelectedApk(): Promise<void> {
   }
 }
 
+function selectedChannel(): 'stable' | 'beta' {
+  return channelSelect?.value === 'beta' ? 'beta' : 'stable'
+}
+
+function replayStorageKey(channel: 'stable' | 'beta'): string {
+  return `unoone.catalog.${encodeURIComponent(apiBase)}.${channel}`
+}
+
+function loadReplayState(channel: 'stable' | 'beta'): CatalogReplayState | null {
+  try {
+    const raw = localStorage.getItem(replayStorageKey(channel))
+    if (!raw) return null
+    const value = JSON.parse(raw) as Partial<CatalogReplayState>
+    if (
+      !Number.isSafeInteger(value.version) ||
+      (value.version ?? 0) < 1 ||
+      typeof value.generatedAt !== 'string' ||
+      Number.isNaN(Date.parse(value.generatedAt)) ||
+      typeof value.keyId !== 'string'
+    ) {
+      localStorage.removeItem(replayStorageKey(channel))
+      return null
+    }
+    return value as CatalogReplayState
+  } catch {
+    return null
+  }
+}
+
+function saveReplayState(channel: 'stable' | 'beta', state: CatalogReplayState): void {
+  try {
+    localStorage.setItem(replayStorageKey(channel), JSON.stringify(state))
+  } catch {
+    // Catalogue verification remains valid even when private browsing blocks localStorage.
+  }
+}
+
+async function copyText(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.append(textarea)
+  textarea.select()
+  const copied = document.execCommand('copy')
+  textarea.remove()
+  if (!copied) throw new Error('Clipboard copy failed')
+}
+
 function setStatus(message: string, kind: 'loading' | 'verified' | 'warning' | 'error'): void {
   catalogStatus.textContent = message
   catalogStatus.className = `status-card status-${kind}`
@@ -294,8 +395,24 @@ function formatDate(value: string): string {
     : new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' }).format(date)
 }
 
+function formatTimestamp(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZoneName: 'short'
+      }).format(date)
+}
+
 function fact(list: HTMLDListElement, label: string, value: string): void {
-  list.append(node('dt', '', label), node('dd', label === 'SHA-256' ? 'checksum' : '', value))
+  const wrapper = node('div')
+  wrapper.append(node('dt', '', label), node('dd', label === 'SHA-256' ? 'checksum' : '', value))
+  list.append(wrapper)
 }
 
 function textBlock(text: string): HTMLParagraphElement {
