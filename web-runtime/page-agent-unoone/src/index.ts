@@ -91,7 +91,7 @@ const runtime: UnoOneRuntimeApi = {
 
   async dispose(): Promise<void> {
     await agent.stop()
-    agent.dispose('UnoOne browser runtime disposed')
+    agent.dispose()
   }
 }
 
