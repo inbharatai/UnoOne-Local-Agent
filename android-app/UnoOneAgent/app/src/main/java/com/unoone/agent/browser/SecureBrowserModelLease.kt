@@ -3,6 +3,7 @@ package com.unoone.agent.browser
 import android.content.Context
 import com.unoone.agent.AgentOrchestrator
 import com.unoone.agent.core.model.BrainModelRegistry
+import com.unoone.agent.core.model.ExclusiveBrainLeaseState
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.localbrain.PageAgentGemmaPlanner
 import com.unoone.agent.modelmanager.ModelManager
@@ -46,12 +47,20 @@ class SecureBrowserModelLease(
                 "Gemma 4 E2B is not installed. Add a qualified .litertlm artifact before starting Secure Browser."
             )
 
-        restoreMainBrain = orchestrator.isLlmLoaded()
+        val mainWasLoaded = orchestrator.isLlmLoaded()
+        if (!ExclusiveBrainLeaseState.acquire(OWNER_ID)) {
+            return@withLock Result.Error(
+                "Gemma is already reserved by ${ExclusiveBrainLeaseState.currentOwner() ?: "another UnoOne mode"}."
+            )
+        }
+
+        restoreMainBrain = mainWasLoaded
         leasedModelPath = path
         if (restoreMainBrain) orchestrator.unloadLlmModel()
 
         val load = planner.load(path, spec)
         if (load is Result.Error) {
+            ExclusiveBrainLeaseState.release(OWNER_ID)
             if (restoreMainBrain) orchestrator.loadLlmModel(path, spec)
             restoreMainBrain = false
             leasedModelPath = null
@@ -85,7 +94,10 @@ class SecureBrowserModelLease(
     }
 
     suspend fun release(restore: Boolean = true): Result<Unit> = mutex.withLock {
-        if (!active && leasedModelPath == null) return@withLock Result.Success(Unit)
+        if (!active && leasedModelPath == null) {
+            ExclusiveBrainLeaseState.release(OWNER_ID)
+            return@withLock Result.Success(Unit)
+        }
 
         planner.close()
         active = false
@@ -93,10 +105,15 @@ class SecureBrowserModelLease(
         val shouldRestore = restore && restoreMainBrain
         leasedModelPath = null
         restoreMainBrain = false
+        ExclusiveBrainLeaseState.release(OWNER_ID)
 
         if (shouldRestore && path != null) {
             return@withLock orchestrator.loadLlmModel(path, BrainModelRegistry.GEMMA_4_E2B)
         }
         Result.Success(Unit)
+    }
+
+    companion object {
+        const val OWNER_ID = "secure-browser-page-agent"
     }
 }
