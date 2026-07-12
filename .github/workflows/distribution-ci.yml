@@ -81,6 +81,27 @@ jobs:
             --public-key /tmp/unoone-catalog-signing/catalog-public.pem \
             --key-id ci-test-key
 
+      - name: Prove invalid payload cannot be signed
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const source = 'distribution/catalog/examples/stable.payload.json'
+          const value = JSON.parse(fs.readFileSync(source, 'utf8'))
+          value.minimumInstallerVersion = 0
+          fs.writeFileSync('/tmp/unoone-catalog-signing/invalid-payload.json', JSON.stringify(value, null, 2))
+          NODE
+          if node scripts/catalog/sign_catalog.mjs \
+            --input /tmp/unoone-catalog-signing/invalid-payload.json \
+            --private-key /tmp/unoone-catalog-signing/catalog-private.pem \
+            --key-id ci-test-key \
+            --output /tmp/unoone-catalog-signing/invalid-signed.json; then
+            echo 'Invalid payload was unexpectedly signed' >&2
+            exit 1
+          fi
+          test ! -e /tmp/unoone-catalog-signing/invalid-signed.json
+
       - name: Prove tampered catalogue is rejected
         shell: bash
         run: |
