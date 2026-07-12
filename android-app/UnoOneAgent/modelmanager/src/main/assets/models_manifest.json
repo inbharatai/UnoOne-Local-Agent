@@ -1,7 +1,5 @@
 {
   "manifestVersion": 2,
-  "manifestSignature": "",
-  "signatureAlgorithm": "Ed25519",
   "models": [
     {
       "id": "gemma-4-e2b",
@@ -153,31 +151,6 @@
       "files": [
         {"name":"model.onnx","url":"https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/mal/model.onnx","sha256":"13965d4eeed2f5198c53689e192ce7095e167fb11dd0e72ae5cd8a3bf117374b","sizeBytes":114052280,"archive":false},
         {"name":"tokens.txt","url":"https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/mal/tokens.txt","sha256":"3a752c36593cc519193c8caa6c00371369b423366fa6ead8d91945a28b2c46a3","sizeBytes":571,"archive":false}
-      ]
-    },
-    {
-      "id": "punctuation",
-      "folder": "speech/shared/punctuation",
-      "type": "punctuation",
-      "version": "unqualified",
-      "minRamMb": 128,
-      "backend": "cpu",
-      "defaultLanguage": "en",
-      "files": [
-        {"name":"model.onnx","url":"","sha256":"","sizeBytes":0,"archive":false},
-        {"name":"tokens.txt","url":"","sha256":"","sizeBytes":0,"archive":false}
-      ]
-    },
-    {
-      "id": "ocr-optional",
-      "folder": "ocr/optional",
-      "type": "ocr",
-      "version": "unqualified",
-      "minRamMb": 256,
-      "backend": "cpu",
-      "defaultLanguage": "en",
-      "files": [
-        {"name":"model.onnx","url":"","sha256":"","sizeBytes":0,"archive":false}
       ]
     }
   ]
