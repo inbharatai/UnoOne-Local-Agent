@@ -6,6 +6,7 @@
   "description": "Alibaba PageAgent core adapted for UnoOne's local Gemma bridge and native safety boundary",
   "scripts": {
     "build": "vite build",
+    "bundle:android": "npm run build && node scripts/copy-to-android.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
