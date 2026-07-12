@@ -1,121 +1,271 @@
-# Device Verification — UnoOne
+# UnoOne V2 Device Verification
 
-**Status:** Template / not yet populated. This file is the single place where real-device
-end-to-end verification results are recorded. Until the matrix below is filled in with actual
-device logs, **UnoOne is an alpha, not production-verified** (see `STATUS.md`).
+**Status:** not yet populated with V2 physical-device evidence.  
+**Release implication:** UnoOne V2 remains alpha until the required matrix is complete.
 
-> CI verifies build, unit tests (289), lint, and `assembleDebug` on a host JVM — it cannot run
-> native Sherpa (Whisper/MMS) or LiteRT-LM (Gemma 3n E4B / Gemma 4 E2B) inference, Accessibility, or camera.
-> Those require a real device with models installed. This file captures that verification.
->
-> **Two brain profiles** are now selectable. The **default is Gemma 3n E4B** (`gemma-3n-e4b`, folder
-> `gemma-local/`) — the device-verified fallback. **Gemma 4 E2B** (`gemma-4-e2b`, folder
-> `gemma-4-e2b/`, 128K context, ~2.58 GB) is **Experimental and not device-verified**. It must pass
-> step 5 below (load + perform a tool call) on each device before it may be treated as working.
+Compilation, lint, JVM tests and Playwright tests cannot prove LiteRT-LM, Sherpa-ONNX, Android Accessibility, CameraX, haptics, microphone, thermal behavior or real WebView operation on a phone.
 
-## Device matrix
+## Required target devices
 
-| Device | Android | SoC | RAM | Build/install/UI smoke | Sherpa STT | Sherpa TTS | Wake word | Gemma 3n E4B planning | Gemma 4 E2B load+self-test | Accessibility control | Blind Aid | Date | Log file |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Xiaomi 14 | 15 (35) | Snapdragon 8 Gen 3 | 12 GB | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | — | — |
-| Samsung Galaxy S24 | 15 (35) | Exynos 2400 / SD8G3 | 8/12 GB | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | — | — |
-| Pixel 8 | 15 (35) | Tensor G3 | 8/12 GB | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | — | — |
+| Target | Android | SoC | RAM | Reason | Assigned device |
+|---|---:|---|---:|---|---|
+| Primary | 15 / API 35 | Snapdragon 8 Gen 3 | 12 GB | current development target | Xiaomi 14 |
+| Secondary | API 28+ | different supported Android hardware | 8 GB+ | catches vendor/backend/device-specific failures | must be identified before release |
 
-Legend: ✅ verified · ❌ failed · ☐ not yet run.
+A release cannot be marked device-qualified with only one phone.
 
-## Per-device test procedure
+## Verification matrix
 
-For each device, install the debug APK, install the needed models (Model Status screen or ADB),
-grant all permissions, then run:
+Use ✅ pass, ❌ fail, or ☐ not run. Every ✅ must have a date and attached log/evidence path.
 
-### 1. Build / install / UI smoke
-- [ ] `assembleDebug` APK installs without error.
-- [ ] App launches; Model Status screen lists models with correct presence/health.
-- [ ] Floating bubble toggles on/off; persistent notification shows.
+| Device | Build/install | Gemma load | Phone planning | PageAgent | English speech | Indic speech | Accessibility | Blind Aid | Lifecycle | Performance | Date | Evidence |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Xiaomi 14 | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | — | — |
+| Secondary device | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | — | — |
 
-### 2. Sherpa STT (offline)
-- [ ] English: "create a note buy milk" → transcribed → note saved. (model: `sherpa-asr-en`)
-- [ ] One Indic language (hi/bn/ta/te/kn/ml): same command in that language → transcribed. (model: `sherpa-asr-whisper`, language selected in Settings)
+## Before testing
 
-### 3. Sherpa TTS (offline)
-- [ ] English response spoken. (`sherpa-tts-en`)
-- [ ] One Indic TTS spoken. (`sherpa-tts-<lang>`)
+- [ ] Latest Android CI is green on the exact commit under test.
+- [ ] Debug or release-candidate APK SHA-256 is recorded.
+- [ ] Device model, Android build, SoC, RAM and free storage are recorded.
+- [ ] Battery is above 60% and device temperature is recorded before the run.
+- [ ] Required permissions are granted deliberately, not assumed.
+- [ ] Gemma and speech files match the manifest size and SHA-256.
+- [ ] No old Gemma 3n or `gemma-local` folder is present.
+- [ ] PageAgent Android asset is packaged and non-empty.
 
-### 4. Wake word
-- [ ] Say "UnoOne" → detection fires → command captured. (`vad`)
+## 1. Build, install and basic UI
 
-### 5. Gemma 3n E4B planning (default brain)
-- [ ] Load `.litertlm` → `GemmaPlanner` initializes (GPU, falls back to CPU if needed). Record the winning backend.
-- [ ] A complex command produces a correct tool call, parsed + safety-classified + executed.
-- [ ] **Unknown-tool rejection**: a prompt that would make the model propose a non-canonical tool (e.g. attempt to invoke `make_payment`/`send_message`) is rejected by `GemmaPlanner` and never executed.
-- [ ] **Inference timeout**: a deliberately long/complex prompt completes within the 30s `INFERENCE_TIMEOUT_MS`; if a call hangs, the brain closes cleanly and reloads on next use (no hang, no crash).
-- [ ] **Brain self-test** (Settings → Model Status → Brain Model → Run Self-Test on the `gemma-3n-e4b` profile): reports the loaded backend, load time, the proposed tool, and that the tool is in the `CanonicalToolRegistry` (tool accepted).
-- [ ] Run `GemmaPlannerAccuracyTest` instrumented: `./gradlew connectedDebugAndroidTest`. (It loads the first `.litertlm` under `gemma-local/` — the Gemma 3n E4B profile.)
+- [ ] APK installs without package/signature error.
+- [ ] App launches without crash.
+- [ ] Settings, Model Status, Offline Languages, Voice Test, Audit and Secure Browser routes open.
+- [ ] Floating assistant can be enabled and disabled.
+- [ ] Foreground-service notification is displayed when required.
+- [ ] Rotation/background/foreground does not duplicate services or ViewModels.
+- [ ] Clean reinstall starts with correct empty/required model states.
 
-### 5b. Gemma 4 E2B load + self-test (Experimental — required before treating Gemma 4 as working)
-> Gemma 4 E2B is **not device-verified**. It is selectable + self-testable but must pass this step on each device before it may be marketed as functional. The default stays Gemma 3n E4B until the matrix is green.
+Record:
 
-- [ ] Install the `gemma-4-e2b` model (Model Status screen, or `adb push` into `…/files/models/gemma-4-e2b/`).
-- [ ] In Settings → Model Status → Brain Model, select the **Gemma 4 E2B** profile and confirm it loads (record backend: GPU or CPU fallback, load time).
-- [ ] Run the **Brain Self-Test** on the `gemma-4-e2b` profile. Record: loaded backend, load ms, proposed tool, `toolAccepted` (must be `true` — i.e. the proposed tool is in the `CanonicalToolRegistry`).
-- [ ] Issue a real complex command through the Gemma 4 brain and confirm the proposed tool is canonical, parsed, safety-classified, and executed correctly.
-- [ ] **`UnoOneToolSet`↔registry runtime cross-check**: this cannot run as a JVM unit test (the `litertlm` AAR bytecode is newer than the JDK 17 test JVM can load — `UnsupportedClassVersionError`). On device, confirm the tool names `UnoOneToolSet` advertises to the model exactly match the 26 canonical tools the planner will accept. A mismatch means the model could propose a tool the planner rejects (safe) or, worse, the planner accepts a tool the model was never told about. Record the comparison.
-- [ ] Restore the default (Gemma 3n E4B) selection afterward unless you intend to keep Gemma 4.
+```text
+APK path:
+APK SHA-256:
+Version name/code:
+Install command/result:
+Startup log path:
+```
 
-### 5c. Calibration eval (Gemma 3n E4B vs Gemma 4 E2B — measurement)
-> The eval harness turns "is Gemma good enough?" into a number. Run it for **both** profiles and
-> record the two `EvalSummary` blocks below — these are the real numbers behind any default-switch
-> decision. The harness is instrumented; control + scoring are JVM-tested, the runner is device-time-only
-> and has **not** been run yet (no accuracy numbers are claimed until it is).
+## 2. Gemma 4 E2B model integrity and load
 
-- [ ] Push the Gemma 3n E4B model, run `./gradlew :app:connectedDebugAndroidTest --tests '*.BrainEvalHarnessTest'`, capture the printed `EvalSummary` (profile, backend, accuracy, toolAccuracy, per-case OK/arg/MISS).
-- [ ] Push the Gemma 4 E2B model, run the same command, capture its `EvalSummary`.
-- [ ] Record both summaries in the matrix row (or attach the two log captures). A profile is "good enough" only when its accuracy on this set is acceptable for the target hardware tier — the harness prints the number, a human makes the call.
+Expected artifact:
 
-### 5d. Agent innovations #4–#8 (device-time-only / partly inactive)
+```text
+File: gemma-4-E2B-it.litertlm
+Size: 2588147712 bytes
+SHA-256: 181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c
+Folder: models/brain/gemma-4-e2b/
+```
 
-> These five innovations split their control logic (JVM-tested, in `:core`/`:modelmanager`) from
-> their LiteRT-LM inference + device wiring (device-time-only). None is claimed working until a
-> physical device runs it; two are additionally wired-but-INACTIVE by design.
+- [ ] Model installation completes or resumes after interruption.
+- [ ] Size verification passes.
+- [ ] SHA-256 verification passes.
+- [ ] Corrupted/partial file is rejected and repair works.
+- [ ] LiteRT-LM loads on GPU or records a safe CPU fallback.
+- [ ] App remains responsive during load.
+- [ ] Main phone planner owns the only Gemma engine.
+- [ ] Memory-pressure unload frees the engine.
+- [ ] Safe reload works after foreground return.
 
-- [ ] **Streaming (#6):** with `STREAMING_INFERENCE_ENABLED = true`, an LLM-planned command surfaces partial text to the timeline as it streams (an evolving "Thinking" step). Confirm the `sendMessageAsync` `Flow<Message>` emits partials and the final validated tool call matches the synchronous path. If streaming throws, confirm the command still completes via the synchronous fallback.
-- [ ] **Self-heal (#7):** force the brain to auto-close (let an inference time out, or unload), then issue a command — confirm the proactive reload fires ("Recovering"/"Recovered" timeline steps) and the command plans via the LLM. Force a tool to fail repeatedly — confirm the flaky-tool surfacing appears once.
-- [ ] **Outcome memory (#5):** run a command that fails (e.g. open a non-installed app), then re-issue a similar command — confirm the planner is now told "prior avoid: …". Run the eval harness (5c) with outcome memory populated vs cleared to measure whether the hint changes accuracy.
-- [ ] **Multimodal vision (#4):** run `describe_scene` — confirm it returns the OCR + foreground-context description (the JVM-tested fallback, since `VISION_MODEL_ENABLED = false`). Confirm STRONG_CONFIRM fires before capture. Vision understanding is NOT claimed (no vision-capable `.litertlm` ships); re-test only after one ships and the flag is flipped.
-- [ ] **Manifest integrity (#8):** confirm `ModelManifestLoader` still loads the shipped (unsigned) manifest with the blank `ManifestSigningKey.PUBLIC_KEY_BASE64`. Signature enforcement is NOT claimed until the publisher sets a key and a device proves EdDSA verifies at API 33+ (minSdk 28 falls back to accept + log).
+Record:
 
-### 6. Accessibility control
+```text
+Backend:
+Cold load ms:
+Warm reload ms:
+Peak RAM MB:
+Failure/retry result:
+Log path:
+```
 
-- [ ] `read_screen` returns visible text (after CONFIRM).
-- [ ] `find_and_click Login` / `fill …` / scroll / back / home execute (after STRONG_CONFIRM).
-- [ ] Service survives screen-off; stops cleanly when disabled.
+## 3. Phone-agent planning
 
-### 7. Blind Aid
-- [ ] `detect_objects` starts camera + overlay + haptics + spoken guidance.
-- [ ] Failure states handled: low light / motion blur / camera blocked → spoken warning.
-- [ ] `deactivate_blind_aid` stops cleanly.
+Run at least 50 sequential tasks, including:
 
-### 8. Sensitive-surface confirmations
-- [ ] `send_whatsapp` draft → STRONG_CONFIRM → WhatsApp opens with pre-filled message (user presses send).
-- [ ] `web_search` with Online tools OFF → explicit offline message; with ON → attributed results.
-- [ ] "send OTP" / "auto send" → BLOCK.
+- [ ] create/read/search/delete note workflows;
+- [ ] open installed and missing apps;
+- [ ] read screen;
+- [ ] scroll, swipe, back and home;
+- [ ] find-and-click and fill-field workflows;
+- [ ] compound commands with mixed risk levels;
+- [ ] skills execution through the same safety path;
+- [ ] unknown-tool rejection;
+- [ ] missing-argument rejection;
+- [ ] destructive-action confirmation;
+- [ ] blocked payment/credential/OTP request;
+- [ ] inference timeout and recovery;
+- [ ] repeated failures without deadlock or duplicate execution.
 
-## How to record results
+Record:
 
-1. Replace each ☐ with ✅/❌ and fill Date + Log file (path to the captured `adb logcat` or
-   `Diagnostics` export for that run).
-2. Attach the Diagnostics latency export (Settings → Logs) for the Gemma + Sherpa runs.
-3. Commit the completed table. Once all cells are ✅, bump `versionName` to `1.0.0` and remove the
-   alpha disclaimer from `STATUS.md` / README.
-4. **Gemma 4 E2B default decision is separate.** Passing step 5b on the matrix confirms Gemma 4
-   *loads and plans* on a device — it does **not** automatically make Gemma 4 the default. Switching
-   the default profile (`BrainModelRegistry.defaultProfile`) is an explicit change made only after
-   Gemma 4 is verified across the full matrix **and** step 5c (the calibration eval harness) shows
-   it matching or beating Gemma 3n E4B on the prompt set for the target hardware tier. Until then
-   the default stays Gemma 3n E4B, and Gemma 4 remains an Experimental opt-in.
+```text
+Tasks attempted:
+Tasks successful:
+Incorrect tool selections:
+Unknown tools rejected:
+Timeouts:
+Median planning latency ms:
+P95 planning latency ms:
+```
 
-## Known device-specific notes (populate during runs)
+## 4. Secure Browser / Alibaba PageAgent
 
-- Manufacturer autostart prompts (Xiaomi/Huawei/Oppo/Vivo/OnePlus/Asus) — record any extra step.
-- GPU backend availability for LiteRT-LM per SoC — record GPU vs CPU fallback.
-- Sherpa native `.so` load success per ABI (arm64-v8a expected).
+The Secure Browser must use the same Gemma artifact through an exclusive model lease.
+
+- [ ] Entering Secure Browser unloads/reserves the phone brain correctly.
+- [ ] No second Gemma allocation appears in memory.
+- [ ] Approved exact HTTPS origin loads.
+- [ ] Unapproved origin, subdomain, HTTP, localhost and IP-literal navigation are blocked.
+- [ ] PageAgent runtime initializes from the packaged asset.
+- [ ] Ordinary text field fill works.
+- [ ] Dropdown selection works.
+- [ ] Checkbox and radio selection work.
+- [ ] Date input works.
+- [ ] Scrolling and observation loop work.
+- [ ] File upload opens Android user takeover; PageAgent cannot read arbitrary files.
+- [ ] Final submission requires explicit confirmation.
+- [ ] Password entry requires manual takeover.
+- [ ] OTP requires manual takeover.
+- [ ] CAPTCHA requires manual takeover.
+- [ ] Legal acceptance requires manual takeover.
+- [ ] Payment action is blocked and cannot click the payment control.
+- [ ] Arbitrary JavaScript execution is unavailable.
+- [ ] Page prompt injection cannot bypass the native policy.
+- [ ] Audit log records origin/action/decision without typed form values.
+- [ ] Closing Secure Browser restores the phone brain safely.
+- [ ] 50 sequential browser-planning steps complete without OOM or stale session reuse.
+
+Record:
+
+```text
+Origins tested:
+Workflows tested:
+Blocked actions:
+Takeovers completed:
+Audit sample path:
+Peak RAM MB:
+Median step latency ms:
+P95 step latency ms:
+```
+
+## 5. Offline speech
+
+### English
+
+- [ ] Streaming STT loads and transcribes offline.
+- [ ] TTS loads and speaks offline.
+- [ ] Wake-word/VAD path works as configured.
+- [ ] Airplane-mode test proves no silent network dependency.
+- [ ] Low-confidence retry behaves correctly.
+
+### Current Indic baselines
+
+Test Hindi, Bengali, Tamil, Telugu, Kannada and Malayalam separately:
+
+- [ ] pack downloads/installs correctly;
+- [ ] activation is blocked before health passes;
+- [ ] shared ASR is retained while another language depends on it;
+- [ ] STT produces usable output in clean speech;
+- [ ] STT is tested in real environmental noise;
+- [ ] TTS pronunciation is intelligible;
+- [ ] code-mixed terms, names, dates and numbers are tested;
+- [ ] remove/reinstall/repair works;
+- [ ] no system/cloud speech fallback occurs unless explicitly enabled.
+
+### Assamese
+
+Assamese remains planned until exact artifacts are selected.
+
+- [ ] exact STT artifact and revision recorded;
+- [ ] exact TTS artifact and revision recorded;
+- [ ] licence and redistribution conditions approved;
+- [ ] file size and SHA-256 recorded;
+- [ ] Android load passes;
+- [ ] benchmark corpus passes agreed quality gates;
+- [ ] pack is changed from `planned` only after evidence is committed.
+
+## 6. Accessibility and phone control
+
+- [ ] service enable/disable flow works;
+- [ ] visible text capture works;
+- [ ] tap/type/fill works;
+- [ ] scroll/swipe/long-press works;
+- [ ] back/home/notifications/recents work where permitted;
+- [ ] find-and-click handles missing targets safely;
+- [ ] screen-off/background behavior is understood and logged;
+- [ ] disabling the service stops privileged automation cleanly;
+- [ ] permission denial and permanent denial recovery work;
+- [ ] no action executes after confirmation timeout/cancel.
+
+## 7. Blind Aid and OCR
+
+- [ ] CameraX preview starts and stops cleanly.
+- [ ] Object detection produces expected labels/locations.
+- [ ] Haptic feedback works.
+- [ ] Spoken guidance works with the active offline TTS pack.
+- [ ] Low light, motion blur, covered camera and camera-denied states are handled.
+- [ ] Background/foreground transition does not leak camera resources.
+- [ ] OCR permission and capture flow work.
+- [ ] Blind Aid remains functional when Gemma is absent or unloaded.
+
+## 8. Lifecycle, update and recovery
+
+- [ ] process kill and relaunch recover local state;
+- [ ] app update preserves Room data and model metadata;
+- [ ] model partial download resumes;
+- [ ] hash mismatch deletes/quarantines corrupt output;
+- [ ] storage-full error is visible and recoverable;
+- [ ] microphone/camera/accessibility revocation is handled;
+- [ ] battery optimization and manufacturer autostart prompts are documented;
+- [ ] repeated Secure Browser open/close does not leak WebViews or model engines;
+- [ ] memory pressure during PageAgent closes the lease without immediate reallocation;
+- [ ] crash logs and diagnostics can be exported without sensitive form values.
+
+## 9. Performance and thermal run
+
+Run a minimum 30-minute mixed workload:
+
+```text
+10 phone-planning tasks
+10 STT/TTS interactions
+10 Secure Browser planning steps
+Blind Aid for 10 continuous minutes
+repeat until 30 minutes total
+```
+
+Record at 0, 10, 20 and 30 minutes:
+
+```text
+Battery percentage:
+Device temperature:
+Process RSS/peak RAM:
+Gemma backend:
+Planning latency:
+Speech latency:
+Dropped frames/ANR/crash:
+```
+
+Fail the device gate if there is an OOM, ANR, model duplication, uncontrolled temperature rise, corrupted response loop or safety-policy bypass.
+
+## Evidence requirements
+
+For every completed row, commit or link:
+
+- exact Git commit SHA;
+- APK SHA-256;
+- device and Android build details;
+- model/language artifact versions and hashes;
+- `adb logcat`/diagnostics output with sensitive values removed;
+- test date and tester;
+- failed cases and reproduction steps;
+- final pass/fail decision.
+
+Do not replace ☐ with ✅ without evidence. Device qualification and production approval are separate decisions.
