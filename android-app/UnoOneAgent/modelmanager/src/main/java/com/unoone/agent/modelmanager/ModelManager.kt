@@ -13,10 +13,9 @@ import java.security.MessageDigest
 /**
  * Source-of-truth model filesystem facade.
  *
- * UnoOne V2 stores models below the app-private `files/models` root using typed subdirectories:
- * `brain/`, `speech/`, `vision/`, `ocr/` and `staging/`. Manifest descriptors determine install,
- * health and uninstall paths; the fallback list exists only for a damaged/missing bundled manifest
- * and mirrors that same V2 layout. No Gemma 3n or `gemma-local` compatibility path is retained.
+ * UnoOne V2 stores models below the app-private models root using typed subdirectories. The bundled
+ * manifest is the only model catalogue. If it cannot be parsed, model detection and installation fail
+ * closed instead of inventing fallback descriptors or directories.
  */
 class ModelManager(
     private val context: Context,
@@ -38,11 +37,7 @@ class ModelManager(
 
     fun findModel(id: String): ModelDescriptor? = manifestLoader.find(context, id)
 
-    /**
-     * Verifies every declared file. A present, non-empty file with no declared SHA-256 or size is
-     * healthy but unverified; this is how an imported Gemma candidate is represented until its exact
-     * production artifact is qualified and the manifest is updated.
-     */
+    /** Verifies every declared file against its size and SHA-256 when available. */
     suspend fun modelHealth(id: String): HealthResult = withContext(Dispatchers.IO) {
         val descriptor = findModel(id)
             ?: return@withContext HealthResult(
@@ -78,21 +73,19 @@ class ModelManager(
                 missing += file.name
                 continue
             }
-            if (file.sizeBytes == 0L && file.sha256.isBlank()) {
+            if (file.sizeBytes == 0L || file.sha256.isBlank()) {
                 unverified += file.name
                 continue
             }
-            if (file.sizeBytes > 0 && target.length() != file.sizeBytes) sizeMismatch += file.name
-            if (file.sha256.isNotBlank() && computeSha256(target.absolutePath) != file.sha256.lowercase()) {
-                checksumMismatch += file.name
-            }
+            if (target.length() != file.sizeBytes) sizeMismatch += file.name
+            if (computeSha256(target.absolutePath) != file.sha256.lowercase()) checksumMismatch += file.name
         }
 
         val healthy = missing.isEmpty() && sizeMismatch.isEmpty() && checksumMismatch.isEmpty()
         val verified = healthy && unverified.isEmpty()
         val message = when {
             !healthy -> "Needs repair (missing/size/hash mismatch)"
-            unverified.isNotEmpty() -> "Present — not hash-verified; qualify the exact artifact before release"
+            unverified.isNotEmpty() -> "Present — integrity metadata incomplete; release blocked"
             else -> "Verified"
         }
         HealthResult(
@@ -154,11 +147,8 @@ class ModelManager(
         if (!base.exists()) base.mkdirs()
 
         val manifest = loadManifest()
-        val known: List<Pair<String, String>> = manifest.models.map { it.folder to it.type.name }
-            .ifEmpty { FALLBACK_MODEL_FOLDERS }
-
-        known.map { (folderName, type) ->
-            val folder = File(base, folderName)
+        manifest.models.map { descriptor ->
+            val folder = File(base, descriptor.folder)
             val hasRealFile = folder.walkTopDown().any { file ->
                 file.isFile && !file.name.endsWith(".part") && file.length() > 0L
             }
@@ -166,16 +156,15 @@ class ModelManager(
             val sizeMb = if (present) {
                 folder.walkTopDown().filter { it.isFile }.sumOf { it.length() } / (1024 * 1024)
             } else 0L
-            val descriptor = manifest.findByFolder(folderName)
-            val health = if (descriptor != null && present) modelHealth(descriptor.id) else null
+            val health = if (present) modelHealth(descriptor.id) else null
             ModelStatus(
-                name = folderName,
-                type = type,
+                name = descriptor.folder,
+                type = descriptor.type.name,
                 present = present,
                 loaded = false,
                 sizeMb = sizeMb,
-                version = descriptor?.version.orEmpty(),
-                expectedSha256 = descriptor?.files?.firstOrNull()?.sha256.orEmpty(),
+                version = descriptor.version,
+                expectedSha256 = descriptor.files.firstOrNull()?.sha256.orEmpty(),
                 healthy = health?.healthy ?: false,
                 verified = health?.verified ?: false
             )
@@ -186,7 +175,9 @@ class ModelManager(
 
     suspend fun verifyChecksum(path: String, expected: String): Boolean = withContext(Dispatchers.IO) {
         val file = File(path)
-        file.exists() && computeSha256(path) == expected.lowercase()
+        expected.matches(Regex("^[a-fA-F0-9]{64}$")) &&
+            file.exists() &&
+            computeSha256(path) == expected.lowercase()
     }
 
     private fun computeSha256(path: String): String? {
@@ -221,16 +212,13 @@ class ModelManager(
     fun getModelFolderPath(modelName: String): String =
         File(appPrivateModelPath, modelName).absolutePath
 
-    /** Creates all manifest folders plus non-manifest V2 runtime directories. */
+    /** Creates only declared model folders plus non-model runtime directories. */
     fun ensureModelDirectories() {
         val base = File(appPrivateModelPath)
-        val manifestFolders = loadManifest().models.map { it.folder }.ifEmpty {
-            FALLBACK_MODEL_FOLDERS.map { it.first }
-        }
+        val manifestFolders = loadManifest().models.map { it.folder }
         (manifestFolders + RUNTIME_DIRECTORIES).distinct().forEach { File(base, it).mkdirs() }
     }
 
-    /** Returns the sole Gemma 4 E2B candidate path, or null when no artifact is installed. */
     fun getLlmModelPath(): String? = getLlmModelPath(BrainModelRegistry.defaultProfile)
 
     fun getLlmModelPath(spec: BrainModelSpec): String? {
@@ -267,22 +255,6 @@ class ModelManager(
     )
 
     companion object {
-        private val FALLBACK_MODEL_FOLDERS: List<Pair<String, String>> = listOf(
-            "brain/gemma-4-e2b" to "llm",
-            "speech/shared/sherpa-asr-en" to "asr",
-            "speech/shared/sherpa-asr-whisper" to "asr",
-            "speech/shared/vad" to "vad",
-            "speech/shared/punctuation" to "punctuation",
-            "speech/languages/en-IN/tts" to "tts",
-            "speech/languages/hi-IN/tts" to "tts",
-            "speech/languages/bn-IN/tts" to "tts",
-            "speech/languages/ta-IN/tts" to "tts",
-            "speech/languages/te-IN/tts" to "tts",
-            "speech/languages/kn-IN/tts" to "tts",
-            "speech/languages/ml-IN/tts" to "tts",
-            "ocr/optional" to "ocr"
-        )
-
         private val RUNTIME_DIRECTORIES: List<String> = listOf(
             "vision/blind-aid",
             "staging"
