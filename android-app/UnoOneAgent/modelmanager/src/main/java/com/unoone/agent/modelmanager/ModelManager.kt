@@ -189,22 +189,27 @@ class ModelManager(
         file.exists() && computeSha256(path) == expected.lowercase()
     }
 
-    private fun computeSha256(path: String): String? = try {
-        val file = File(path)
-        if (!file.exists()) return null
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buffer = ByteArray(8192)
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-                digest.update(buffer, 0, read)
+    private fun computeSha256(path: String): String? {
+        return try {
+            val file = File(path)
+            if (!file.exists()) {
+                null
+            } else {
+                val digest = MessageDigest.getInstance("SHA-256")
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        digest.update(buffer, 0, read)
+                    }
+                }
+                digest.digest().joinToString("") { "%02x".format(it) }
             }
+        } catch (e: Exception) {
+            Logger.e("Checksum computation failed for $path", e)
+            null
         }
-        digest.digest().joinToString("") { "%02x".format(it) }
-    } catch (e: Exception) {
-        Logger.e("Checksum computation failed for $path", e)
-        null
     }
 
     fun getStorageUsageMb(): Long {
