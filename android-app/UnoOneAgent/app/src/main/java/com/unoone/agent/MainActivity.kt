@@ -89,7 +89,11 @@ class MainActivity : ComponentActivity() {
         val languagePacksViewModel = LanguagePacksViewModel(this)
         val voiceTestViewModel = VoiceTestViewModel(voiceModule)
         val auditViewerViewModel = AuditViewerViewModel(database.actionLogDao())
-        val secureBrowserViewModel = SecureBrowserViewModel(this, app.secureBrowserModelLease)
+        val secureBrowserViewModel = SecureBrowserViewModel(
+            this,
+            app.secureBrowserModelLease,
+            database.actionLogDao()
+        )
 
         setContent {
             UnoOneTheme {
