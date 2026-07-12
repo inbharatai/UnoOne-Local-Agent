@@ -15,16 +15,12 @@ android {
         applicationId = "com.unoone.agent"
         minSdk = 28
         targetSdk = 35
-        // Alpha: deterministic command layer is verified; on-device Gemma/Sherpa/Accessibility/Blind-Aid
-        // E2E is not yet verified across the test matrix (see DEVICE_VERIFICATION.md). Reserve 1.0.0
-        // for post-E2E production sign-off.
-        versionCode = 3
-        versionName = "0.3.0-alpha-local"
+        versionCode = 4
+        versionName = "0.4.0-alpha-v2"
     }
 
     buildTypes {
         release {
-            // Privacy/security app: shrink + obfuscate the release artifact.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -53,8 +49,6 @@ android {
         }
     }
 
-    // 6E: Lint configuration — treat warnings as errors for CI enforcement.
-    // A baseline is used to suppress pre-existing issues so lint only fails on new regressions.
     lint {
         abortOnError = true
         warningsAsErrors = true
@@ -70,6 +64,7 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":storage"))
     implementation(project(":modelmanager"))
+    implementation(project(":languagepacks"))
     implementation(project(":localbrain"))
     implementation(project(":voice"))
     implementation(project(":agentrouter"))
@@ -79,6 +74,7 @@ dependencies {
     implementation(project(":skills"))
     implementation(project(":observability"))
     implementation(project(":accessibilitycontrol"))
+    implementation(project(":securebrowser"))
 
     val composeBom = platform("androidx.compose:compose-bom:2025.12.01")
     implementation(composeBom)
@@ -104,20 +100,14 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-
-    // Encrypted SharedPreferences for privacy settings
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-    // OCR is provided by the bundled ML Kit dependency inside :phonecontrol
-
-    // CameraX for real-time continuous blind aid analysis
     val cameraVersion = "1.3.3"
     implementation("androidx.camera:camera-core:$cameraVersion")
     implementation("androidx.camera:camera-camera2:$cameraVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraVersion")
     implementation("androidx.camera:camera-view:$cameraVersion")
 
-    // 1C: Hilt dependency injection
     implementation("com.google.dagger:hilt-android:2.56.1")
     ksp("com.google.dagger:hilt-compiler:2.56.1")
 
