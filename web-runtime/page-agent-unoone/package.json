@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Alibaba PageAgent runtime adapted for UnoOne's local Gemma bridge and native safety boundary",
+  "description": "Alibaba PageAgent core adapted for UnoOne's local Gemma bridge and native safety boundary",
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "page-agent": "1.12.1",
+    "@page-agent/core": "1.12.1",
+    "@page-agent/page-controller": "1.12.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
