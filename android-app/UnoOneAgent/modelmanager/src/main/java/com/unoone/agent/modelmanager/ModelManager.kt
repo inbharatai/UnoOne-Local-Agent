@@ -1,7 +1,6 @@
 package com.unoone.agent.modelmanager
 
 import android.content.Context
-import android.os.Environment
 import com.unoone.agent.core.model.BrainModelRegistry
 import com.unoone.agent.core.model.BrainModelSpec
 import com.unoone.agent.core.util.Logger
@@ -11,6 +10,14 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
 
+/**
+ * Source-of-truth model filesystem facade.
+ *
+ * UnoOne V2 stores models below the app-private `files/models` root using typed subdirectories:
+ * `brain/`, `speech/`, `vision/`, `ocr/` and `staging/`. Manifest descriptors determine install,
+ * health and uninstall paths; the fallback list exists only for a damaged/missing bundled manifest
+ * and mirrors that same V2 layout. No Gemma 3n or `gemma-local` compatibility path is retained.
+ */
 class ModelManager(
     private val context: Context,
     private val modelMetadataDao: ModelMetadataDao? = null
@@ -19,113 +26,119 @@ class ModelManager(
     private val manifestLoader = ModelManifestLoader()
     private val installer: ModelInstaller by lazy {
         ModelInstaller(appPrivateModelPath, modelMetadataDao) { name ->
-            // Resolves a bundled asset; null (not an exception) when absent so the installer can
-            // emit a clear "asset not found" failure instead of crashing on install.
             runCatching { context.assets.open(name) }.getOrNull()
         }
     }
-
-    private val modelBasePath: String
-        get() = Environment.getExternalStorageDirectory()
-            .resolve("Android/data/${context.packageName}/files/models")
-            .absolutePath
 
     private val appPrivateModelPath: String
         get() = context.getExternalFilesDir("models")?.absolutePath
             ?: context.filesDir.resolve("models").absolutePath
 
-    /** Loads (and caches) the bundled model manifest. */
     fun loadManifest(): ModelManifest = manifestLoader.load(context)
 
-    /** Finds a manifest descriptor by model id, or null. */
     fun findModel(id: String): ModelDescriptor? = manifestLoader.find(context, id)
 
     /**
-     * Verifies on-disk health of a model: every declared file must exist, match its declared size
-     * (if any), and match its declared SHA-256 (if any). Missing/mismatched files are reported so the
-     * UI can offer a re-install.
-     *
-     * **Integrity verification vs. presence (review 2026-06-26):** a file that is present and
-     * non-empty but whose manifest entry carries *no* SHA-256 and *no* size cannot be byte-verified.
-     * Such files are reported in [HealthResult.unverified] and cause [HealthResult.verified] to be
-     * false. For `type=llm` (Gemma) the manifest intentionally ships URL-only (manual import), so a
-     * manually pushed `.litertlm` is `healthy` (intact) but **not** `verified` — the UI must show
-     * "Present — not hash-verified (manual import)" rather than "verified". Do not call the LLM
-     * artifact production-ready until its exact sha256+size are added to the manifest and matched.
+     * Verifies every declared file. A present, non-empty file with no declared SHA-256 or size is
+     * healthy but unverified; this is how an imported Gemma candidate is represented until its exact
+     * production artifact is qualified and the manifest is updated.
      */
     suspend fun modelHealth(id: String): HealthResult = withContext(Dispatchers.IO) {
         val descriptor = findModel(id)
-            ?: return@withContext HealthResult(id, healthy = false, verified = false, missing = emptyList(), sizeMismatch = emptyList(), checksumMismatch = emptyList(), unverified = emptyList(), message = "Unknown model id")
+            ?: return@withContext HealthResult(
+                modelId = id,
+                healthy = false,
+                verified = false,
+                missing = emptyList(),
+                sizeMismatch = emptyList(),
+                checksumMismatch = emptyList(),
+                unverified = emptyList(),
+                message = "Unknown model id"
+            )
+
         val folder = File(appPrivateModelPath, descriptor.folder)
         val missing = mutableListOf<String>()
         val sizeMismatch = mutableListOf<String>()
         val checksumMismatch = mutableListOf<String>()
         val unverified = mutableListOf<String>()
+
         for (file in descriptor.files) {
-            // Archives are deleted after extraction, so health verifies the extracted directory
-            // rather than the (deleted) archive. The directory is ModelFile.extractsTo when set
-            // (required for tarballs whose top dir differs from the archive name, e.g. the
-            // whisper-tiny tar), else the strip-last-extension of the archive name (espeak convention).
             if (file.archive) {
                 val extractedName = file.extractsTo?.takeIf { it.isNotBlank() }
                     ?: file.name.substringBeforeLast('.')
                 val extracted = File(folder, extractedName)
                 if (!extracted.exists() || !extracted.isDirectory || extracted.listFiles().isNullOrEmpty()) {
-                    missing.add(file.name)
+                    missing += file.name
                 }
                 continue
             }
+
             val target = File(folder, file.name)
-            if (!target.exists()) {
-                missing.add(file.name)
+            if (!target.exists() || target.length() == 0L) {
+                missing += file.name
                 continue
             }
-            // A 0-byte / truncated artifact is never healthy.
-            if (target.length() == 0L) {
-                missing.add(file.name)
-                continue
-            }
-            // Present and non-empty, but the manifest declares no integrity fields → we cannot
-            // byte-verify. Record as unverified (not missing) so the UI distinguishes "intact but
-            // not hash-checked" from "broken". For llm artifacts this is the manual-import case.
             if (file.sizeBytes == 0L && file.sha256.isBlank()) {
-                unverified.add(file.name)
+                unverified += file.name
                 continue
             }
-            if (file.sizeBytes > 0 && target.length() != file.sizeBytes) sizeMismatch.add(file.name)
-            if (file.sha256.isNotBlank() && computeSha256(target.absolutePath) != file.sha256.lowercase()) checksumMismatch.add(file.name)
+            if (file.sizeBytes > 0 && target.length() != file.sizeBytes) sizeMismatch += file.name
+            if (file.sha256.isNotBlank() && computeSha256(target.absolutePath) != file.sha256.lowercase()) {
+                checksumMismatch += file.name
+            }
         }
+
         val healthy = missing.isEmpty() && sizeMismatch.isEmpty() && checksumMismatch.isEmpty()
         val verified = healthy && unverified.isEmpty()
         val message = when {
             !healthy -> "Needs repair (missing/size/hash mismatch)"
-            unverified.isNotEmpty() -> "Present — not hash-verified (manual import; add sha256+size to manifest to verify)"
+            unverified.isNotEmpty() -> "Present — not hash-verified; qualify the exact artifact before release"
             else -> "Verified"
         }
-        HealthResult(id, healthy, verified, missing, sizeMismatch, checksumMismatch, unverified, message)
+        HealthResult(
+            modelId = id,
+            healthy = healthy,
+            verified = verified,
+            missing = missing,
+            sizeMismatch = sizeMismatch,
+            checksumMismatch = checksumMismatch,
+            unverified = unverified,
+            message = message
+        )
     }
 
-    /** Downloads and verifies a model, streaming progress to [onProgress]. */
     suspend fun installModel(
         id: String,
-        onProgress: ((modelId: String, fileIndex: Int, totalFiles: Int, file: String, downloaded: Long, total: Long) -> Unit)? = null
+        onProgress: ((
+            modelId: String,
+            fileIndex: Int,
+            totalFiles: Int,
+            file: String,
+            downloaded: Long,
+            total: Long
+        ) -> Unit)? = null
     ): ModelInstaller.InstallResult {
         val descriptor = findModel(id)
             ?: return ModelInstaller.InstallResult.Failure("Unknown model id: $id")
-        return installer.install(descriptor, onProgress?.let { ModelInstaller.ProgressListener { mid, fi, tf, f, d, t -> it(mid, fi, tf, f, d, t) } })
+        return installer.install(
+            descriptor,
+            onProgress?.let { callback ->
+                ModelInstaller.ProgressListener { mid, fileIndex, totalFiles, file, downloaded, total ->
+                    callback(mid, fileIndex, totalFiles, file, downloaded, total)
+                }
+            }
+        )
     }
 
-    /** Deletes a model folder and clears its persisted metadata. */
+    /** Deletes only the manifest-resolved folder beneath the app-private models root. */
     suspend fun uninstallModel(id: String) = withContext(Dispatchers.IO) {
         val descriptor = findModel(id)
         val base = File(appPrivateModelPath)
         val folder = if (descriptor != null) File(base, descriptor.folder) else File(base, id)
-        // Guard against path traversal: the resolved folder must stay inside the models root.
-        // A malformed id ("../..") or a tampered manifest folder must never delete outside models/.
         val baseCanonical = base.canonicalPath
         val folderCanonical = folder.canonicalPath
         if (folderCanonical != baseCanonical && !folderCanonical.startsWith(baseCanonical + File.separator)) {
-            Logger.w("ModelManager: refusing to uninstall '$id' — resolves outside models dir ($folderCanonical)")
+            Logger.w("ModelManager: refusing to uninstall '$id' outside models root ($folderCanonical)")
             return@withContext
         }
         if (folder.exists()) {
@@ -137,139 +150,92 @@ class ModelManager(
     }
 
     suspend fun detectModels(): List<ModelStatus> = withContext(Dispatchers.IO) {
-        val models = mutableListOf<ModelStatus>()
         val base = File(appPrivateModelPath)
         if (!base.exists()) base.mkdirs()
 
         val manifest = loadManifest()
-        // Known model folders: manifest first (source of truth), then any legacy hardcoded ones.
         val known: List<Pair<String, String>> = manifest.models.map { it.folder to it.type.name }
-            .ifEmpty {
-                // Legacy fallback when the manifest asset fails to load. Mirrors the manifest's
-                // per-language folder layout (English + shared whisper ASR + per-language MMS TTS).
-                listOf(
-                    "gemma-local" to "llm",
-                    "sherpa-asr-en" to "asr",
-                    "sherpa-asr-whisper" to "asr",
-                    "sherpa-tts-en" to "tts",
-                    "sherpa-tts-hin" to "tts",
-                    "sherpa-tts-ben" to "tts",
-                    "sherpa-tts-tam" to "tts",
-                    "sherpa-tts-tel" to "tts",
-                    "sherpa-tts-kan" to "tts",
-                    "sherpa-tts-mal" to "tts",
-                    "vad" to "vad",
-                    "punctuation" to "punctuation",
-                    "ocr-optional" to "ocr"
-                )
-            }
+            .ifEmpty { FALLBACK_MODEL_FOLDERS }
 
-        for ((folderName, type) in known) {
+        known.map { (folderName, type) ->
             val folder = File(base, folderName)
-            // A folder holding only a stale crashed `.part` is not an installed model — require at
-            // least one real (non-.part) file before reporting present, so the count isn't inflated.
-            val realFiles = folder.listFiles { f -> f.isFile && !f.name.endsWith(".part") }
-            val present = folder.exists() && folder.isDirectory && !realFiles.isNullOrEmpty()
-            val sizeMb = if (present) folder.walkTopDown().filter { it.isFile }.map { it.length() }.sum() / (1024 * 1024) else 0L
+            val hasRealFile = folder.walkTopDown().any { file ->
+                file.isFile && !file.name.endsWith(".part") && file.length() > 0L
+            }
+            val present = folder.exists() && folder.isDirectory && hasRealFile
+            val sizeMb = if (present) {
+                folder.walkTopDown().filter { it.isFile }.sumOf { it.length() } / (1024 * 1024)
+            } else 0L
             val descriptor = manifest.findByFolder(folderName)
             val health = if (descriptor != null && present) modelHealth(descriptor.id) else null
-            models.add(
-                ModelStatus(
-                    name = folderName,
-                    type = type,
-                    present = present,
-                    loaded = false,
-                    sizeMb = sizeMb,
-                    version = descriptor?.version ?: "",
-                    expectedSha256 = descriptor?.files?.firstOrNull()?.sha256 ?: "",
-                    healthy = health?.healthy ?: false,
-                    verified = health?.verified ?: false
-                )
+            ModelStatus(
+                name = folderName,
+                type = type,
+                present = present,
+                loaded = false,
+                sizeMb = sizeMb,
+                version = descriptor?.version.orEmpty(),
+                expectedSha256 = descriptor?.files?.firstOrNull()?.sha256.orEmpty(),
+                healthy = health?.healthy ?: false,
+                verified = health?.verified ?: false
             )
+        }.also { models ->
+            Logger.d("Detected ${models.count { it.present }} models present out of ${models.size}")
         }
-
-        Logger.d("Detected ${models.count { it.present }} models present out of ${models.size}")
-        models
     }
 
     suspend fun verifyChecksum(path: String, expected: String): Boolean = withContext(Dispatchers.IO) {
-        return@withContext try {
-            val file = File(path)
-            if (!file.exists()) return@withContext false
-            computeSha256(path) == expected.lowercase()
-        } catch (e: Exception) {
-            Logger.e("Checksum verification failed for $path", e)
-            false
-        }
+        val file = File(path)
+        file.exists() && computeSha256(path) == expected.lowercase()
     }
 
-    /** Blocking SHA-256 of a file (lowercase hex), or null on error. Used by both [verifyChecksum]
-     *  (suspend) and [modelHealth] (non-suspend, runs on the caller's thread — typically IO via the UI VM). */
-    private fun computeSha256(path: String): String? {
-        return try {
-            val file = File(path)
-            if (!file.exists()) return null
-            val digest = MessageDigest.getInstance("SHA-256")
-            file.inputStream().use { fis ->
-                val buffer = ByteArray(8192)
-                var read: Int
-                while (fis.read(buffer).also { read = it } > 0) {
-                    digest.update(buffer, 0, read)
-                }
+    private fun computeSha256(path: String): String? = try {
+        val file = File(path)
+        if (!file.exists()) return null
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                digest.update(buffer, 0, read)
             }
-            digest.digest().joinToString("") { "%02x".format(it) }
-        } catch (e: Exception) {
-            Logger.e("Checksum computation failed for $path", e)
-            null
         }
+        digest.digest().joinToString("") { "%02x".format(it) }
+    } catch (e: Exception) {
+        Logger.e("Checksum computation failed for $path", e)
+        null
     }
 
     fun getStorageUsageMb(): Long {
         val base = File(appPrivateModelPath)
         if (!base.exists()) return 0L
-        return base.walkTopDown().filter { it.isFile }.map { it.length() }.sum() / (1024 * 1024)
+        return base.walkTopDown().filter { it.isFile }.sumOf { it.length() } / (1024 * 1024)
     }
 
-    fun getModelFolderPath(modelName: String): String {
-        return File(appPrivateModelPath, modelName).absolutePath
-    }
+    fun getModelFolderPath(modelName: String): String =
+        File(appPrivateModelPath, modelName).absolutePath
 
+    /** Creates all manifest folders plus non-manifest V2 runtime directories. */
     fun ensureModelDirectories() {
         val base = File(appPrivateModelPath)
-        val manifest = loadManifest()
-        val folders = manifest.models.map { it.folder }
-            .ifEmpty {
-                listOf(
-                    "gemma-local", "sherpa-asr-en", "sherpa-asr-whisper",
-                    "sherpa-tts-en", "sherpa-tts-hin", "sherpa-tts-ben", "sherpa-tts-tam",
-                    "sherpa-tts-tel", "sherpa-tts-kan", "sherpa-tts-mal",
-                    "vad", "punctuation", "ocr-optional"
-                )
-            }
-        folders.forEach { File(base, it).mkdirs() }
+        val manifestFolders = loadManifest().models.map { it.folder }.ifEmpty {
+            FALLBACK_MODEL_FOLDERS.map { it.first }
+        }
+        (manifestFolders + RUNTIME_DIRECTORIES).distinct().forEach { File(base, it).mkdirs() }
     }
 
-    /**
-     * Returns the absolute path of the `.litertlm` for the legacy default profile
-     * (Gemma 3n E4B, on-disk folder "gemma-local"), or null if none is present. Kept for back-compat;
-     * new callers should pass an explicit [BrainModelSpec] via [getLlmModelPath].
-     */
+    /** Returns the sole Gemma 4 E2B candidate path, or null when no artifact is installed. */
     fun getLlmModelPath(): String? = getLlmModelPath(BrainModelRegistry.defaultProfile)
 
-    /**
-     * Returns the absolute path of the `.litertlm` installed for [spec], or null if none is present.
-     * Prefers the file whose name matches [BrainModelSpec.fileName]; otherwise returns the largest
-     * matching file in the profile's folder (deterministic when more than one is present). Each
-     * profile has its own folder, so this globs only within [BrainModelSpec.modelFolder].
-     */
     fun getLlmModelPath(spec: BrainModelSpec): String? {
         val folder = File(appPrivateModelPath, spec.modelFolder)
         val candidates = folder.listFiles { file ->
-            file.isFile && file.name.endsWith(spec.fileExtension, ignoreCase = true)
+            file.isFile && file.name.endsWith(spec.fileExtension, ignoreCase = true) && file.length() > 0L
         } ?: return null
         if (candidates.isEmpty()) return null
         return candidates.firstOrNull { it.name.equals(spec.fileName, ignoreCase = true) }?.absolutePath
-            ?: candidates.maxByOrNull { it.length() }!!.absolutePath
+            ?: candidates.maxByOrNull { it.length() }?.absolutePath
     }
 
     data class ModelStatus(
@@ -281,21 +247,40 @@ class ModelManager(
         val version: String = "",
         val expectedSha256: String = "",
         val healthy: Boolean = false,
-        /** Byte-verified (sha256/size matched). False for manual-import files with no hash (e.g. Gemma). */
         val verified: Boolean = false
     )
 
-    /** Result of verifying a model's on-disk files against its manifest. */
     data class HealthResult(
         val modelId: String,
         val healthy: Boolean,
-        /** True only when every file is intact AND byte-verifiable (has a matching sha256 or size). */
         val verified: Boolean = false,
         val missing: List<String>,
         val sizeMismatch: List<String>,
         val checksumMismatch: List<String>,
-        /** Present, non-empty files the manifest could not byte-verify (no sha256 + no size). */
         val unverified: List<String> = emptyList(),
         val message: String
     )
+
+    companion object {
+        private val FALLBACK_MODEL_FOLDERS: List<Pair<String, String>> = listOf(
+            "brain/gemma-4-e2b" to "llm",
+            "speech/shared/sherpa-asr-en" to "asr",
+            "speech/shared/sherpa-asr-whisper" to "asr",
+            "speech/shared/vad" to "vad",
+            "speech/shared/punctuation" to "punctuation",
+            "speech/languages/en-IN/tts" to "tts",
+            "speech/languages/hi-IN/tts" to "tts",
+            "speech/languages/bn-IN/tts" to "tts",
+            "speech/languages/ta-IN/tts" to "tts",
+            "speech/languages/te-IN/tts" to "tts",
+            "speech/languages/kn-IN/tts" to "tts",
+            "speech/languages/ml-IN/tts" to "tts",
+            "ocr/optional" to "ocr"
+        )
+
+        private val RUNTIME_DIRECTORIES: List<String> = listOf(
+            "vision/blind-aid",
+            "staging"
+        )
+    }
 }
