@@ -7,7 +7,7 @@
     "noUncheckedIndexedAccess": true,
     "useDefineForClassFields": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vitest/globals"],
+    "types": ["vitest/globals", "node"],
     "skipLibCheck": true,
     "noEmit": true
   },
