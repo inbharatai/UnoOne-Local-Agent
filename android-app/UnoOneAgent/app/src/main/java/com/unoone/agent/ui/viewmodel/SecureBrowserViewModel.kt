@@ -6,23 +6,30 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unoone.agent.browser.SecureBrowserModelLease
 import com.unoone.agent.core.model.Result
+import com.unoone.agent.securebrowser.BrowserAuditEvent
 import com.unoone.agent.securebrowser.BrowserDomainPolicy
 import com.unoone.agent.securebrowser.BrowserEventSink
 import com.unoone.agent.securebrowser.BrowserUserInteraction
 import com.unoone.agent.securebrowser.PageAgentRequestType
 import com.unoone.agent.securebrowser.SecureBrowserNativeHandler
 import com.unoone.agent.securebrowser.SecureWebViewController
+import com.unoone.agent.storage.dao.ActionLogDao
+import com.unoone.agent.storage.entity.ActionLogEntity
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.util.UUID
 
 
@@ -54,16 +61,18 @@ private data class PromptAnswer(val approved: Boolean, val text: String)
 
 /**
  * Owns one UnoOne Secure Browser session and its human-in-the-loop prompts.
- * Raw page content and form values are never persisted by this ViewModel.
+ * Raw page content, model prompts and typed form values are never persisted by this ViewModel.
  */
 class SecureBrowserViewModel(
     context: Context,
-    private val modelLease: SecureBrowserModelLease
+    private val modelLease: SecureBrowserModelLease,
+    private val actionLogDao: ActionLogDao
 ) : ViewModel(), BrowserUserInteraction {
 
     private val appContext = context.applicationContext
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val promptMutex = Mutex()
+    private val json = Json { ignoreUnknownKeys = false; encodeDefaults = true }
 
     private val domainPolicy = BrowserDomainPolicy(APPROVED_ORIGINS)
     private var controller: SecureWebViewController? = null
@@ -89,7 +98,11 @@ class SecureBrowserViewModel(
             return
         }
 
-        _state.value = _state.value.copy(phase = "Starting", status = "Reserving Gemma 4 for Secure Browser…", error = "")
+        _state.value = _state.value.copy(
+            phase = "Starting",
+            status = "Reserving Gemma 4 for Secure Browser…",
+            error = ""
+        )
         viewModelScope.launch {
             when (val leaseResult = modelLease.acquire()) {
                 is Result.Error -> {
@@ -153,7 +166,13 @@ class SecureBrowserViewModel(
             _state.value = _state.value.copy(error = "PageAgent is not ready on the current page")
             return
         }
-        _state.value = _state.value.copy(taskRunning = true, phase = "Running", status = "PageAgent is working…", lastResult = "", error = "")
+        _state.value = _state.value.copy(
+            taskRunning = true,
+            phase = "Running",
+            status = "PageAgent is working…",
+            lastResult = "",
+            error = ""
+        )
         controller?.executeTask(task) { success, result ->
             _state.value = _state.value.copy(
                 taskRunning = false,
@@ -167,7 +186,11 @@ class SecureBrowserViewModel(
 
     fun stopTask() {
         controller?.stopTask()
-        _state.value = _state.value.copy(taskRunning = false, phase = "Stopped", status = "Browser task stopped")
+        _state.value = _state.value.copy(
+            taskRunning = false,
+            phase = "Stopped",
+            status = "Browser task stopped"
+        )
     }
 
     fun goBack(): Boolean {
@@ -197,7 +220,11 @@ class SecureBrowserViewModel(
             val result = modelLease.release(restore = true)
             _state.value = when (result) {
                 is Result.Success -> _state.value.copy(phase = "Closed", status = "Secure Browser closed")
-                is Result.Error -> _state.value.copy(phase = "Closed with error", status = "Secure Browser closed", error = result.message)
+                is Result.Error -> _state.value.copy(
+                    phase = "Closed with error",
+                    status = "Secure Browser closed",
+                    error = result.message
+                )
             }
         }
     }
@@ -241,9 +268,34 @@ class SecureBrowserViewModel(
             PageAgentRequestType.TASK_RESULT -> {
                 _state.value = _state.value.copy(status = "PageAgent returned a task result")
             }
-            PageAgentRequestType.AUDIT_EVENT -> Unit // Stored by native audit integration in a later step.
+            PageAgentRequestType.AUDIT_EVENT -> persistAudit(payload)
             else -> Unit
         }
+    }
+
+    private suspend fun persistAudit(payload: String) {
+        val event = runCatching {
+            json.decodeFromString(BrowserAuditEvent.serializer(), payload)
+        }.getOrNull() ?: return
+
+        val args = buildJsonObject {
+            put("origin", event.origin)
+            put("sessionId", event.sessionId)
+            put("actionClass", event.actionClass.name)
+            put("decision", event.decision)
+        }
+        actionLogDao.insert(
+            ActionLogEntity(
+                timestamp = event.timestampEpochMs,
+                inputText = event.summary.take(500),
+                selectedTool = "browser:${event.actionName}",
+                argsJson = json.encodeToString(args),
+                riskLevel = event.actionClass.name,
+                status = event.decision,
+                outputText = event.message.take(300),
+                errorMessage = if (event.decision == "blocked") event.message.take(300) else ""
+            )
+        )
     }
 
     private fun activitySummary(payload: String): String = when {
