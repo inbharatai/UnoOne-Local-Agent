@@ -32,5 +32,6 @@ include(
     ":memory",
     ":skills",
     ":observability",
-    ":accessibilitycontrol"
+    ":accessibilitycontrol",
+    ":securebrowser"
 )
