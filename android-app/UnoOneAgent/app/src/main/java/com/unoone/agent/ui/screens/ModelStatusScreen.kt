@@ -42,7 +42,7 @@ import com.unoone.agent.ui.theme.DoneGreen
 import com.unoone.agent.ui.theme.FailedRed
 import com.unoone.agent.ui.viewmodel.ModelStatusViewModel
 
-/** Model health, installation and single-brain qualification screen. */
+/** Model health, installation and sole-brain qualification screen. */
 @Composable
 fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
     val rows by viewModel.rows.collectAsState()
@@ -50,7 +50,7 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
     val storageUsageMb by viewModel.storageUsageMb.collectAsState()
     val resultMessage by viewModel.resultMessage.collectAsState()
     val busy by viewModel.busy.collectAsState()
-    val brainProfiles by viewModel.brainProfiles.collectAsState()
+    val brainStatus by viewModel.brainStatus.collectAsState()
     val selfTest by viewModel.selfTest.collectAsState()
     val brainBusy by viewModel.brainBusy.collectAsState()
 
@@ -90,21 +90,21 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
         )
         Spacer(modifier = Modifier.height(12.dp))
 
-        resultMessage?.let { msg ->
+        resultMessage?.let { message ->
             Text(
-                text = msg,
-                color = if (msg.contains("failed", ignoreCase = true)) FailedRed else DoneGreen,
+                text = message,
+                color = if (message.contains("failed", ignoreCase = true)) FailedRed else DoneGreen,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
         }
 
-        progress?.let { p ->
+        progress?.let { item ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(p.message, fontWeight = FontWeight.SemiBold)
+                    Text(item.message, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(8.dp))
                     LinearProgressIndicator(
-                        progress = { p.percent / 100f },
+                        progress = { item.percent / 100f },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -112,13 +112,13 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        brainProfiles.firstOrNull()?.let { brain ->
+        brainStatus?.let { brain ->
             BrainCard(
                 row = brain,
                 selfTest = selfTest,
                 busy = brainBusy,
-                onLoad = { viewModel.selectBrain(brain.manifestId) },
-                onSelfTest = { viewModel.runBrainSelfTest(brain.manifestId) }
+                onLoad = viewModel::loadBrain,
+                onSelfTest = viewModel::runBrainSelfTest
             )
         }
 
@@ -129,7 +129,7 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
             fontWeight = FontWeight.Bold
         )
         Text(
-            text = "Technical model files are shown here for installation, repair and integrity checks. Language packs will replace this model-centric view in the next migration phase.",
+            text = "Technical artifacts are shown here for installation, repair and integrity checks. Use Offline Languages to install or activate speech packs.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
         )
@@ -147,7 +147,7 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
 
 @Composable
 private fun BrainCard(
-    row: ModelStatusViewModel.BrainProfileRow,
+    row: ModelStatusViewModel.BrainStatusRow,
     selfTest: BrainSelfTestResult?,
     busy: Boolean,
     onLoad: () -> Unit,
@@ -168,8 +168,14 @@ private fun BrainCard(
 
             DetailLine("Runtime", "LiteRT-LM")
             DetailLine("Installed", if (row.installed) "Yes" else "No")
-            DetailLine("Integrity", if (row.installed && row.isDeviceVerified) "Device-qualified" else "Qualification pending")
-            DetailLine("Memory gate", "${row.minimumRamMb} MB minimum · ${row.recommendedRamMb} MB recommended")
+            DetailLine(
+                "Integrity",
+                if (row.installed && row.isDeviceVerified) "Device-qualified" else "Qualification pending"
+            )
+            DetailLine(
+                "Memory gate",
+                "${row.minimumRamMb} MB minimum · ${row.recommendedRamMb} MB recommended"
+            )
             DetailLine(
                 "Loaded",
                 when {
@@ -239,12 +245,15 @@ private fun ModelRowCard(
             DetailLine("Type", row.type.uppercase())
             DetailLine("Version", row.version.ifBlank { "—" })
             DetailLine("Language", row.language)
-            DetailLine("Status", when {
-                row.verified -> "Present and hash-verified"
-                row.healthy -> "Present but not hash-verified"
-                row.present -> "Present; repair required"
-                else -> "Not installed"
-            })
+            DetailLine(
+                "Status",
+                when {
+                    row.verified -> "Present and hash-verified"
+                    row.healthy -> "Present but not hash-verified"
+                    row.present -> "Present; repair required"
+                    else -> "Not installed"
+                }
+            )
             DetailLine("Size", if (row.sizeMb > 0) "${row.sizeMb} MB" else "—")
             DetailLine("Backend", row.backend)
             DetailLine("Minimum RAM", if (row.minRamMb > 0) "${row.minRamMb} MB" else "—")
