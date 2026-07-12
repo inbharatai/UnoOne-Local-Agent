@@ -8,7 +8,8 @@
     "build": "vite build",
     "bundle:android": "npm run build && node scripts/copy-to-android.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@page-agent/core": "1.12.1",
@@ -16,6 +17,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.58.2",
     "typescript": "6.0.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"
