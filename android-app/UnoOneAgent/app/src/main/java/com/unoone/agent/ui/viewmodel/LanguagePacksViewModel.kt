@@ -153,7 +153,7 @@ class LanguagePacksViewModel(context: Context) : ViewModel() {
                 val base = (appContext.getExternalFilesDir(null)?.absolutePath
                     ?: appContext.filesDir.absolutePath) + "/models"
                 val result = sharedVoice.reinitForLanguage(base, runtimeCode)
-                _message.value = if (result is com.unoone.agent.core.model.Result.Success) {
+                _message.value = if (result is com.unoone.agent.core.model.Result.Success<*>) {
                     "${state.descriptor.displayName} activated for offline STT and TTS."
                 } else {
                     "Language files passed health checks but the live voice engine failed to initialize: " +
