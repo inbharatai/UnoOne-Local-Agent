@@ -5,20 +5,47 @@ on:
     branches: [ main, develop ]
     paths:
       - 'android-app/**'
+      - 'web-runtime/page-agent-unoone/**'
+      - '.github/workflows/android-ci.yml'
   pull_request:
     branches: [ main ]
     paths:
       - 'android-app/**'
+      - 'web-runtime/page-agent-unoone/**'
+      - '.github/workflows/android-ci.yml'
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: android-app/UnoOneAgent
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: web-runtime/page-agent-unoone/package.json
+
+      - name: Install PageAgent runtime dependencies
+        working-directory: web-runtime/page-agent-unoone
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck PageAgent runtime
+        working-directory: web-runtime/page-agent-unoone
+        run: npm run typecheck
+
+      - name: Test PageAgent runtime
+        working-directory: web-runtime/page-agent-unoone
+        run: npm test
+
+      - name: Build PageAgent Android asset
+        working-directory: web-runtime/page-agent-unoone
+        run: npm run bundle:android
+
+      - name: Verify PageAgent Android asset
+        run: test -s android-app/UnoOneAgent/securebrowser/src/main/assets/page-agent/unoone-page-agent.js
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -36,15 +63,15 @@ jobs:
           restore-keys: gradle-${{ runner.os }}-
 
       - name: Grant execute permission for gradlew
+        working-directory: android-app/UnoOneAgent
         run: chmod +x gradlew
 
       - name: Run Lint
-        # Enforces the same abortOnError + warningsAsErrors + baseline gate as the local
-        # verify command (./gradlew :app:lint). CI must not silently swallow lint regressions,
-        # so there is no `|| true` and no output redirection here.
+        working-directory: android-app/UnoOneAgent
         run: ./gradlew :app:lintDebug --stacktrace
 
       - name: Run Unit Tests
+        working-directory: android-app/UnoOneAgent
         run: ./gradlew testDebugUnitTest --stacktrace
 
       - name: Upload Test Results
@@ -52,11 +79,12 @@ jobs:
         if: always()
         with:
           name: unit-test-results
-          path: android-app/UnoOneAgent/app/build/reports/tests/
+          path: android-app/UnoOneAgent/**/build/reports/tests/
           retention-days: 14
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
+        working-directory: android-app/UnoOneAgent
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
