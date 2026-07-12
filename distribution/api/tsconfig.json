@@ -5,7 +5,6 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "types": ["@cloudflare/workers-types"],
     "lib": ["ES2022", "WebWorker"],
     "skipLibCheck": true,
     "noEmit": true
