@@ -1,7 +1,5 @@
 {
   "manifestVersion": 1,
-  "manifestSignature": "",
-  "signatureAlgorithm": "Ed25519",
   "packs": [
     {
       "id": "en-IN-base",
@@ -11,12 +9,12 @@
       "version": "1.0.0-baseline",
       "status": "baseline",
       "requiredModelIds": ["sherpa-asr-en", "sherpa-tts-en"],
-      "optionalModelIds": ["vad", "punctuation"],
+      "optionalModelIds": ["vad"],
       "required": true,
       "removable": false,
       "downloadable": true,
       "minimumRamMb": 2048,
-      "notes": "Current verified baseline. Will remain the mandatory base language."
+      "notes": "Current integrity-verified baseline. Physical-device speech qualification remains required."
     },
     {
       "id": "as-IN-standard",
@@ -29,7 +27,7 @@
       "optionalModelIds": ["vad"],
       "downloadable": false,
       "minimumRamMb": 4096,
-      "notes": "Priority language. STT/TTS candidates must pass licence, ONNX, accuracy and device qualification before activation."
+      "notes": "Priority language. STT and TTS artifacts must pass licence, integrity, Android load, accuracy and device qualification before activation."
     },
     {
       "id": "hi-IN-standard",
@@ -42,7 +40,7 @@
       "optionalModelIds": ["vad"],
       "downloadable": true,
       "minimumRamMb": 3072,
-      "notes": "Whisper Tiny and MMS VITS baseline; not the final quality target."
+      "notes": "Whisper Tiny and MMS VITS integrity-verified baseline; device accuracy remains unqualified."
     },
     {
       "id": "bn-IN-standard",
@@ -55,7 +53,7 @@
       "optionalModelIds": ["vad"],
       "downloadable": true,
       "minimumRamMb": 3072,
-      "notes": "Whisper Tiny and MMS VITS baseline; not the final quality target."
+      "notes": "Whisper Tiny and MMS VITS integrity-verified baseline; device accuracy remains unqualified."
     },
     {
       "id": "mr-IN-standard",
@@ -66,7 +64,7 @@
       "status": "planned",
       "requiredModelIds": [],
       "downloadable": false,
-      "notes": "Model selection pending."
+      "notes": "Exact STT and TTS model selection pending."
     },
     {
       "id": "gu-IN-standard",
@@ -77,7 +75,7 @@
       "status": "planned",
       "requiredModelIds": [],
       "downloadable": false,
-      "notes": "Model selection pending."
+      "notes": "Exact STT and TTS model selection pending."
     },
     {
       "id": "pa-IN-standard",
@@ -88,7 +86,7 @@
       "status": "planned",
       "requiredModelIds": [],
       "downloadable": false,
-      "notes": "Model selection pending."
+      "notes": "Exact STT and TTS model selection pending."
     },
     {
       "id": "or-IN-standard",
@@ -99,7 +97,7 @@
       "status": "planned",
       "requiredModelIds": [],
       "downloadable": false,
-      "notes": "Model selection pending."
+      "notes": "Exact STT and TTS model selection pending."
     },
     {
       "id": "ta-IN-standard",
@@ -112,7 +110,7 @@
       "optionalModelIds": ["vad"],
       "downloadable": true,
       "minimumRamMb": 3072,
-      "notes": "Whisper Tiny and MMS VITS baseline; not the final quality target."
+      "notes": "Whisper Tiny and MMS VITS integrity-verified baseline; device accuracy remains unqualified."
     },
     {
       "id": "te-IN-standard",
@@ -125,7 +123,7 @@
       "optionalModelIds": ["vad"],
       "downloadable": true,
       "minimumRamMb": 3072,
-      "notes": "Whisper Tiny and MMS VITS baseline; not the final quality target."
+      "notes": "Whisper Tiny and MMS VITS integrity-verified baseline; device accuracy remains unqualified."
     },
     {
       "id": "kn-IN-standard",
@@ -138,7 +136,7 @@
       "optionalModelIds": ["vad"],
       "downloadable": true,
       "minimumRamMb": 3072,
-      "notes": "Whisper Tiny and MMS VITS baseline; not the final quality target."
+      "notes": "Whisper Tiny and MMS VITS integrity-verified baseline; device accuracy remains unqualified."
     },
     {
       "id": "ml-IN-standard",
@@ -151,7 +149,7 @@
       "optionalModelIds": ["vad"],
       "downloadable": true,
       "minimumRamMb": 3072,
-      "notes": "Whisper Tiny and MMS VITS baseline; not the final quality target."
+      "notes": "Whisper Tiny and MMS VITS integrity-verified baseline; device accuracy remains unqualified."
     },
     {
       "id": "ur-IN-standard",
@@ -162,7 +160,7 @@
       "status": "planned",
       "requiredModelIds": [],
       "downloadable": false,
-      "notes": "Model selection pending."
+      "notes": "Exact STT and TTS model selection pending."
     }
   ]
 }
