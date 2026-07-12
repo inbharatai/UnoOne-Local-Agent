@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unoone.agent.browser.SecureBrowserModelLease
 import com.unoone.agent.core.model.Result
+import com.unoone.agent.securebrowser.BrowserActionClass
 import com.unoone.agent.securebrowser.BrowserAuditEvent
 import com.unoone.agent.securebrowser.BrowserDomainPolicy
 import com.unoone.agent.securebrowser.BrowserEventSink
@@ -278,24 +279,43 @@ class SecureBrowserViewModel(
             json.decodeFromString(BrowserAuditEvent.serializer(), payload)
         }.getOrNull() ?: return
 
+        val status = when (event.decision) {
+            "allowed" -> "success"
+            "blocked", "user_takeover", "declined_or_blocked" -> "blocked"
+            else -> "failed"
+        }
         val args = buildJsonObject {
             put("origin", event.origin)
             put("sessionId", event.sessionId)
             put("actionClass", event.actionClass.name)
             put("decision", event.decision)
+            put("message", event.message.take(300))
         }
         actionLogDao.insert(
             ActionLogEntity(
-                timestamp = event.timestampEpochMs,
                 inputText = event.summary.take(500),
+                inputType = "secure_browser",
                 selectedTool = "browser:${event.actionName}",
-                argsJson = json.encodeToString(args),
-                riskLevel = event.actionClass.name,
-                status = event.decision,
-                outputText = event.message.take(300),
-                errorMessage = if (event.decision == "blocked") event.message.take(300) else ""
+                toolArgsJson = json.encodeToString(args),
+                riskLevel = browserRiskLevel(event.actionClass),
+                status = status,
+                errorMessage = event.message.take(300).takeIf { status != "success" },
+                createdAt = event.timestampEpochMs
             )
         )
+    }
+
+    private fun browserRiskLevel(actionClass: BrowserActionClass): Int = when (actionClass) {
+        BrowserActionClass.READ_ONLY -> 0
+        BrowserActionClass.ORDINARY_INPUT -> 1
+        BrowserActionClass.SENSITIVE_INPUT,
+        BrowserActionClass.FILE_TRANSFER,
+        BrowserActionClass.LOGIN_HANDOFF,
+        BrowserActionClass.FINAL_SUBMISSION -> 2
+        BrowserActionClass.LEGAL_ACCEPTANCE,
+        BrowserActionClass.PAYMENT,
+        BrowserActionClass.CREDENTIAL,
+        BrowserActionClass.CAPTCHA -> 3
     }
 
     private fun activitySummary(payload: String): String = when {
