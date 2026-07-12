@@ -1,0 +1,63 @@
+.catalog-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.8rem;
+  margin-top: 0.2rem;
+}
+
+.channel-field {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.channel-field select {
+  min-width: 160px;
+  min-height: 44px;
+  padding: 0.65rem 2.2rem 0.65rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.channel-field select:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.channel-field select:focus-visible {
+  outline: 3px solid rgba(121, 232, 196, 0.45);
+  outline-offset: 3px;
+}
+
+.channel-help {
+  max-width: 720px;
+  margin: 0.7rem 0 0;
+  font-size: 0.9rem;
+}
+
+.channel-warning {
+  margin: 1rem 0 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(245, 198, 107, 0.38);
+  border-radius: 12px;
+  color: var(--warning);
+  background: rgba(245, 198, 107, 0.07);
+  line-height: 1.5;
+}
+
+@media (max-width: 560px) {
+  .catalog-controls,
+  .channel-field,
+  .channel-field select,
+  .catalog-controls .button {
+    width: 100%;
+  }
+}
