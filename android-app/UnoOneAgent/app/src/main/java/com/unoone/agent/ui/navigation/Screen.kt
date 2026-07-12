@@ -7,10 +7,11 @@ sealed class Screen(val route: String, val label: String) {
     data object Logs : Screen("logs", "Logs")
     data object Settings : Screen("settings", "Settings")
     data object PrivacySettings : Screen("privacy_settings", "Privacy")
-    // Reached from Settings — not part of the bottom nav, to keep nav clean.
+    // Settings-only routes — not part of the bottom navigation.
     data object Models : Screen("models", "Models")
     data object VoiceTest : Screen("voice_test", "Voice Test")
     data object Audit : Screen("audit", "Audit")
+    data object SecureBrowser : Screen("secure_browser", "Secure Browser")
 }
 
 val bottomNavItems = listOf(
