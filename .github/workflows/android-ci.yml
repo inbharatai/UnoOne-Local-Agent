@@ -71,28 +71,60 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run Lint
+        id: lint
+        continue-on-error: true
         working-directory: android-app/UnoOneAgent
-        run: ./gradlew :app:lintDebug --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :app:lintDebug --stacktrace 2>&1 | tee android-lint.log
 
       - name: Run Unit Tests
+        id: tests
+        continue-on-error: true
         working-directory: android-app/UnoOneAgent
-        run: ./gradlew testDebugUnitTest --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest --stacktrace 2>&1 | tee android-tests.log
 
-      - name: Upload Test Results
+      - name: Build Debug APK
+        id: apk
+        continue-on-error: true
+        working-directory: android-app/UnoOneAgent
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee android-apk.log
+
+      - name: Upload Android diagnostics
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: unit-test-results
-          path: android-app/UnoOneAgent/**/build/reports/tests/
+          name: android-ci-diagnostics
+          path: |
+            android-app/UnoOneAgent/android-lint.log
+            android-app/UnoOneAgent/android-tests.log
+            android-app/UnoOneAgent/android-apk.log
+            android-app/UnoOneAgent/**/build/reports/lint-results-*.html
+            android-app/UnoOneAgent/**/build/reports/lint-results-*.xml
+            android-app/UnoOneAgent/**/build/reports/tests/
           retention-days: 14
-
-      - name: Build Debug APK
-        working-directory: android-app/UnoOneAgent
-        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
+        if: steps.apk.outcome == 'success'
         with:
           name: debug-apk
           path: android-app/UnoOneAgent/app/build/outputs/apk/debug/*.apk
           retention-days: 7
+
+      - name: Enforce Android gates
+        if: always()
+        run: |
+          echo "lint=${{ steps.lint.outcome }} tests=${{ steps.tests.outcome }} apk=${{ steps.apk.outcome }}"
+          if [[ "${{ steps.lint.outcome }}" != "success" || \
+                "${{ steps.tests.outcome }}" != "success" || \
+                "${{ steps.apk.outcome }}" != "success" ]]; then
+            exit 1
+          fi
