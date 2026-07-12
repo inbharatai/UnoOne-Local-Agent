@@ -8,7 +8,7 @@
     "build": "vite build",
     "bundle:android": "npm run build && node scripts/copy-to-android.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run tests",
     "test:e2e": "playwright test"
   },
   "dependencies": {
