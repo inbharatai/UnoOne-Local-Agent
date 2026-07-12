@@ -13,12 +13,20 @@
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["catalogVersion", "channel", "generatedAt", "apps", "models", "languagePacks"],
+      "required": [
+        "catalogVersion",
+        "channel",
+        "generatedAt",
+        "minimumInstallerVersion",
+        "apps",
+        "models",
+        "languagePacks"
+      ],
       "properties": {
         "catalogVersion": { "type": "integer", "minimum": 1 },
         "channel": { "enum": ["stable", "beta"] },
         "generatedAt": { "type": "string", "format": "date-time" },
-        "minimumInstallerVersion": { "type": "integer", "minimum": 1, "default": 1 },
+        "minimumInstallerVersion": { "type": "integer", "minimum": 1 },
         "apps": {
           "type": "array",
           "items": { "$ref": "#/$defs/appRelease" }
@@ -42,11 +50,15 @@
       "properties": {
         "path": {
           "type": "string",
-          "pattern": "^(apk|brain|speech|vision)/[A-Za-z0-9._/-]+$"
+          "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))(apk|brain|speech|vision)/[A-Za-z0-9._/-]+$"
         },
         "sizeBytes": { "type": "integer", "minimum": 1 },
         "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "mimeType": { "type": "string", "minLength": 3 }
+        "mimeType": {
+          "type": "string",
+          "minLength": 3,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+        }
       }
     },
     "appRelease": {
@@ -77,7 +89,7 @@
         },
         "minimumRamMb": { "type": "integer", "minimum": 512 },
         "recommendedRamMb": { "type": "integer", "minimum": 512 },
-        "license": { "type": "string" },
+        "license": { "type": "string", "minLength": 1 },
         "artifact": { "$ref": "#/$defs/artifact" }
       }
     },
@@ -94,12 +106,23 @@
         "status": { "enum": ["planned", "baseline", "beta", "stable", "deprecated"] },
         "requiredModelIds": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": { "type": "string", "minLength": 1 },
           "uniqueItems": true
         },
         "downloadable": { "type": "boolean" },
         "notes": { "type": "string" }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "downloadable": { "const": true } }, "required": ["downloadable"] },
+          "then": {
+            "properties": {
+              "requiredModelIds": { "minItems": 1 },
+              "status": { "enum": ["baseline", "beta", "stable"] }
+            }
+          }
+        }
+      ]
     }
   }
 }
