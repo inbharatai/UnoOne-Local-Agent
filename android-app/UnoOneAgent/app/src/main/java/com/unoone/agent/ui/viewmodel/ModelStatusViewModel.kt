@@ -4,12 +4,10 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unoone.agent.AgentOrchestrator
-import com.unoone.agent.brain.BrainSelection
 import com.unoone.agent.brain.BrainSelfTest
 import com.unoone.agent.brain.BrainSelfTestResult
 import com.unoone.agent.core.model.BrainModelRegistry
 import com.unoone.agent.core.model.Result
-import com.unoone.agent.core.util.Logger
 import com.unoone.agent.modelmanager.ModelInstaller
 import com.unoone.agent.modelmanager.ModelManager
 import com.unoone.agent.storage.dao.ModelMetadataDao
@@ -21,12 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Drives the Model Status / Settings screen. Lists every model declared in the bundled
- * [models_manifest.json] merged with its on-disk state ([ModelManager.detectModels]) and its
- * verified health ([ModelManager.modelHealth]). Supports install (streaming progress), uninstall,
- * and refresh. Also drives the **Brain Model** section: lists the selectable brain profiles from
- * [BrainModelRegistry], lets the user pick one (persisted via [BrainSelection]) and load it, and
- * runs an on-device [BrainSelfTest] (load + a read-only tool-call probe) per profile.
+ * Drives model installation, health and the single Gemma 4 E2B brain card.
  */
 class ModelStatusViewModel(
     context: Context,
@@ -38,7 +31,6 @@ class ModelStatusViewModel(
     private val modelManager = ModelManager(appContext, modelMetadataDao)
     private val brainSelfTest = orchestrator?.let { BrainSelfTest(it, modelManager) }
 
-    /** One row per manifest model, merged with on-disk status + health. */
     data class ModelRow(
         val id: String,
         val folder: String,
@@ -55,7 +47,6 @@ class ModelStatusViewModel(
         val healthMessage: String
     )
 
-    /** One row per selectable brain profile (Gemma 4 E2B / Gemma 3n E4B). */
     data class BrainProfileRow(
         val manifestId: String,
         val displayName: String,
@@ -73,7 +64,6 @@ class ModelStatusViewModel(
         val description: String
     )
 
-    /** Live install progress for the model currently being downloaded (if any). */
     data class InstallProgress(
         val modelId: String,
         val file: String,
@@ -112,9 +102,8 @@ class ModelStatusViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            val rows = withContext(Dispatchers.IO) { buildRows() }
-            _rows.value = rows
-            _brainProfiles.value = withContext(Dispatchers.IO) { buildBrainProfiles() }
+            _rows.value = withContext(Dispatchers.IO) { buildRows() }
+            _brainProfiles.value = withContext(Dispatchers.IO) { listOf(buildBrainProfile()) }
             _storageUsageMb.value = withContext(Dispatchers.IO) { modelManager.getStorageUsageMb() }
         }
     }
@@ -163,16 +152,14 @@ class ModelStatusViewModel(
     }
 
     /**
-     * Persist a brain selection and load it immediately (if installed + the orchestrator is
-     * available). The default stays Gemma 3n E4B; selecting Gemma 4 is the user's explicit choice.
+     * Compatibility entry point retained for the existing screen contract. There is no model choice;
+     * this loads the sole Gemma 4 E2B brain when its artifact is installed.
      */
-    fun selectBrain(manifestId: String) {
+    fun selectBrain(manifestId: String = BrainModelRegistry.GEMMA_4_E2B.manifestId) {
         if (_brainBusy.value) return
-        val spec = BrainModelRegistry.resolveOrDefault(manifestId)
-        BrainSelection.set(appContext, spec.manifestId)
+        val spec = BrainModelRegistry.GEMMA_4_E2B
         if (orchestrator == null) {
-            _resultMessage.value = "${spec.displayName} selected (loads on next start)."
-            refresh()
+            _resultMessage.value = "${spec.displayName} is the fixed UnoOne brain and will load at startup."
             return
         }
         _brainBusy.value = true
@@ -181,27 +168,25 @@ class ModelStatusViewModel(
             val path = withContext(Dispatchers.IO) { modelManager.getLlmModelPath(spec) }
             if (path == null) {
                 _brainBusy.value = false
-                _resultMessage.value =
-                    "${spec.displayName} selected but not installed. Install it below; it loads on next start."
+                _resultMessage.value = "${spec.displayName} is not installed. Add a qualified artifact before loading."
                 refresh()
-            } else {
-                val res = withContext(Dispatchers.IO) { orchestrator.loadLlmModel(path, spec) }
-                _brainBusy.value = false
-                _resultMessage.value = if (res is Result.Success) {
-                    "${spec.displayName} selected and loaded on ${orchestrator.loadedBrainBackend()}."
-                } else {
-                    "${spec.displayName} selected but failed to load: ${(res as? Result.Error)?.message}"
-                }
-                refresh()
+                return@launch
             }
+            val res = withContext(Dispatchers.IO) { orchestrator.loadLlmModel(path, spec) }
+            _brainBusy.value = false
+            _resultMessage.value = if (res is Result.Success) {
+                "${spec.displayName} loaded on ${orchestrator.loadedBrainBackend()}."
+            } else {
+                "${spec.displayName} failed to load: ${(res as? Result.Error)?.message}"
+            }
+            refresh()
         }
     }
 
-    /** Run the on-device self-test for a brain profile (load + a read-only tool-call probe). */
-    fun runBrainSelfTest(manifestId: String) {
+    fun runBrainSelfTest(manifestId: String = BrainModelRegistry.GEMMA_4_E2B.manifestId) {
         val test = brainSelfTest
         if (test == null || _brainBusy.value) return
-        val spec = BrainModelRegistry.resolveOrDefault(manifestId)
+        val spec = BrainModelRegistry.GEMMA_4_E2B
         _brainBusy.value = true
         _resultMessage.value = null
         _selfTest.value = null
@@ -218,7 +203,7 @@ class ModelStatusViewModel(
 
     private suspend fun buildRows(): List<ModelRow> {
         val manifest = modelManager.loadManifest()
-        val statuses = modelManager.detectModels().associateBy { it.name } // keyed by folder
+        val statuses = modelManager.detectModels().associateBy { it.name }
         return manifest.models.map { descriptor ->
             val status = statuses[descriptor.folder]
             val health = modelManager.modelHealth(descriptor.id)
@@ -234,36 +219,32 @@ class ModelStatusViewModel(
                 backend = descriptor.backend.name,
                 minRamMb = descriptor.minRamMb,
                 language = descriptor.defaultLanguage,
-                sha256Preview = descriptor.files.firstOrNull { it.sha256.isNotBlank() }?.sha256?.take(12)
-                    ?.let { "$it…" } ?: "—",
+                sha256Preview = descriptor.files.firstOrNull { it.sha256.isNotBlank() }
+                    ?.sha256?.take(12)?.let { "$it…" } ?: "—",
                 healthMessage = health.message
             )
         }
     }
 
-    private fun buildBrainProfiles(): List<BrainProfileRow> {
-        val selectedId = BrainSelection.selected(appContext).manifestId
+    private fun buildBrainProfile(): BrainProfileRow {
+        val spec = BrainModelRegistry.GEMMA_4_E2B
         val loaded = orchestrator?.loadedBrainProfile()
-        val loadedBackend = orchestrator?.loadedBrainBackend() ?: ""
-        val loadedError = orchestrator?.lastBrainLoadError() ?: ""
-        return BrainModelRegistry.all.map { spec ->
-            val isThisLoaded = loaded?.manifestId == spec.manifestId
-            BrainProfileRow(
-                manifestId = spec.manifestId,
-                displayName = spec.displayName,
-                modelFamily = spec.modelFamily.name,
-                experimentalLabel = spec.experimentalLabel,
-                isLegacy = spec.isLegacy,
-                isDeviceVerified = spec.isDeviceVerified,
-                minimumRamMb = spec.minimumRamMb,
-                recommendedRamMb = spec.recommendedRamMb,
-                installed = modelManager.getLlmModelPath(spec) != null,
-                isSelected = spec.manifestId == selectedId,
-                isLoaded = isThisLoaded,
-                backend = if (isThisLoaded) loadedBackend else "",
-                lastLoadError = if (isThisLoaded) loadedError else "",
-                description = spec.description
-            )
-        }
+        val isLoaded = loaded?.manifestId == spec.manifestId
+        return BrainProfileRow(
+            manifestId = spec.manifestId,
+            displayName = spec.displayName,
+            modelFamily = spec.modelFamily.name,
+            experimentalLabel = spec.experimentalLabel,
+            isLegacy = false,
+            isDeviceVerified = spec.isDeviceVerified,
+            minimumRamMb = spec.minimumRamMb,
+            recommendedRamMb = spec.recommendedRamMb,
+            installed = modelManager.getLlmModelPath(spec) != null,
+            isSelected = true,
+            isLoaded = isLoaded,
+            backend = if (isLoaded) orchestrator?.loadedBrainBackend().orEmpty() else "",
+            lastLoadError = orchestrator?.lastBrainLoadError().orEmpty(),
+            description = spec.description
+        )
     }
 }
