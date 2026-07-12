@@ -4,9 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#08111f" />
+    <meta name="referrer" content="no-referrer" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; connect-src 'self' https:; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+      content="default-src 'self'; connect-src 'self' https://models.unoone.inbharat.ai http://localhost:* http://127.0.0.1:*; img-src 'self' data:; style-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; font-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'"
     />
     <meta
       name="description"
@@ -35,13 +36,26 @@
         <p class="eyebrow">Private, offline-first Android AI</p>
         <h1>Install UnoOne from a release you can verify.</h1>
         <p class="hero-copy">
-          The portal validates the signed release catalogue before enabling APK downloads. Models and
-          language packs are downloaded by the Android app after installation.
+          The portal validates the signed release catalogue, freshness, installer compatibility and
+          rollback state before enabling APK downloads. Models and language packs are downloaded by the
+          Android app after installation.
         </p>
         <div id="catalog-status" class="status-card" role="status" aria-live="polite">
           Loading signed release catalogue…
         </div>
-        <button id="reload-button" class="button button-secondary" type="button">Reload catalogue</button>
+        <div class="catalog-controls">
+          <label class="channel-field" for="release-channel">
+            <span>Release channel</span>
+            <select id="release-channel" aria-describedby="channel-help">
+              <option value="stable" selected>Stable</option>
+              <option value="beta">Beta</option>
+            </select>
+          </label>
+          <button id="reload-button" class="button button-secondary" type="button">Reload catalogue</button>
+        </div>
+        <p id="channel-help" class="muted channel-help">
+          Stable is the default. Beta releases are signed and verified but may be incomplete or unstable.
+        </p>
       </section>
 
       <section class="section" aria-labelledby="android-heading">
