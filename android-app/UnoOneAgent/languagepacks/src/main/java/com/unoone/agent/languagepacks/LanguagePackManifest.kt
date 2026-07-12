@@ -22,12 +22,16 @@ data class LanguagePackDescriptor(
     val notes: String = ""
 )
 
+/**
+ * Bundled language catalogue protected by the signed APK.
+ *
+ * Publicly distributed language models are independently governed by exact file hashes and the
+ * signed release catalogue. Planned packs remain metadata-only and non-downloadable.
+ */
 @Serializable
 data class LanguagePackManifest(
     val manifestVersion: Int,
-    val packs: List<LanguagePackDescriptor>,
-    val manifestSignature: String = "",
-    val signatureAlgorithm: String = "Ed25519"
+    val packs: List<LanguagePackDescriptor>
 ) {
     fun find(id: String): LanguagePackDescriptor? = packs.firstOrNull { it.id == id }
     fun findByLanguageCode(code: String): LanguagePackDescriptor? =
