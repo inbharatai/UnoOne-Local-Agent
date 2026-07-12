@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 enum class PageAgentRequestType {
     MODEL_INVOKE,
+    AUTHORIZE_ACTION,
     ACTIVITY_EVENT,
     TASK_RESULT,
     ASK_USER,
@@ -38,7 +39,6 @@ data class PageAgentBridgeResponse(
     val errorMessage: String? = null
 )
 
-/** Input sent by the PageAgent model adapter to the local Gemma bridge. */
 @Serializable
 data class PageAgentModelInvocation(
     val systemPrompt: String,
@@ -47,7 +47,6 @@ data class PageAgentModelInvocation(
     val maxOutputTokens: Int = 512
 )
 
-/** Structured output expected by PageAgent's reflection-before-action loop. */
 @Serializable
 data class PageAgentModelDecision(
     val evaluationPreviousGoal: String,
@@ -70,6 +69,23 @@ enum class BrowserActionClass {
     CREDENTIAL,
     CAPTCHA
 }
+
+@Serializable
+data class BrowserActionAuthorizationRequest(
+    val actionName: String,
+    val summary: String,
+    val elementIndex: Int? = null,
+    val fieldLabel: String? = null,
+    val valueCategory: String? = null
+)
+
+@Serializable
+data class BrowserActionAuthorizationResponse(
+    val allowed: Boolean,
+    val requiresUserTakeover: Boolean = false,
+    val actionClass: BrowserActionClass,
+    val message: String
+)
 
 @Serializable
 data class BrowserAuditEvent(
