@@ -12,9 +12,7 @@ enum class BrainModelId { GEMMA_4_E2B }
 /** Model family used by prompt construction. */
 enum class ModelFamily { GEMMA_4 }
 
-/**
- * Hardware backend preference. LiteRT-LM backend mapping lives in `:localbrain`.
- */
+/** Hardware backend preference. LiteRT-LM backend mapping lives in `:localbrain`. */
 enum class BackendPreference { GPU_FIRST, CPU_ONLY, ANY }
 
 /**
@@ -53,24 +51,21 @@ object BrainModelRegistry {
         displayName = "Gemma 4 E2B",
         modelFamily = ModelFamily.GEMMA_4,
         modelFolder = "brain/gemma-4-e2b",
-        fileName = "gemma-4-e2b-it.litertlm",
+        fileName = "gemma-4-E2B-it.litertlm",
         fileExtension = ".litertlm",
         preferredBackend = BackendPreference.GPU_FIRST,
         minimumRamMb = 6_144,
         recommendedRamMb = 8_192,
-        maximumContextTokens = 131_072,
+        maximumContextTokens = 32_768,
         defaultContextTokens = 4_096,
         supportsNativeSystemRole = true,
         isLegacy = false,
         isDeviceVerified = false,
         experimentalLabel = "Device qualification required",
-        description = "UnoOne's sole local planning brain. The configured LiteRT-LM artifact must pass integrity, tool-call, memory, thermal and real-device tests before production release."
+        description = "UnoOne's sole local planning brain. The generic Android LiteRT-LM artifact must pass integrity, tool-call, memory, thermal and real-device tests before production release."
     )
 
-    /** The only supported profile. */
     val all: List<BrainModelSpec> = listOf(GEMMA_4_E2B)
-
-    /** The only and therefore default profile. */
     val defaultProfile: BrainModelSpec = GEMMA_4_E2B
 
     fun byId(id: BrainModelId): BrainModelSpec = GEMMA_4_E2B
@@ -81,9 +76,6 @@ object BrainModelRegistry {
     fun byFolder(folder: String): BrainModelSpec? =
         GEMMA_4_E2B.takeIf { folder == it.modelFolder }
 
-    /**
-     * Persisted values from older builds are intentionally normalized to Gemma 4 E2B. This is a
-     * one-way product migration: no legacy brain is retained or loaded.
-     */
+    /** Older persisted values are intentionally normalized to the sole Gemma 4 E2B brain. */
     fun resolveOrDefault(manifestId: String?): BrainModelSpec = GEMMA_4_E2B
 }
