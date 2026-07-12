@@ -26,9 +26,9 @@ fun interface PageAgentRequestHandler {
  * Hardened WebView host for Alibaba PageAgent.
  *
  * The bridge is exposed only through AndroidX WebKit's origin-scoped web-message listener. Web pages
- * never receive a Java object and cannot invoke arbitrary native methods. The handler receives only
- * validated protocol messages and is responsible for invoking the local Gemma adapter or requesting
- * user takeover.
+ * never receive a Java object and cannot invoke arbitrary native methods. The compiled PageAgent
+ * bundle is loaded from the APK asset `page-agent/unoone-page-agent.js`; missing assets are surfaced
+ * explicitly rather than silently falling back to unsafe generic WebView automation.
  */
 class SecureWebViewController(
     context: Context,
@@ -37,16 +37,26 @@ class SecureWebViewController(
     private val scope: CoroutineScope,
     private val requestHandler: PageAgentRequestHandler,
     private val onBlockedNavigation: (String) -> Unit = {},
+    private val onRuntimeReady: () -> Unit = {},
+    private val onRuntimeError: (String) -> Unit = {},
     val session: BrowserSession = BrowserSession(allowedOrigins = domainPolicy.origins())
 ) {
 
     private val appContext = context.applicationContext
     private val json = Json { ignoreUnknownKeys = false; encodeDefaults = true }
+    private val runtimeBundle: String? by lazy { readRuntimeBundle() }
+
+    @Volatile private var runtimeInjected = false
 
     init {
         configureWebView()
         installBridge()
     }
+
+    fun isRuntimeAvailable(): Boolean = runtimeBundle != null
+    fun isRuntimeInjected(): Boolean = runtimeInjected
+    fun canGoBack(): Boolean = webView.canGoBack()
+    fun goBack() = webView.goBack()
 
     fun load(rawUrl: String): NavigationDecision {
         val decision = domainPolicy.evaluate(rawUrl)
@@ -57,18 +67,53 @@ class SecureWebViewController(
         return decision
     }
 
+    /** Executes one PageAgent task after the bundle has initialized on the current approved page. */
+    fun executeTask(task: String, callback: (success: Boolean, result: String) -> Unit) {
+        if (!runtimeInjected) {
+            callback(false, "Alibaba PageAgent runtime is not loaded on this page")
+            return
+        }
+        val clean = task.trim()
+        if (clean.isBlank()) {
+            callback(false, "Browser task is empty")
+            return
+        }
+        val script = """
+            (async () => {
+              if (!window.UnoOnePageAgentRuntime) throw new Error('UnoOne PageAgent runtime unavailable');
+              return await window.UnoOnePageAgentRuntime.execute(${json.encodeToString(clean)});
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(script) { raw ->
+            val decoded = runCatching {
+                if (raw == null || raw == "null") "No result returned"
+                else json.decodeFromString<String>(raw)
+            }.getOrElse { raw ?: "Unknown JavaScript result" }
+            val failed = decoded.contains("Error", ignoreCase = true) || decoded.contains("exception", ignoreCase = true)
+            callback(!failed, decoded)
+        }
+    }
+
+    fun stopTask() {
+        if (!runtimeInjected) return
+        webView.evaluateJavascript("window.UnoOnePageAgentRuntime?.stop?.()", null)
+    }
+
     fun stop() {
         session.close()
+        stopTask()
         webView.stopLoading()
+        runtimeInjected = false
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             WebViewCompat.removeWebMessageListener(webView, BRIDGE_NAME)
         }
+        webView.destroy()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView() {
         webView.settings.apply {
-            javaScriptEnabled = true // Required by PageAgent; bridge remains origin-scoped.
+            javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = false
             allowFileAccess = false
@@ -97,13 +142,18 @@ class SecureWebViewController(
                 }
             }
 
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                runtimeInjected = false
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 val target = url ?: return
                 val decision = domainPolicy.evaluate(target)
                 if (decision is NavigationDecision.Allow && session.active) {
                     session.activeOrigin = decision.origin
-                    injectBootstrap(decision.origin)
+                    injectRuntime(decision.origin)
                 }
             }
         }
@@ -180,8 +230,16 @@ class SecureWebViewController(
         return null
     }
 
-    private fun injectBootstrap(origin: String) {
-        val script = """
+    private fun injectRuntime(origin: String) {
+        val bundle = runtimeBundle
+        if (bundle == null) {
+            onRuntimeError(
+                "PageAgent bundle is missing. Build web-runtime/page-agent-unoone and copy " +
+                    "unoone-page-agent.js to securebrowser/src/main/assets/page-agent/."
+            )
+            return
+        }
+        val bootstrap = """
             (() => {
               const session = Object.freeze({
                 id: ${json.encodeToString(session.id)},
@@ -197,8 +255,21 @@ class SecureWebViewController(
               window.dispatchEvent(new CustomEvent('unoone-page-agent-ready', { detail: { origin: session.origin } }));
             })();
         """.trimIndent()
-        webView.evaluateJavascript(script, null)
+        webView.evaluateJavascript(bootstrap) {
+            webView.evaluateJavascript(bundle) {
+                webView.evaluateJavascript("Boolean(window.UnoOnePageAgentRuntime)") { available ->
+                    runtimeInjected = available == "true"
+                    if (runtimeInjected) onRuntimeReady()
+                    else onRuntimeError("PageAgent bundle executed but runtime initialization failed")
+                }
+            }
+        }
     }
+
+    private fun readRuntimeBundle(): String? = runCatching {
+        appContext.assets.open(RUNTIME_ASSET).bufferedReader().use { it.readText() }
+            .takeIf { it.isNotBlank() }
+    }.getOrNull()
 
     private fun errorResponse(requestId: String, code: String, message: String): String =
         json.encodeToString(
@@ -214,5 +285,6 @@ class SecureWebViewController(
 
     companion object {
         const val BRIDGE_NAME = "UnoOnePageAgent"
+        const val RUNTIME_ASSET = "page-agent/unoone-page-agent.js"
     }
 }
