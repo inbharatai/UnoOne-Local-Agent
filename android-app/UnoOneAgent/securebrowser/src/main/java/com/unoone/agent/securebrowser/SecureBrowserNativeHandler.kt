@@ -2,6 +2,8 @@ package com.unoone.agent.securebrowser
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 fun interface BrowserModelPort {
     suspend fun plan(invocation: PageAgentModelInvocation): Result<PageAgentModelDecision>
