@@ -37,6 +37,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.unoone.agent.ui.screens.AgentScreen
 import com.unoone.agent.ui.screens.AuditViewerScreen
+import com.unoone.agent.ui.screens.LanguagePacksScreen
 import com.unoone.agent.ui.screens.LogsScreen
 import com.unoone.agent.ui.screens.ModelStatusScreen
 import com.unoone.agent.ui.screens.NotesScreen
@@ -47,6 +48,7 @@ import com.unoone.agent.ui.screens.SkillsScreen
 import com.unoone.agent.ui.screens.VoiceTestScreen
 import com.unoone.agent.ui.viewmodel.AgentViewModel
 import com.unoone.agent.ui.viewmodel.AuditViewerViewModel
+import com.unoone.agent.ui.viewmodel.LanguagePacksViewModel
 import com.unoone.agent.ui.viewmodel.LogsViewModel
 import com.unoone.agent.ui.viewmodel.ModelStatusViewModel
 import com.unoone.agent.ui.viewmodel.NotesViewModel
@@ -67,6 +69,7 @@ fun UnoOneNavHost(
     settingsViewModel: SettingsViewModel,
     privacySettingsViewModel: PrivacySettingsViewModel,
     modelStatusViewModel: ModelStatusViewModel,
+    languagePacksViewModel: LanguagePacksViewModel,
     voiceTestViewModel: VoiceTestViewModel,
     auditViewerViewModel: AuditViewerViewModel,
     secureBrowserViewModel: SecureBrowserViewModel
@@ -109,6 +112,7 @@ fun UnoOneNavHost(
                     viewModel = settingsViewModel,
                     onNavigateToPrivacy = { navController.navigate(Screen.PrivacySettings.route) },
                     onNavigateToModels = { navController.navigate(Screen.Models.route) },
+                    onNavigateToLanguagePacks = { navController.navigate(Screen.LanguagePacks.route) },
                     onNavigateToVoiceTest = { navController.navigate(Screen.VoiceTest.route) },
                     onNavigateToAudit = { navController.navigate(Screen.Audit.route) },
                     onNavigateToSecureBrowser = { navController.navigate(Screen.SecureBrowser.route) }
@@ -119,6 +123,9 @@ fun UnoOneNavHost(
             }
             composable(Screen.Models.route) {
                 ModelStatusScreen(viewModel = modelStatusViewModel, onBack = { navController.popBackStack() })
+            }
+            composable(Screen.LanguagePacks.route) {
+                LanguagePacksScreen(viewModel = languagePacksViewModel, onBack = { navController.popBackStack() })
             }
             composable(Screen.VoiceTest.route) {
                 VoiceTestScreen(viewModel = voiceTestViewModel, onBack = { navController.popBackStack() })
@@ -142,6 +149,7 @@ private val Screen.selectedIcon: ImageVector
         Screen.Settings -> Icons.Filled.Settings
         Screen.PrivacySettings -> Icons.Filled.Settings
         Screen.Models -> Icons.Filled.Memory
+        Screen.LanguagePacks -> Icons.Filled.Language
         Screen.VoiceTest -> Icons.Filled.GraphicEq
         Screen.Audit -> Icons.AutoMirrored.Filled.ReceiptLong
         Screen.SecureBrowser -> Icons.Filled.Language
@@ -156,6 +164,7 @@ private val Screen.unselectedIcon: ImageVector
         Screen.Settings -> Icons.Outlined.Settings
         Screen.PrivacySettings -> Icons.Outlined.Settings
         Screen.Models -> Icons.Outlined.Memory
+        Screen.LanguagePacks -> Icons.Outlined.Language
         Screen.VoiceTest -> Icons.Outlined.GraphicEq
         Screen.Audit -> Icons.AutoMirrored.Outlined.ReceiptLong
         Screen.SecureBrowser -> Icons.Outlined.Language
