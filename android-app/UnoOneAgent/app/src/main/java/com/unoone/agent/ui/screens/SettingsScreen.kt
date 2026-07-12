@@ -1,11 +1,10 @@
 package com.unoone.agent.ui.screens
 
-import android.content.Context
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
@@ -52,7 +52,8 @@ fun SettingsScreen(
     onNavigateToPrivacy: () -> Unit = {},
     onNavigateToModels: () -> Unit = {},
     onNavigateToVoiceTest: () -> Unit = {},
-    onNavigateToAudit: () -> Unit = {}
+    onNavigateToAudit: () -> Unit = {},
+    onNavigateToSecureBrowser: () -> Unit = {}
 ) {
     val modelStatuses by viewModel.modelStatuses.collectAsState()
     val storageUsageMb by viewModel.storageUsageMb.collectAsState()
@@ -67,14 +68,9 @@ fun SettingsScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Text(
-            text = "Settings",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold
-        )
+        Text("Settings", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Model Status
         SettingsSection(
             title = "Model Status",
             action = {
@@ -84,46 +80,29 @@ fun SettingsScreen(
             }
         ) {
             if (modelStatuses.isEmpty()) {
-                Text("No models detected. Push models via ADB and tap refresh.")
+                Text("No model artifacts detected.")
             } else {
                 modelStatuses.forEach { status ->
-                    StatusRow(label = status.name, present = status.present, sizeMb = status.sizeMb)
+                    StatusRow(status.name, status.present, status.sizeMb)
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
-        // Dedicated management screens (full model manager, real Sherpa voice test, audit viewer).
         SettingsSection(title = "Manage") {
-            Button(
-                onClick = onNavigateToModels,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Memory, contentDescription = "Model manager")
-                Text("Model Status & Install", modifier = Modifier.padding(start = 8.dp))
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = onNavigateToVoiceTest,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Mic, contentDescription = "Voice test")
-                Text("Voice Test (STT / TTS)", modifier = Modifier.padding(start = 8.dp))
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = onNavigateToAudit,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Audit log")
-                Text("Audit Log", modifier = Modifier.padding(start = 8.dp))
-            }
+            ManageButton("Model Status & Install", Icons.Default.Memory, onNavigateToModels)
+            ManageButton("Voice Test (STT / TTS)", Icons.Default.Mic, onNavigateToVoiceTest)
+            ManageButton("Secure Browser (PageAgent)", Icons.Default.Language, onNavigateToSecureBrowser)
+            ManageButton("Audit Log", Icons.AutoMirrored.Filled.ReceiptLong, onNavigateToAudit)
+            Text(
+                "Secure Browser reserves Gemma 4 exclusively, automates approved HTTPS pages through Alibaba PageAgent, and requires manual control for credentials, OTP, CAPTCHA, payments and legal declarations.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
-        // Offline voice language — selects the STT/TTS model set the agent uses.
         SettingsSection(title = "Voice language") {
             VoiceLanguage.SUPPORTED.forEach { lang ->
                 Row(
@@ -144,17 +123,14 @@ fun SettingsScreen(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Wake word stays English. Install the matching STT/TTS models in Model Status & Install.",
+                "This is the current compatibility list. The new signed language-pack catalogue includes English, Assamese and 11 additional Indian languages; planned packs remain disabled until qualified.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
             )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
-        // Storage
         SettingsSection(title = "Storage") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -165,48 +141,29 @@ fun SettingsScreen(
                 Text("$storageUsageMb MB", fontWeight = FontWeight.SemiBold)
             }
             Spacer(modifier = Modifier.height(8.dp))
-            // 5F: Clear logs with confirmation dialog
             Button(onClick = { showClearConfirmation = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("Clear Local Logs")
             }
             Spacer(modifier = Modifier.height(8.dp))
-            // 5E: Export logs to Downloads
             Button(onClick = { viewModel.exportLogs(context) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Export Logs")
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
-        // 4E: Privacy Settings link
         SettingsSection(title = "Privacy") {
-            Button(
-                onClick = onNavigateToPrivacy,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Button(onClick = onNavigateToPrivacy, modifier = Modifier.fillMaxWidth()) {
                 Text("Privacy Settings")
             }
-            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Control online services and data sharing",
+                "Control optional online tools and data sharing. Gemma, installed speech packs and PageAgent planning run locally.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
-        // Diagnostics
-        SettingsSection(title = "Diagnostics") {
-            Text("STT latency: —")
-            Text("Model latency: —")
-            Text("TTS latency: —")
-            Text("Action success rate: —")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 5D: Dark mode toggle wired to AppCompatDelegate + DataStore
         SettingsSection(title = "Appearance") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -227,21 +184,19 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
-
+        Spacer(modifier = Modifier.height(24.dp))
         Text(
-            text = "UnoOne v1.0.0-local",
+            "UnoOne v0.4.0-alpha-v2 · Gemma 4 E2B candidate",
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
         )
     }
 
-    // Clear logs confirmation dialog
     if (showClearConfirmation) {
         AlertDialog(
             onDismissRequest = { showClearConfirmation = false },
             title = { Text("Clear All Logs?") },
-            text = { Text("This will permanently delete all action logs. This cannot be undone.") },
+            text = { Text("This permanently deletes local action logs and cannot be undone.") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -254,12 +209,23 @@ fun SettingsScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showClearConfirmation = false }) {
-                    Text("Cancel")
-                }
+                TextButton(onClick = { showClearConfirmation = false }) { Text("Cancel") }
             }
         )
     }
+}
+
+@Composable
+private fun ManageButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Icon(icon, contentDescription = label)
+        Text(label, modifier = Modifier.padding(start = 8.dp))
+    }
+    Spacer(modifier = Modifier.height(8.dp))
 }
 
 @Composable
@@ -270,9 +236,7 @@ private fun SettingsSection(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -281,7 +245,7 @@ private fun SettingsSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = title,
+                    title,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary
@@ -299,9 +263,7 @@ private fun SettingsSection(
 @Composable
 private fun StatusRow(label: String, present: Boolean, sizeMb: Long = 0) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -309,7 +271,7 @@ private fun StatusRow(label: String, present: Boolean, sizeMb: Long = 0) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (sizeMb > 0) {
                 Text(
-                    text = "${sizeMb}MB",
+                    "$sizeMb MB",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     modifier = Modifier.padding(end = 8.dp)
