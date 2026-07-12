@@ -100,6 +100,12 @@ class SecureBrowserNativeHandler(
             )
         }
 
+        val decisionLabel = when {
+            response.allowed -> "allowed"
+            response.requiresUserTakeover -> "user_takeover"
+            response.actionClass == BrowserActionClass.PAYMENT -> "blocked"
+            else -> "declined_or_blocked"
+        }
         eventSink.record(
             PageAgentRequestType.AUDIT_EVENT,
             json.encodeToString(
@@ -109,6 +115,8 @@ class SecureBrowserNativeHandler(
                     actionName = input.actionName,
                     actionClass = response.actionClass,
                     summary = input.summary.take(500),
+                    decision = decisionLabel,
+                    message = response.message.take(300),
                     timestampEpochMs = System.currentTimeMillis()
                 )
             )
