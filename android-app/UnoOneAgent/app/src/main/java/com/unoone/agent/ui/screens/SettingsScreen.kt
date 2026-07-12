@@ -2,7 +2,6 @@ package com.unoone.agent.ui.screens
 
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -44,13 +43,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.unoone.agent.ui.viewmodel.SettingsViewModel
-import com.unoone.agent.voice.VoiceLanguage
 
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onNavigateToPrivacy: () -> Unit = {},
     onNavigateToModels: () -> Unit = {},
+    onNavigateToLanguagePacks: () -> Unit = {},
     onNavigateToVoiceTest: () -> Unit = {},
     onNavigateToAudit: () -> Unit = {},
     onNavigateToSecureBrowser: () -> Unit = {}
@@ -91,42 +90,20 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
         SettingsSection(title = "Manage") {
             ManageButton("Model Status & Install", Icons.Default.Memory, onNavigateToModels)
+            ManageButton("Offline Languages", Icons.Default.Language, onNavigateToLanguagePacks)
             ManageButton("Voice Test (STT / TTS)", Icons.Default.Mic, onNavigateToVoiceTest)
             ManageButton("Secure Browser (PageAgent)", Icons.Default.Language, onNavigateToSecureBrowser)
             ManageButton("Audit Log", Icons.AutoMirrored.Filled.ReceiptLong, onNavigateToAudit)
+            Text(
+                "Active voice runtime: $voiceLanguage. Change it only through Offline Languages after the pack passes health checks.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
             Text(
                 "Secure Browser reserves Gemma 4 exclusively, automates approved HTTPS pages through Alibaba PageAgent, and requires manual control for credentials, OTP, CAPTCHA, payments and legal declarations.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        SettingsSection(title = "Voice language") {
-            VoiceLanguage.SUPPORTED.forEach { lang ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { viewModel.setVoiceLanguage(lang.code) }
-                        .padding(vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(lang.display)
-                    if (lang.code == voiceLanguage) {
-                        Icon(
-                            Icons.Default.CheckCircle,
-                            contentDescription = "Selected language",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-            Text(
-                "This is the current compatibility list. The new signed language-pack catalogue includes English, Assamese and 11 additional Indian languages; planned packs remain disabled until qualified.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
             )
         }
 
