@@ -1,9 +1,9 @@
 name: One-time V2 cleanup
 
 on:
-  push:
+  pull_request:
     branches:
-      - feature/unoone-v2-gemma4-pageagent
+      - main
     paths:
       - scripts/maintenance/cleanup_v2_legacy_literals.py
       - .github/workflows/one-time-v2-cleanup.yml
@@ -12,16 +12,17 @@ permissions:
   contents: write
 
 concurrency:
-  group: one-time-v2-cleanup
+  group: one-time-v2-cleanup-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   cleanup:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: feature/unoone-v2-gemma4-pageagent
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Apply exact V2 cleanup
@@ -42,4 +43,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add android-app/UnoOneAgent
           git commit -m "cleanup: remove final legacy brain literals"
-          git push origin HEAD:feature/unoone-v2-gemma4-pageagent
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
