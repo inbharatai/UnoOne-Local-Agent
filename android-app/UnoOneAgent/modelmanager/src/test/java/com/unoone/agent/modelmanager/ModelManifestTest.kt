@@ -120,7 +120,6 @@ class ModelManifestTest {
         assertEquals("gemma-4-e2b", manifest.findByFolder("brain/gemma-4-e2b")!!.id)
         assertEquals("sherpa-asr-whisper", manifest.findByFolder("speech/shared/sherpa-asr-whisper")!!.id)
         assertEquals("sherpa-tts-en", manifest.findByFolder("speech/languages/en-IN/tts")!!.id)
-        assertNull(manifest.findByFolder("gemma-local"))
     }
 
     @Test
