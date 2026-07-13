@@ -43,13 +43,21 @@ REPLACEMENTS = {
         (
             "profile's preferred backend order. Either Gemma 4 E2B or Gemma 3n E4B loads through this same\n * safe interface.",
             "Gemma 4 E2B profile's preferred backend order. No secondary or legacy brain is accepted by\n * this runtime contract.",
-        )
+        ),
+        (
+            "Legacy single-arg load — loads [modelPath] as the default profile (Gemma 3n E4B). Preserved so\n     * existing callers/tests that only know a path keep compiling. New callers should pass a spec.",
+            "Convenience single-arg load — loads [modelPath] with the sole Gemma 4 E2B profile. Callers\n     * that already hold the model specification should use the explicit overload below.",
+        ),
     ],
     "android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/AgentOrchestrator.kt": [
         (
             "Multimodal vision gate for `describe_scene`. False by default: the shipped Gemma 3n E4B / Gemma 4\n * E2B `.litertlm` artifacts are text-only",
             "Multimodal vision gate for `describe_scene`. False by default: the shipped Gemma 4 E2B\n * `.litertlm` artifact is text-only",
-        )
+        ),
+        (
+            "// ships (the loaded Gemma 3n E4B / Gemma 4 E2B models are text-only). When VISION_MODEL_ENABLED",
+            "// ships (the loaded Gemma 4 E2B artifact is text-only). When VISION_MODEL_ENABLED",
+        ),
     ],
     "android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/execution/ActionExecutor.kt": [
         (
