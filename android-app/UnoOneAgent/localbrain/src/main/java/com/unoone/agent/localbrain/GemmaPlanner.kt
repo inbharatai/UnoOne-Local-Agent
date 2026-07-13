@@ -99,8 +99,8 @@ class GemmaPlanner {
     fun loadedProfile(): BrainModelSpec? = loadedSpec
 
     /**
-     * Legacy single-arg load — loads [modelPath] as the default profile (Gemma 3n E4B). Preserved so
-     * existing callers/tests that only know a path keep compiling. New callers should pass a spec.
+     * Convenience single-arg load — loads [modelPath] with the sole Gemma 4 E2B profile. Callers
+     * that already hold the model specification should use the explicit overload below.
      */
     suspend fun load(modelPath: String): Result<Unit> =
         load(modelPath, com.unoone.agent.core.model.BrainModelRegistry.defaultProfile)

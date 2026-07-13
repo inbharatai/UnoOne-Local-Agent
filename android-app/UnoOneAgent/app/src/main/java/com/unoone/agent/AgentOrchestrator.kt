@@ -153,7 +153,7 @@ class AgentOrchestrator(
         actionExecutor._speak = { text -> speakText(text) }
         actionExecutor._recordVoiceNote = { durationSeconds -> recordVoiceNote(durationSeconds) }
         // Multimodal vision for describe_scene — INACTIVE until a vision-capable .litertlm artifact
-        // ships (the loaded Gemma 3n E4B / Gemma 4 E2B models are text-only). When VISION_MODEL_ENABLED
+        // ships (the loaded Gemma 4 E2B artifact is text-only). When VISION_MODEL_ENABLED
         // is false the callback stays null and describe_scene uses the always-available OCR + context
         // fallback ([com.unoone.agent.core.agent.SceneDescriptionBuilder]).
         if (VISION_MODEL_ENABLED) {
