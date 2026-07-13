@@ -19,25 +19,6 @@ interface ModelInvocation {
   userPrompt: string
 }
 
-function decisionForBrowserState(template: Decision, requestPayload: string): Decision {
-  const decision = structuredClone(template)
-  const argumentsValue = JSON.parse(decision.actionArgumentsJson) as Record<string, unknown>
-  if (argumentsValue.index !== AUTO_INDEX) return decision
-
-  const invocation = JSON.parse(requestPayload) as ModelInvocation
-  const tagPattern = decision.actionName === 'input_text' ? '(?:input|textarea)' : '(?:button|input|a)'
-  const indexedElement = new RegExp(`\\[(\\d+)\\]<${tagPattern}\\b[^\\n>]*>`, 'i').exec(
-    invocation.userPrompt
-  )
-  if (!indexedElement) {
-    throw new Error(`No indexed ${tagPattern} element was present in the PageAgent browser state`)
-  }
-
-  argumentsValue.index = Number(indexedElement[1])
-  decision.actionArgumentsJson = JSON.stringify(argumentsValue)
-  return decision
-}
-
 async function installMockNativeBridge(
   page: Page,
   decisions: Decision[],
