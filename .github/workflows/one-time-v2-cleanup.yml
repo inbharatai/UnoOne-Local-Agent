@@ -28,9 +28,6 @@ jobs:
       - name: Apply exact V2 cleanup
         run: python3 scripts/maintenance/cleanup_v2_legacy_literals.py
 
-      - name: Verify cleanup invariants
-        run: python3 scripts/ci/check_repo_invariants.py
-
       - name: Commit cleanup
         shell: bash
         run: |
@@ -44,3 +41,6 @@ jobs:
           git add android-app/UnoOneAgent
           git commit -m "cleanup: remove final legacy brain literals"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
+      - name: Verify remaining cleanup invariants
+        run: python3 scripts/ci/check_repo_invariants.py
