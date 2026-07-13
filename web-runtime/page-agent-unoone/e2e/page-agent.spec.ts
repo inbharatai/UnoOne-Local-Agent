@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const bundlePath = path.resolve(here, '..', 'dist', 'unoone-page-agent.js')
 const origin = 'https://unoone.test'
+const AUTO_INDEX = -1
 
 interface Decision {
   evaluationPreviousGoal: string
@@ -12,6 +13,29 @@ interface Decision {
   nextGoal: string
   actionName: string
   actionArgumentsJson: string
+}
+
+interface ModelInvocation {
+  userPrompt: string
+}
+
+function decisionForBrowserState(template: Decision, requestPayload: string): Decision {
+  const decision = structuredClone(template)
+  const argumentsValue = JSON.parse(decision.actionArgumentsJson) as Record<string, unknown>
+  if (argumentsValue.index !== AUTO_INDEX) return decision
+
+  const invocation = JSON.parse(requestPayload) as ModelInvocation
+  const tagPattern = decision.actionName === 'input_text' ? '(?:input|textarea)' : '(?:button|input|a)'
+  const indexedElement = new RegExp(`\\[(\\d+)\\]<${tagPattern}\\b[^\\n>]*>`, 'i').exec(
+    invocation.userPrompt
+  )
+  if (!indexedElement) {
+    throw new Error(`No indexed ${tagPattern} element was present in the PageAgent browser state`)
+  }
+
+  argumentsValue.index = Number(indexedElement[1])
+  decision.actionArgumentsJson = JSON.stringify(argumentsValue)
+  return decision
 }
 
 async function installMockNativeBridge(
@@ -26,7 +50,7 @@ async function installMockNativeBridge(
 ): Promise<void> {
   await page.exposeFunction('__unooneAuthorizeNode', authorize)
   await page.addInitScript(
-    ({ testOrigin, plannedDecisions }) => {
+    ({ testOrigin, plannedDecisions, autoIndex }) => {
       const session = Object.freeze({
         id: 'playwright-session',
         nonce: 'playwright-nonce',
@@ -38,6 +62,25 @@ async function installMockNativeBridge(
         writable: false,
         configurable: false
       })
+
+      const resolveDecision = (template: Decision, requestPayload: string): Decision => {
+        const decision = structuredClone(template)
+        const argumentsValue = JSON.parse(decision.actionArgumentsJson) as Record<string, unknown>
+        if (argumentsValue.index !== autoIndex) return decision
+
+        const invocation = JSON.parse(requestPayload) as ModelInvocation
+        const tagPattern = decision.actionName === 'input_text' ? '(?:input|textarea)' : '(?:button|input|a)'
+        const indexedElement = new RegExp(`\\[(\\d+)\\]<${tagPattern}\\b[^\\n>]*>`, 'i').exec(
+          invocation.userPrompt
+        )
+        if (!indexedElement) {
+          throw new Error(`No indexed ${tagPattern} element was present in the PageAgent browser state`)
+        }
+
+        argumentsValue.index = Number(indexedElement[1])
+        decision.actionArgumentsJson = JSON.stringify(argumentsValue)
+        return decision
+      }
 
       let decisionIndex = 0
       const bridge = {
@@ -55,9 +98,9 @@ async function installMockNativeBridge(
 
           try {
             if (request.type === 'MODEL_INVOKE') {
-              const decision = plannedDecisions[Math.min(decisionIndex, plannedDecisions.length - 1)]
+              const template = plannedDecisions[Math.min(decisionIndex, plannedDecisions.length - 1)]
               decisionIndex += 1
-              payload = JSON.stringify(decision)
+              payload = JSON.stringify(resolveDecision(template, request.payload))
             } else if (request.type === 'AUTHORIZE_ACTION') {
               const actionRequest = JSON.parse(request.payload) as { actionName: string; summary: string }
               const handler = (window as any).__unooneAuthorizeNode as (
@@ -97,7 +140,7 @@ async function installMockNativeBridge(
         configurable: false
       })
     },
-    { testOrigin: origin, plannedDecisions: decisions }
+    { testOrigin: origin, plannedDecisions: decisions, autoIndex: AUTO_INDEX }
   )
 }
 
@@ -123,7 +166,7 @@ test('fills an ordinary form field through PageAgent and local Gemma bridge', as
         memory: 'The first-name field is empty',
         nextGoal: 'Fill the first-name field',
         actionName: 'input_text',
-        actionArgumentsJson: JSON.stringify({ index: 0, text: 'Reeturaj' })
+        actionArgumentsJson: JSON.stringify({ index: AUTO_INDEX, text: 'Reeturaj' })
       },
       {
         evaluationPreviousGoal: 'The first-name field was filled',
@@ -158,7 +201,7 @@ test('does not click a payment button when native authorization blocks it', asyn
         memory: 'There is a Pay now button',
         nextGoal: 'Click the Pay now button',
         actionName: 'click_element_by_index',
-        actionArgumentsJson: JSON.stringify({ index: 0 })
+        actionArgumentsJson: JSON.stringify({ index: AUTO_INDEX })
       },
       {
         evaluationPreviousGoal: 'The action was blocked by UnoOne safety',
