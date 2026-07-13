@@ -28,7 +28,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Verify UnoOne V2 repository invariants
-        run: python3 scripts/ci/check_repo_invariants.py
+        id: invariants
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/ci/check_repo_invariants.py 2>&1 | tee unoone-invariants.log
 
       - name: Set up Node 24
         uses: actions/setup-node@v4
@@ -126,6 +131,14 @@ jobs:
           set -o pipefail
           ./gradlew assembleDebug --stacktrace 2>&1 | tee android-apk.log
 
+      - name: Upload invariant diagnostics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unoone-invariant-diagnostics
+          path: unoone-invariants.log
+          retention-days: 14
+
       - name: Upload Android diagnostics
         uses: actions/upload-artifact@v4
         if: always()
@@ -151,8 +164,9 @@ jobs:
       - name: Enforce all gates
         if: always()
         run: |
-          echo "e2e=${{ steps.e2e.outcome }} lint=${{ steps.lint.outcome }} tests=${{ steps.tests.outcome }} apk=${{ steps.apk.outcome }}"
-          if [[ "${{ steps.e2e.outcome }}" != "success" || \
+          echo "invariants=${{ steps.invariants.outcome }} e2e=${{ steps.e2e.outcome }} lint=${{ steps.lint.outcome }} tests=${{ steps.tests.outcome }} apk=${{ steps.apk.outcome }}"
+          if [[ "${{ steps.invariants.outcome }}" != "success" || \
+                "${{ steps.e2e.outcome }}" != "success" || \
                 "${{ steps.lint.outcome }}" != "success" || \
                 "${{ steps.tests.outcome }}" != "success" || \
                 "${{ steps.apk.outcome }}" != "success" ]]; then
