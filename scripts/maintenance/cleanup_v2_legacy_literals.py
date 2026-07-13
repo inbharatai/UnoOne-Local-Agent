@@ -48,6 +48,10 @@ REPLACEMENTS = {
             "Legacy single-arg load — loads [modelPath] as the default profile (Gemma 3n E4B). Preserved so\n     * existing callers/tests that only know a path keep compiling. New callers should pass a spec.",
             "Convenience single-arg load — loads [modelPath] with the sole Gemma 4 E2B profile. Callers\n     * that already hold the model specification should use the explicit overload below.",
         ),
+        (
+            "**Honesty (INACTIVE with the shipped models):** the loaded Gemma 3n E4B / Gemma 4 E2B\n     * `.litertlm` artifacts are text-only",
+            "**Honesty (INACTIVE with the shipped model):** the loaded Gemma 4 E2B `.litertlm`\n     * artifact is text-only",
+        ),
     ],
     "android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/AgentOrchestrator.kt": [
         (
@@ -57,6 +61,10 @@ REPLACEMENTS = {
         (
             "// ships (the loaded Gemma 3n E4B / Gemma 4 E2B models are text-only). When VISION_MODEL_ENABLED",
             "// ships (the loaded Gemma 4 E2B artifact is text-only). When VISION_MODEL_ENABLED",
+        ),
+        (
+            "Profile-aware load — loads [modelPath] as [spec] (Gemma 4 E2B or the legacy Gemma 3n E4B)\n     * through the same safe GemmaPlanner interface.",
+            "Explicit Gemma 4 E2B load — loads [modelPath] using [spec] through the same safe\n     * GemmaPlanner interface.",
         ),
     ],
     "android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/execution/ActionExecutor.kt": [
