@@ -29,11 +29,13 @@ jobs:
 
       - name: Verify UnoOne V2 repository invariants
         id: invariants
-        continue-on-error: true
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           python3 scripts/ci/check_repo_invariants.py 2>&1 | tee unoone-invariants.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Set up Node 24
         uses: actions/setup-node@v4
@@ -67,12 +69,14 @@ jobs:
 
       - name: Run PageAgent Playwright E2E
         id: e2e
-        continue-on-error: true
         working-directory: web-runtime/page-agent-unoone
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           npm run test:e2e 2>&1 | tee playwright-e2e.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Upload PageAgent E2E diagnostics
         uses: actions/upload-artifact@v4
@@ -106,30 +110,36 @@ jobs:
 
       - name: Run Lint
         id: lint
-        continue-on-error: true
         working-directory: android-app/UnoOneAgent
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           ./gradlew :app:lintDebug --stacktrace 2>&1 | tee android-lint.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Run Unit Tests
         id: tests
-        continue-on-error: true
         working-directory: android-app/UnoOneAgent
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           ./gradlew testDebugUnitTest --stacktrace 2>&1 | tee android-tests.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Build Debug APK
         id: apk
-        continue-on-error: true
         working-directory: android-app/UnoOneAgent
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           ./gradlew assembleDebug --stacktrace 2>&1 | tee android-apk.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Upload invariant diagnostics
         uses: actions/upload-artifact@v4
@@ -155,7 +165,7 @@ jobs:
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
-        if: steps.apk.outcome == 'success'
+        if: steps.apk.outputs.status == '0'
         with:
           name: debug-apk
           path: android-app/UnoOneAgent/app/build/outputs/apk/debug/*.apk
@@ -163,12 +173,13 @@ jobs:
 
       - name: Enforce all gates
         if: always()
+        shell: bash
         run: |
-          echo "invariants=${{ steps.invariants.outcome }} e2e=${{ steps.e2e.outcome }} lint=${{ steps.lint.outcome }} tests=${{ steps.tests.outcome }} apk=${{ steps.apk.outcome }}"
-          if [[ "${{ steps.invariants.outcome }}" != "success" || \
-                "${{ steps.e2e.outcome }}" != "success" || \
-                "${{ steps.lint.outcome }}" != "success" || \
-                "${{ steps.tests.outcome }}" != "success" || \
-                "${{ steps.apk.outcome }}" != "success" ]]; then
+          echo "invariants=${{ steps.invariants.outputs.status }} e2e=${{ steps.e2e.outputs.status }} lint=${{ steps.lint.outputs.status }} tests=${{ steps.tests.outputs.status }} apk=${{ steps.apk.outputs.status }}"
+          if [[ "${{ steps.invariants.outputs.status }}" != "0" || \
+                "${{ steps.e2e.outputs.status }}" != "0" || \
+                "${{ steps.lint.outputs.status }}" != "0" || \
+                "${{ steps.tests.outputs.status }}" != "0" || \
+                "${{ steps.apk.outputs.status }}" != "0" ]]; then
             exit 1
           fi
