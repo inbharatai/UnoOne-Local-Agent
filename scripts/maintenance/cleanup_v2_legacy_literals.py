@@ -86,9 +86,10 @@ def main() -> None:
         text = path.read_text(encoding="utf-8")
         original = text
         for old, new in replacements:
-            if old not in text:
-                raise SystemExit(f"Expected text not found in {relative}: {old!r}")
-            text = text.replace(old, new)
+            if old in text:
+                text = text.replace(old, new)
+            elif new not in text:
+                raise SystemExit(f"Neither expected old nor replacement text found in {relative}: {old!r}")
         if text != original:
             path.write_text(text, encoding="utf-8")
             changed.append(relative)
