@@ -30,7 +30,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Verify UnoOne V2 repository invariants
-        run: python3 scripts/ci/check_repo_invariants.py
+        id: invariants
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/ci/check_repo_invariants.py 2>&1 | tee unoone-invariants.log
 
       - name: Set up Node 24
         uses: actions/setup-node@v4
@@ -126,9 +131,26 @@ jobs:
             exit 1
           fi
 
+      - name: Upload invariant diagnostics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unoone-invariant-diagnostics
+          path: unoone-invariants.log
+          retention-days: 14
+
       - name: Upload installer bundle
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: unoone-installer-pwa
           path: installer-pwa/dist/
           retention-days: 14
+
+      - name: Enforce invariant gate
+        if: always()
+        run: |
+          echo "invariants=${{ steps.invariants.outcome }}"
+          if [[ "${{ steps.invariants.outcome }}" != "success" ]]; then
+            exit 1
+          fi
