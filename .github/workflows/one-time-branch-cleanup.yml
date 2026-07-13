@@ -1,0 +1,60 @@
+name: One-time post-merge branch cleanup
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/branch-cleanup-trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: unoone-post-merge-branch-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Delete superseded feature branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for ref in \
+            'feature/unoone-v2-gemma4-pageagent' \
+            'feature/gemma-4-e2b-brain'
+          do
+            if gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${ref}"; then
+              echo "Deleted ${ref}"
+            else
+              echo "${ref} was already absent or could not be deleted"
+            fi
+          done
+
+      - name: Verify protected refs remain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" >/dev/null
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/archive/main-pre-unoone-v2-2026-07" >/dev/null
+
+      - name: Remove one-time cleanup files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-time-branch-cleanup.yml .github/branch-cleanup-trigger
+          git commit -m "cleanup: remove one-time branch cleanup machinery"
+          git push origin HEAD:main
