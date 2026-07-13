@@ -3,13 +3,17 @@ package com.unoone.agent
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
+import com.unoone.agent.browser.SecureBrowserModelLease
+import com.unoone.agent.core.model.BrainModelRegistry
+import com.unoone.agent.core.model.ExclusiveBrainLeaseState
+import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
-import dagger.hilt.android.HiltAndroidApp
 import com.unoone.agent.di.DatabaseProvider
 import com.unoone.agent.modelmanager.ModelManager
 import com.unoone.agent.safety.AuditLogger
 import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceService
+import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,40 +25,32 @@ import kotlinx.coroutines.launch
 @HiltAndroidApp
 class UnoOneApplication : Application() {
 
-    // Expert: Master Orchestrator accessible from anywhere (Activity or Service)
     lateinit var orchestrator: AgentOrchestrator
         private set
 
-    // Single shared VoiceModule — used by orchestrator, ViewModel, and FloatingAgentService
     lateinit var sharedVoiceModule: VoiceModule
+        private set
+
+    /** Single application-owned lease used by every Secure Browser screen/session. */
+    lateinit var secureBrowserModelLease: SecureBrowserModelLease
         private set
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    /**
-     * SharedFlow for voice commands from VoiceService.
-     * Replaces the insecure BroadcastReceiver approach — commands are no longer
-     * broadcast via Intent (which is visible in system logs even with setPackage).
-     * VoiceService posts commands here, and the orchestrator collects them.
-     */
     private val _commandFlow = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val commandFlow: SharedFlow<String> = _commandFlow.asSharedFlow()
 
-    // Remembered so the brain can be reloaded after a memory-pressure unload (see onTrimMemory).
+    /** Remembered for restoring the main Gemma 4 brain after memory-pressure unload. */
     @Volatile private var lastLlmPath: String? = null
 
     override fun onCreate() {
         super.onCreate()
-        Logger.i("UnoOne starting up - Expert Mode")
+        Logger.i("UnoOne V2 starting — Gemma 4 E2B local mode")
         appContext = applicationContext
 
         val db = DatabaseProvider.getDatabase(this)
 
-        // Create the shared VoiceModule first, then inject it into the orchestrator
         sharedVoiceModule = VoiceModule(this)
-        // Initialize the shared module's STT/TTS for the active voice language so the mic-button and
-        // VoiceTest paths work offline at startup (VoiceService inits its own engines separately).
-        // Done off the main thread — Sherpa native init can take a few hundred milliseconds.
         appScope.launch {
             val modelBaseDir = (getExternalFilesDir(null)?.absolutePath ?: filesDir.absolutePath) + "/models"
             sharedVoiceModule.reinitForLanguage(modelBaseDir)
@@ -68,40 +64,39 @@ class UnoOneApplication : Application() {
             db.skillDao()
         )
         orchestrator.setVoiceModule(sharedVoiceModule)
+        secureBrowserModelLease = SecureBrowserModelLease(this, orchestrator)
 
-        // Initialize audit logger with the action log DAO
         AuditLogger.initialize(db.actionLogDao())
 
-        // Auto-load Gemma 3n E4B .litertlm brain if a model file is present
         val modelManager = ModelManager(this, db.modelMetadataDao())
         modelManager.ensureModelDirectories()
-        val llmPath = modelManager.getLlmModelPath()
+        val brainSpec = BrainModelRegistry.GEMMA_4_E2B
+        val llmPath = modelManager.getLlmModelPath(brainSpec)
         if (llmPath != null) {
             lastLlmPath = llmPath
             appScope.launch {
-                val result = orchestrator.loadLlmModel(llmPath)
-                if (result is com.unoone.agent.core.model.Result.Success) {
-                    Logger.i("UnoOneApplication: Gemma brain loaded from $llmPath")
+                val result = orchestrator.loadLlmModel(llmPath, brainSpec)
+                if (result is Result.Success) {
+                    Logger.i("UnoOneApplication: ${brainSpec.displayName} loaded from $llmPath")
                 } else {
-                    Logger.w("UnoOneApplication: Gemma brain failed to load: ${(result as? com.unoone.agent.core.model.Result.Error)?.message}")
+                    Logger.w(
+                        "UnoOneApplication: ${brainSpec.displayName} failed to load: " +
+                            (result as? Result.Error)?.message
+                    )
                 }
             }
         }
 
-        // Collect voice commands from SharedFlow and dispatch to orchestrator
         appScope.launch {
             commandFlow.collect { command ->
                 if (command.isNotBlank()) {
-                    Logger.i("UnoOneApplication: Received voice command: '$command'")
+                    Logger.i("UnoOneApplication: received local voice command")
                     orchestrator.processCommand(command, com.unoone.agent.core.model.InputType.VOICE)
                 }
             }
         }
 
-        // Expert: Start background services for hands-free and floating assistant
-        // Wire VoiceService static callback to route commands through SharedFlow
         VoiceService.voiceCommandCallback = { command -> postVoiceCommand(command) }
-
         try {
             VoiceService.start(this)
         } catch (e: Exception) {
@@ -109,54 +104,53 @@ class UnoOneApplication : Application() {
         }
     }
 
-    /**
-     * Post a voice command to the SharedFlow. Called by VoiceService instead of
-     * sending a broadcast Intent. This avoids exposing transcribed speech in system logs.
-     */
     fun postVoiceCommand(command: String) {
         _commandFlow.tryEmit(command)
     }
 
-    /**
-     * Crash-safe memory pressure handling. Under *running* memory pressure (the app is in the
-     * foreground and the OS is low on RAM) we unload the multi-GB Gemma brain — by far the largest
-     * native allocation — rather than risk an OOM crash mid-inference. The brain is reloaded by
-     * [reloadLlmIfUnloaded] when the activity returns to the foreground.
-     *
-     * We intentionally do NOT call [VoiceModule.release] here: the Sherpa engines are the live voice
-     * path, release() is not reversible without re-initializing with the model directory (which is
-     * not wired at startup), and tearing down voice mid-session would break ongoing recognition.
-     * Unloading the LLM is the high-leverage, low-risk move; it is idempotent.
-     */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        val isRunningPressure =
+        val runningPressure =
             level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
                 level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
-        if (isRunningPressure && orchestrator.isLlmLoaded()) {
-            Logger.i("UnoOneApplication: memory pressure (level $level); unloading Gemma brain")
-            appScope.launch {
-                runCatching { orchestrator.unloadLlmModel() }
-                    .onFailure { Logger.e("UnoOneApplication: LLM unload failed", it) }
+        if (!runningPressure) return
+
+        when {
+            secureBrowserModelLease.isActive() -> {
+                Logger.i("UnoOneApplication: memory pressure; releasing Secure Browser Gemma lease")
+                appScope.launch {
+                    val result = secureBrowserModelLease.release(restore = false)
+                    if (result is Result.Error) {
+                        Logger.e("UnoOneApplication: browser lease release failed: ${result.message}")
+                    }
+                }
+            }
+            orchestrator.isLlmLoaded() && !ExclusiveBrainLeaseState.isActive() -> {
+                Logger.i("UnoOneApplication: memory pressure; unloading main Gemma brain")
+                appScope.launch {
+                    runCatching { orchestrator.unloadLlmModel() }
+                        .onFailure { Logger.e("UnoOneApplication: LLM unload failed", it) }
+                }
             }
         }
     }
 
-    /**
-     * Reload the Gemma brain if a model was previously loaded but got unloaded by [onTrimMemory].
-     * Called from [com.unoone.agent.MainActivity.onResume] so the agent recovers transparently when
-     * the user returns to the app. No-op if the brain is already loaded or was never loaded.
-     */
+    /** Reloads the main brain only when no exclusive mode currently owns Gemma. */
     fun reloadLlmIfUnloaded() {
+        if (ExclusiveBrainLeaseState.isActive() || secureBrowserModelLease.isActive()) return
         val path = lastLlmPath ?: return
         if (orchestrator.isLlmLoaded()) return
-        Logger.i("UnoOneApplication: reloading Gemma brain after memory pressure")
+        val spec = BrainModelRegistry.GEMMA_4_E2B
+        Logger.i("UnoOneApplication: reloading ${spec.displayName} after memory pressure")
         appScope.launch {
-            val result = orchestrator.loadLlmModel(path)
-            if (result is com.unoone.agent.core.model.Result.Success) {
-                Logger.i("UnoOneApplication: Gemma brain reloaded from $path")
+            val result = orchestrator.loadLlmModel(path, spec)
+            if (result is Result.Success) {
+                Logger.i("UnoOneApplication: ${spec.displayName} reloaded from $path")
             } else {
-                Logger.w("UnoOneApplication: Gemma brain reload failed: ${(result as? com.unoone.agent.core.model.Result.Error)?.message}")
+                Logger.w(
+                    "UnoOneApplication: ${spec.displayName} reload failed: " +
+                        (result as? Result.Error)?.message
+                )
             }
         }
     }

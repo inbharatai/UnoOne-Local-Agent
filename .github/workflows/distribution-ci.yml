@@ -1,0 +1,156 @@
+name: Distribution CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'distribution/**'
+      - 'installer-pwa/**'
+      - 'scripts/catalog/**'
+      - 'scripts/ci/**'
+      - '.github/workflows/distribution-ci.yml'
+  push:
+    branches: [main, develop]
+    paths:
+      - 'distribution/**'
+      - 'installer-pwa/**'
+      - 'scripts/catalog/**'
+      - 'scripts/ci/**'
+      - '.github/workflows/distribution-ci.yml'
+
+concurrency:
+  group: distribution-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify UnoOne V2 repository invariants
+        id: invariants
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/ci/check_repo_invariants.py 2>&1 | tee unoone-invariants.log
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install distribution API dependencies
+        working-directory: distribution/api
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck distribution API
+        working-directory: distribution/api
+        run: npm run typecheck
+
+      - name: Test distribution API policy
+        working-directory: distribution/api
+        run: npm test
+
+      - name: Bundle Cloudflare Worker
+        working-directory: distribution/api
+        run: npx wrangler deploy --dry-run --outdir dist-worker
+
+      - name: Install installer PWA dependencies
+        working-directory: installer-pwa
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck installer PWA
+        working-directory: installer-pwa
+        run: npm run typecheck
+
+      - name: Test installer PWA catalogue verification
+        working-directory: installer-pwa
+        run: npm test
+
+      - name: Build installer PWA
+        working-directory: installer-pwa
+        run: npm run build
+
+      - name: Verify catalogue signing round-trip
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/unoone-catalog-signing
+          mkdir -p /tmp/unoone-catalog-signing
+          node scripts/catalog/generate_ed25519_keypair.mjs /tmp/unoone-catalog-signing
+          node scripts/catalog/sign_catalog.mjs \
+            --input distribution/catalog/fixtures/ci.payload.json \
+            --private-key /tmp/unoone-catalog-signing/catalog-private.pem \
+            --key-id ci-test-key \
+            --output /tmp/unoone-catalog-signing/beta.json
+          node scripts/catalog/verify_catalog.mjs \
+            --catalog /tmp/unoone-catalog-signing/beta.json \
+            --public-key /tmp/unoone-catalog-signing/catalog-public.pem \
+            --key-id ci-test-key
+
+      - name: Prove invalid payload cannot be signed
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const source = 'distribution/catalog/fixtures/ci.payload.json'
+          const value = JSON.parse(fs.readFileSync(source, 'utf8'))
+          value.minimumInstallerVersion = 0
+          fs.writeFileSync('/tmp/unoone-catalog-signing/invalid-payload.json', JSON.stringify(value, null, 2))
+          NODE
+          if node scripts/catalog/sign_catalog.mjs \
+            --input /tmp/unoone-catalog-signing/invalid-payload.json \
+            --private-key /tmp/unoone-catalog-signing/catalog-private.pem \
+            --key-id ci-test-key \
+            --output /tmp/unoone-catalog-signing/invalid-signed.json; then
+            echo 'Invalid payload was unexpectedly signed' >&2
+            exit 1
+          fi
+          test ! -e /tmp/unoone-catalog-signing/invalid-signed.json
+
+      - name: Prove tampered catalogue is rejected
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const path = '/tmp/unoone-catalog-signing/beta.json'
+          const value = JSON.parse(fs.readFileSync(path, 'utf8'))
+          value.payload.catalogVersion += 1
+          fs.writeFileSync('/tmp/unoone-catalog-signing/tampered.json', JSON.stringify(value, null, 2))
+          NODE
+          if node scripts/catalog/verify_catalog.mjs \
+            --catalog /tmp/unoone-catalog-signing/tampered.json \
+            --public-key /tmp/unoone-catalog-signing/catalog-public.pem \
+            --key-id ci-test-key; then
+            echo 'Tampered catalogue unexpectedly verified' >&2
+            exit 1
+          fi
+
+      - name: Upload invariant diagnostics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unoone-invariant-diagnostics
+          path: unoone-invariants.log
+          retention-days: 14
+
+      - name: Upload installer bundle
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unoone-installer-pwa
+          path: installer-pwa/dist/
+          retention-days: 14
+
+      - name: Enforce invariant gate
+        if: always()
+        run: |
+          echo "invariants=${{ steps.invariants.outcome }}"
+          if [[ "${{ steps.invariants.outcome }}" != "success" ]]; then
+            exit 1
+          fi

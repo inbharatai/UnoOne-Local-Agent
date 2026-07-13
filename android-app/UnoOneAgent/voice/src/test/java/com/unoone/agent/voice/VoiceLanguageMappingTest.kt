@@ -6,48 +6,43 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Verifies the pure language → model-folder/mode mapping in [VoiceLanguage]. No Android/native deps
- * are touched, so this runs as a plain JVM unit test.
- */
+/** Verifies the language-to-runtime path mapping without Android or native dependencies. */
 class VoiceLanguageMappingTest {
 
     @Test
     fun englishUsesTransducerAndCoquiTts() {
         val asr = VoiceLanguage.asrSpec("en")
-        assertEquals("sherpa-asr-en", asr.folder)
+        assertEquals("speech/shared/sherpa-asr-en", asr.folder)
         assertEquals(SttMode.TRANSDUCER, asr.mode)
         assertEquals("en", asr.whisperLanguage)
-        assertEquals("sherpa-tts-en", VoiceLanguage.ttsFolder("en"))
+        assertEquals("speech/languages/en-IN/tts", VoiceLanguage.ttsFolder("en"))
     }
 
     @Test
     fun indicLanguagesUseSharedWhisperAsrAndPerLanguageMmsTts() {
         listOf("hi", "bn", "ta", "te", "kn", "ml").forEach { lang ->
             val asr = VoiceLanguage.asrSpec(lang)
-            assertEquals("sherpa-asr-whisper", asr.folder)
+            assertEquals("speech/shared/sherpa-asr-whisper", asr.folder)
             assertEquals(SttMode.WHISPER, asr.mode)
-            // The whisper `language` field is the 2-letter code (whisper-tiny multilingual supports these).
             assertEquals(lang, asr.whisperLanguage)
         }
     }
 
     @Test
     fun ttsFolderPerIndicLanguage() {
-        assertEquals("sherpa-tts-hin", VoiceLanguage.ttsFolder("hi"))
-        assertEquals("sherpa-tts-ben", VoiceLanguage.ttsFolder("bn"))
-        assertEquals("sherpa-tts-tam", VoiceLanguage.ttsFolder("ta"))
-        assertEquals("sherpa-tts-tel", VoiceLanguage.ttsFolder("te"))
-        assertEquals("sherpa-tts-kan", VoiceLanguage.ttsFolder("kn"))
-        assertEquals("sherpa-tts-mal", VoiceLanguage.ttsFolder("ml"))
-        // Each Indic language maps to a distinct folder.
+        assertEquals("speech/languages/hi-IN/tts", VoiceLanguage.ttsFolder("hi"))
+        assertEquals("speech/languages/bn-IN/tts", VoiceLanguage.ttsFolder("bn"))
+        assertEquals("speech/languages/ta-IN/tts", VoiceLanguage.ttsFolder("ta"))
+        assertEquals("speech/languages/te-IN/tts", VoiceLanguage.ttsFolder("te"))
+        assertEquals("speech/languages/kn-IN/tts", VoiceLanguage.ttsFolder("kn"))
+        assertEquals("speech/languages/ml-IN/tts", VoiceLanguage.ttsFolder("ml"))
         val folders = listOf("hi", "bn", "ta", "te", "kn", "ml").map { VoiceLanguage.ttsFolder(it) }
         assertEquals(folders.size, folders.toSet().size)
     }
 
     @Test
-    fun kwsFolderIsAlwaysEnglishVad() {
-        assertEquals("vad", VoiceLanguage.KWS_FOLDER)
+    fun kwsFolderUsesSharedVadPath() {
+        assertEquals("speech/shared/vad", VoiceLanguage.KWS_FOLDER)
     }
 
     @Test
@@ -77,7 +72,6 @@ class VoiceLanguageMappingTest {
 
     @Test
     fun englishAsrDiffersFromIndicAsrMode() {
-        // Guards against an accidental regression that routes English through whisper.
         assertNotEquals(VoiceLanguage.asrSpec("en").mode, VoiceLanguage.asrSpec("hi").mode)
         assertTrue(VoiceLanguage.isSupported("ta"))
     }

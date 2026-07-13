@@ -29,23 +29,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.unoone.agent.brain.BrainSelfTestResult
 import com.unoone.agent.ui.theme.DoneGreen
 import com.unoone.agent.ui.theme.FailedRed
 import com.unoone.agent.ui.viewmodel.ModelStatusViewModel
 
-/**
- * Model Status / Settings screen: lists every manifest model with version, size, health, backend,
- * and SHA-256 indicator. Supports install (with a live progress bar) and uninstall. Reached from
- * Settings (not in the bottom nav).
- */
+/** Model health, installation and sole-brain qualification screen. */
 @Composable
 fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
     val rows by viewModel.rows.collectAsState()
@@ -53,9 +50,11 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
     val storageUsageMb by viewModel.storageUsageMb.collectAsState()
     val resultMessage by viewModel.resultMessage.collectAsState()
     val busy by viewModel.busy.collectAsState()
+    val brainStatus by viewModel.brainStatus.collectAsState()
+    val selfTest by viewModel.selfTest.collectAsState()
+    val brainBusy by viewModel.brainBusy.collectAsState()
 
     LaunchedEffect(resultMessage) {
-        // Auto-clear the one-shot result message after a few seconds.
         if (resultMessage != null) {
             kotlinx.coroutines.delay(3500)
             viewModel.consumeResultMessage()
@@ -73,32 +72,39 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to settings")
             }
             Text(
-                text = "Model Status",
+                text = "Local Models",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(start = 8.dp)
             )
             Spacer(modifier = Modifier.weight(1f))
-            IconButton(onClick = viewModel::refresh, enabled = !busy) {
+            IconButton(onClick = viewModel::refresh, enabled = !busy && !brainBusy) {
                 Icon(Icons.Default.Refresh, contentDescription = "Refresh")
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Local storage used: $storageUsageMb MB",
+            text = "Storage used: $storageUsageMb MB",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
         )
         Spacer(modifier = Modifier.height(12.dp))
 
-        progress?.let { p ->
+        resultMessage?.let { message ->
+            Text(
+                text = message,
+                color = if (message.contains("failed", ignoreCase = true)) FailedRed else DoneGreen,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+        }
+
+        progress?.let { item ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(p.message, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Text(item.message, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(8.dp))
                     LinearProgressIndicator(
-                        progress = { p.percent / 100f },
+                        progress = { item.percent / 100f },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -106,20 +112,105 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        resultMessage?.let { msg ->
-            Text(
-                text = msg,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (msg.startsWith("Install failed") || msg.startsWith("Uninstall")) MaterialTheme.colorScheme.error
-                else DoneGreen,
-                modifier = Modifier.padding(bottom = 12.dp)
+        brainStatus?.let { brain ->
+            BrainCard(
+                row = brain,
+                selfTest = selfTest,
+                busy = brainBusy,
+                onLoad = viewModel::loadBrain,
+                onSelfTest = viewModel::runBrainSelfTest
             )
         }
 
+        Spacer(modifier = Modifier.height(20.dp))
+        Text(
+            text = "Advanced Model Diagnostics",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "Technical artifacts are shown here for installation, repair and integrity checks. Use Offline Languages to install or activate speech packs.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
         if (rows.isEmpty()) {
-            Text("No models declared in manifest. Ensure models_manifest.json is bundled.")
+            Text("No models declared in the bundled manifest.")
         } else {
-            rows.forEach { row -> ModelRowCard(row, busy, viewModel::installModel, viewModel::uninstallModel) }
+            rows.forEach { row ->
+                ModelRowCard(row, busy, viewModel::installModel, viewModel::uninstallModel)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrainCard(
+    row: ModelStatusViewModel.BrainStatusRow,
+    selfTest: BrainSelfTestResult?,
+    busy: Boolean,
+    onLoad: () -> Unit,
+    onSelfTest: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("UnoOne Brain", style = MaterialTheme.typography.labelLarge)
+            Text(row.displayName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(row.description, style = MaterialTheme.typography.bodySmall)
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(8.dp))
+
+            DetailLine("Runtime", "LiteRT-LM")
+            DetailLine("Installed", if (row.installed) "Yes" else "No")
+            DetailLine(
+                "Integrity",
+                if (row.installed && row.isDeviceVerified) "Device-qualified" else "Qualification pending"
+            )
+            DetailLine(
+                "Memory gate",
+                "${row.minimumRamMb} MB minimum · ${row.recommendedRamMb} MB recommended"
+            )
+            DetailLine(
+                "Loaded",
+                when {
+                    row.isLoaded -> "Yes — ${row.backend}"
+                    row.installed -> "No"
+                    else -> "No (artifact not installed)"
+                }
+            )
+            if (row.lastLoadError.isNotBlank()) DetailLine("Last load error", row.lastLoadError)
+
+            selfTest?.takeIf { it.manifestId == row.manifestId }?.let { result ->
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.dp))
+                DetailLine(
+                    "Self-test",
+                    when {
+                        !result.installed -> "Artifact not installed"
+                        !result.loaded -> "Load failed: ${result.loadError}"
+                        result.proposedTool == null -> "Loaded on ${result.backend}; no tool proposed"
+                        result.toolAccepted -> "Passed on ${result.backend} in ${result.elapsedMs} ms"
+                        else -> "Rejected proposed tool '${result.proposedTool}'"
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (busy) {
+                    CircularProgressIndicator(modifier = Modifier.height(24.dp), strokeWidth = 2.dp)
+                } else {
+                    OutlinedButton(onClick = onLoad, enabled = row.installed) { Text("Load Brain") }
+                    Button(onClick = onSelfTest, enabled = row.installed) { Text("Run Self-Test") }
+                }
+            }
         }
     }
 }
@@ -131,58 +222,58 @@ private fun ModelRowCard(
     onInstall: (String) -> Unit,
     onUninstall: (String) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(row.folder, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(row.id, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "${row.type.uppercase()} · v${row.version.ifBlank { "—" }} · ${row.language}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        row.folder,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                     )
                 }
                 Icon(
                     imageVector = if (row.healthy) Icons.Default.CheckCircle else Icons.Default.Error,
-                    contentDescription = if (row.healthy) "Healthy" else "Missing/corrupt",
+                    contentDescription = if (row.healthy) "Healthy" else "Missing or unhealthy",
                     tint = if (row.healthy) DoneGreen else FailedRed
                 )
             }
+
             Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(8.dp))
-            DetailLine("Status", when {
-                row.verified -> "Present & verified"
-                row.healthy -> "Present — not hash-verified (manual import)"
-                row.present -> "Present (needs repair)"
-                else -> "Not installed"
-            })
+            DetailLine("Type", row.type.uppercase())
+            DetailLine("Version", row.version.ifBlank { "—" })
+            DetailLine("Language", row.language)
+            DetailLine(
+                "Status",
+                when {
+                    row.verified -> "Present and hash-verified"
+                    row.healthy -> "Present but not hash-verified"
+                    row.present -> "Present; repair required"
+                    else -> "Not installed"
+                }
+            )
             DetailLine("Size", if (row.sizeMb > 0) "${row.sizeMb} MB" else "—")
             DetailLine("Backend", row.backend)
-            DetailLine("Min RAM", if (row.minRamMb > 0) "${row.minRamMb} MB" else "any")
+            DetailLine("Minimum RAM", if (row.minRamMb > 0) "${row.minRamMb} MB" else "—")
             DetailLine("SHA-256", row.sha256Preview, mono = true)
             if (!row.verified) DetailLine("Health", row.healthMessage)
 
             Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (busy) {
-                    CircularProgressIndicator(modifier = Modifier.height(20.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.height(24.dp), strokeWidth = 2.dp)
                 } else if (!row.healthy) {
                     Button(onClick = { onInstall(row.id) }) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
-                        Text(if (row.present) "Repair" else "Install")
+                        Icon(Icons.Default.CloudDownload, contentDescription = null)
+                        Text(if (row.present) "Repair" else "Install", modifier = Modifier.padding(start = 6.dp))
                     }
                 }
                 if (row.present && !busy) {
                     OutlinedButton(onClick = { onUninstall(row.id) }) {
-                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
-                        Text("Uninstall")
+                        Icon(Icons.Default.Delete, contentDescription = null)
+                        Text("Uninstall", modifier = Modifier.padding(start = 6.dp))
                     }
                 }
             }
@@ -196,12 +287,18 @@ private fun DetailLine(label: String, value: String, mono: Boolean = false) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+            modifier = Modifier.weight(0.35f)
+        )
         Text(
             value,
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.SemiBold,
-            fontFamily = if (mono) FontFamily.Monospace else null
+            fontFamily = if (mono) FontFamily.Monospace else FontFamily.Default,
+            modifier = Modifier.weight(0.65f)
         )
     }
 }

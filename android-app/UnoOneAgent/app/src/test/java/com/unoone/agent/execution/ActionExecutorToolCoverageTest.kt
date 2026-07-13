@@ -158,7 +158,10 @@ class ActionExecutorToolCoverageTest {
         // voice_recording with no _recordVoiceNote wired returns a handled Result.Error (not a
         // router fallback); web_search in Robolectric (no network) returns the offline message.
         "voice_recording" to obj { put("duration_seconds", 2) },
-        "web_search" to obj { put("query", "weather") }
+        "web_search" to obj { put("query", "weather") },
+        // describe_scene without MediaProjection permission returns a handled permission Error
+        // (not a router fallback); with permission it builds the OCR + context description.
+        "describe_scene" to obj { put("aspect", "any buttons") }
     )
 
     private fun obj(build: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit): JsonObject =

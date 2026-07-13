@@ -1,7 +1,9 @@
 package com.unoone.agent.localbrain
 
+import com.unoone.agent.core.model.BrainModelSpec
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
+import com.unoone.agent.core.agent.SafetyVerdict
 import com.unoone.agent.core.util.Logger
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -11,8 +13,9 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * Local LLM brain for UnoOne.
  *
- * This class is a thin wrapper around [GemmaPlanner], which loads a Gemma 3n E4B
- * `.litertlm` model via LiteRT-LM and performs manual tool calling.
+ * Thin wrapper around [GemmaPlanner], which loads a Gemma `.litertlm` model via LiteRT-LM and
+ * performs manual tool calling. Callers pass the sole Gemma 4 E2B [BrainModelSpec] so model
+ * identity, backend preference and device gates remain explicit.
  *
  * The old ONNX shell has been removed. RuleBasedParser remains the fast offline
  * fallback when no model is loaded.
@@ -30,7 +33,15 @@ class LocalBrain {
     /** Last load error (empty on success) — surfaces device-compatibility status to the UI. */
     fun lastLoadError(): String = planner.lastLoadError()
 
+    /** The profile currently loaded, or null when no model is loaded. */
+    fun loadedProfile(): BrainModelSpec? = planner.loadedProfile()
+
+    /** Convenience load using the sole Gemma 4 E2B profile. */
     suspend fun loadModel(modelPath: String): Result<Unit> = planner.load(modelPath)
+
+    /** Loads [modelPath] using the explicit Gemma 4 E2B [spec]. */
+    suspend fun loadModel(modelPath: String, spec: BrainModelSpec): Result<Unit> =
+        planner.load(modelPath, spec)
 
     fun unloadModel() {
         Logger.i("LocalBrain: unloading Gemma model")
@@ -43,6 +54,46 @@ class LocalBrain {
     suspend fun runInference(prompt: String, context: ContextSnapshot): Result<ToolCall> {
         return planner.plan(prompt, context)
     }
+
+    /**
+     * Streaming variant of [runInference]: same validated single-`ToolCall` result, but invokes
+     * [onDelta] with each incremental text delta as the model generates, so the caller can surface
+     * partial output to the UI timeline. Device-time-only (not JVM-testable); the pure delta
+     * reduction is JVM-tested in [com.unoone.agent.core.agent.StreamingTextReducer].
+     */
+    suspend fun runInferenceStreaming(
+        prompt: String,
+        context: ContextSnapshot,
+        onDelta: (String) -> Unit
+    ): Result<ToolCall> {
+        return planner.planStreaming(prompt, context, onDelta)
+    }
+
+    /**
+     * ReAct "Observe" step: feeds the [observation] (result of [prevTool]) back into the live
+     * conversation and returns the model's next proposed, validated tool call. Only meaningful when
+     * a model is loaded; the caller ([com.unoone.agent.AgentOrchestrator]) only invokes this inside
+     * the bounded ReAct loop after the first call was planned by the LLM. Device-time verified.
+     */
+    suspend fun planNext(prevTool: String, observation: String): Result<ToolCall> {
+        return planner.planNext(prevTool, observation)
+    }
+
+    /**
+     * Second on-device safety-judge pass over a proposed action. Returns a [SafetyVerdict] the
+     * orchestrator merges (escalate-only) with the keyword tier. Device-time verified.
+     */
+    suspend fun judgeSafety(toolName: String, argsJson: String, inputText: String): Result<SafetyVerdict> {
+        return planner.judgeSafety(toolName, argsJson, inputText)
+    }
+
+    /**
+     * Multimodal vision description of a screenshot. INACTIVE with the shipped text-only models
+     * (no vision weights) — the caller gates this behind a vision-capable model check and falls back
+     * to [com.unoone.agent.core.agent.SceneDescriptionBuilder] on any Error. Device-time-only.
+     */
+    suspend fun describeSceneWithVision(imageBytes: ByteArray, aspect: String): Result<String> =
+        planner.describeSceneWithVision(imageBytes, aspect)
 
     /**
      * Parses a raw JSON tool call string into a [ToolCall].

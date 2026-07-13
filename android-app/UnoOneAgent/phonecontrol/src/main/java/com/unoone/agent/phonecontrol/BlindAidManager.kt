@@ -24,25 +24,19 @@ import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-/**
- * One detected object's bounding box, normalized to [0,1] in the **upright** image's coordinate
- * space (left/top/right/bottom). Upright = the image after [ImageProxy.imageInfo.rotationDegrees]
- * is applied, which is what ML Kit returns boxes in and what the preview displays. Consumed by
- * [com.unoone.agent.ui.screens.BlindAidCameraPreview] to draw a Compose overlay.
- */
+/** One detected object's bounding box in upright-image normalized coordinates. */
 data class DetectedBox(val label: String, val rect: RectF)
 
-/**
- * A frame's worth of detections for the overlay: the boxes plus the upright image aspect ratio
- * (width/height) the boxes are normalized against, so the overlay can apply FILL_CENTER mapping.
- */
+/** A frame of Blind Aid detections plus the upright image aspect ratio. */
 data class DetectionOverlay(val boxes: List<DetectedBox>, val aspectRatio: Float)
 
 /**
- * World-Class Blind Aid Navigation System.
- * Combines CameraX continuous frames (3-5 fps), custom YOLOv8/MobileNet TFLite models,
- * haptic vibration pulses, and audio beep frequency (Car Parking Sensor style)
- * to guide visually impaired users offline and hands-free.
+ * Offline Blind Aid navigation system.
+ *
+ * This subsystem is deliberately independent of Gemma. It must continue detecting obstacles and
+ * producing haptic, tone and spoken feedback when the LLM is absent, unloaded or recovering from
+ * memory pressure. A custom detector may be installed under `models/vision/blind-aid/`; otherwise
+ * the offline ML Kit detector is used.
  */
 class BlindAidManager(
     private val context: Context,
@@ -51,9 +45,6 @@ class BlindAidManager(
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
 
-    // Live detection overlay state published from the analyzer thread. Collected by
-    // BlindAidCameraPreview to draw bounding boxes over the camera preview. StateFlow is
-    // thread-safe; updates at ~5 FPS (the analyzer throttle) drive Compose recomposition.
     private val _overlay = MutableStateFlow(DetectionOverlay(emptyList(), 1f))
     val overlay: StateFlow<DetectionOverlay> = _overlay.asStateFlow()
 
@@ -66,7 +57,6 @@ class BlindAidManager(
         context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
     }
 
-    // 0C-5: ToneGenerator can throw on some devices — create lazily with try-catch
     private var toneGenerator: ToneGenerator? = null
 
     private fun getToneGenerator(): ToneGenerator? {
@@ -80,11 +70,13 @@ class BlindAidManager(
         return toneGenerator
     }
 
-    // Option C: Loader for Custom YOLOv8-Nano / MobileNet 4-bit TFLite model
-    private val customModelFile = File(context.getExternalFilesDir("models"), "gemma-local/custom_yolov8.tflite")
-    
+    private val customModelFile = File(
+        context.getExternalFilesDir("models"),
+        "vision/blind-aid/custom_yolov8.tflite"
+    )
+
     private val detector = if (customModelFile.exists()) {
-        Logger.i("BlindAidManager: Custom YOLOv8 TFLite model found. Initializing custom detector.")
+        Logger.i("BlindAidManager: Custom Blind Aid model found at ${customModelFile.absolutePath}")
         val localModel = com.google.mlkit.common.model.LocalModel.Builder()
             .setAbsoluteFilePath(customModelFile.absolutePath)
             .build()
@@ -96,7 +88,7 @@ class BlindAidManager(
             .build()
         ObjectDetection.getClient(customOptions)
     } else {
-        Logger.i("BlindAidManager: Custom model not found, defaulting to high-accuracy offline ML Kit detector.")
+        Logger.i("BlindAidManager: Custom model not installed; using offline ML Kit detector")
         val defaultOptions = ObjectDetectorOptions.Builder()
             .setDetectorMode(ObjectDetectorOptions.SINGLE_IMAGE_MODE)
             .enableMultipleObjects()
@@ -108,7 +100,6 @@ class BlindAidManager(
     private var lastSpokenTime = 0L
     private var lastSpokenObject = ""
 
-    // Option A: CameraX ImageAnalysis.Analyzer running continuously (3 to 5 frames per second)
     fun getAnalyzer(): ImageAnalysis.Analyzer {
         return object : ImageAnalysis.Analyzer {
             private var frameCount = 0
@@ -116,7 +107,6 @@ class BlindAidManager(
             @SuppressLint("UnsafeOptInUsageError")
             override fun analyze(imageProxy: ImageProxy) {
                 frameCount++
-                // Throttle: Only process 1 out of 6 frames (approx 5 fps on a 30fps stream)
                 if (frameCount % 6 != 0) {
                     imageProxy.close()
                     return
@@ -126,8 +116,6 @@ class BlindAidManager(
                 if (mediaImage != null) {
                     val rotation = imageProxy.imageInfo.rotationDegrees
                     val image = InputImage.fromMediaImage(mediaImage, rotation)
-                    // ML Kit returns boxes in the upright (rotated) image's coordinate space.
-                    // For 90°/270° rotations the upright dimensions swap vs. the raw sensor dims.
                     val uprightW = if (rotation == 90 || rotation == 270) imageProxy.height else imageProxy.width
                     val uprightH = if (rotation == 90 || rotation == 270) imageProxy.width else imageProxy.height
                     detector.process(image)
@@ -141,9 +129,7 @@ class BlindAidManager(
                         .addOnFailureListener { e ->
                             Logger.e("BlindAidManager: Real-time analysis failed", e)
                         }
-                        .addOnCompleteListener {
-                            imageProxy.close()
-                        }
+                        .addOnCompleteListener { imageProxy.close() }
                 } else {
                     imageProxy.close()
                 }
@@ -151,14 +137,9 @@ class BlindAidManager(
         }
     }
 
-    /**
-     * Option B: Processes local detections to generate real-time haptic & audio beeping feedback,
-     * and publishes the full set of bounding boxes to [overlay] for the Compose camera preview.
-     */
     private fun processDetections(objects: List<DetectedObject>, uprightW: Int, uprightH: Int) {
         if (objects.isEmpty()) return
 
-        // Publish normalized boxes for every detected object so the overlay shows them all.
         val aspectRatio = uprightW.toFloat() / uprightH.toFloat()
         val boxes = objects.map { obj ->
             val b = obj.boundingBox
@@ -177,10 +158,8 @@ class BlindAidManager(
 
         var closestObject: DetectedObject? = null
         var maxArea = 0
-
         for (obj in objects) {
-            val bounds = obj.boundingBox
-            val area = bounds.width() * bounds.height()
+            val area = obj.boundingBox.width() * obj.boundingBox.height()
             if (area > maxArea) {
                 maxArea = area
                 closestObject = obj
@@ -189,28 +168,19 @@ class BlindAidManager(
 
         val target = closestObject ?: return
         val label = target.labels.firstOrNull()?.text ?: "Obstacle"
-        val bounds = target.boundingBox
-        val targetArea = bounds.width() * bounds.height()
-
-        // Bounding box size as a proxy for distance (larger box = closer to camera)
+        val targetArea = target.boundingBox.width() * target.boundingBox.height()
         val screenArea = uprightW * uprightH
         val fillRatio = targetArea.toFloat() / screenArea
 
-        // Calculate feedback dynamic frequency based on proximity
         if (fillRatio > 0.15f) {
-            
-            // Audio Cue: Car Parking Sensor style beeping
             val beepDuration = if (fillRatio > 0.45f) {
-                // Immediate danger: Solid tone / Continuous beep
                 getToneGenerator()?.startTone(ToneGenerator.TONE_CDMA_PIP, 150)
                 100L
             } else {
-                // Warning zone: Pulsing tone
                 getToneGenerator()?.startTone(ToneGenerator.TONE_PROP_BEEP, 80)
                 400L
             }
 
-            // Haptic Cue: Vibrations increase in intensity and frequency
             val hapticIntensity = (fillRatio * 255).toInt().coerceIn(50, 255)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 vibrator.vibrate(VibrationEffect.createOneShot(beepDuration, hapticIntensity))
@@ -219,25 +189,20 @@ class BlindAidManager(
                 vibrator.vibrate(beepDuration)
             }
 
-            // Speech Guidance: Speaks object categories with throttling to avoid chatters
             val now = System.currentTimeMillis()
             if (now - lastSpokenTime > 3500 || lastSpokenObject != label) {
                 lastSpokenTime = now
                 lastSpokenObject = label
-                val speechInstruction = if (fillRatio > 0.40f) {
-                    "Stop! $label is directly in front of you."
-                } else {
-                    "$label ahead."
-                }
-                onFeedbackSpoken(speechInstruction)
+                onFeedbackSpoken(
+                    if (fillRatio > 0.40f) "Stop! $label is directly in front of you."
+                    else "$label ahead."
+                )
             }
         }
     }
 
     fun release() {
-        // 0C-5: Proper executor shutdown with awaitTermination
         executor.shutdown()
-        // Clear any stale boxes so a re-activation doesn't briefly show the last frame.
         _overlay.value = DetectionOverlay(emptyList(), 1f)
         try {
             if (!executor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -249,14 +214,12 @@ class BlindAidManager(
             Thread.currentThread().interrupt()
         }
 
-        // 0C-2: Close ML Kit detector to prevent leak
         try {
             detector.close()
         } catch (e: Exception) {
             Logger.e("BlindAidManager: Error closing detector", e)
         }
 
-        // 0C-5: Release ToneGenerator
         try {
             toneGenerator?.release()
             toneGenerator = null

@@ -5,7 +5,7 @@ import com.google.ai.edge.litertlm.ToolParam
 import com.google.ai.edge.litertlm.ToolSet
 
 /**
- * Declares every capability UnoOne exposes to Gemma 3n E4B via LiteRT-LM manual tool calling.
+ * Declares every capability UnoOne exposes to Gemma 4 E2B via LiteRT-LM manual tool calling.
  *
  * The function bodies are stubs: with [automaticToolCalling = false] the model only uses
  * these signatures to generate tool-call JSON. Real execution always routes through
@@ -131,4 +131,9 @@ class UnoOneToolSet : ToolSet {
 
     @Tool(description = "Deactivate blind-aid camera and obstacle detection")
     fun deactivate_blind_aid(): String = "Blind Aid deactivated."
+
+    @Tool(description = "Describe the current screen as a short scene (foreground app + visible text); optionally narrow what to look for with aspect. Sensitive: captures the screen.")
+    fun describe_scene(
+        @ToolParam(description = "Optional what to focus on, e.g. 'buttons', 'the total', 'any OTP'") aspect: String? = null
+    ): String = "Scene described."
 }

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://models.unoone.inbharat.ai/schema/model-artifact-v1.json",
+  "title": "UnoOne Qualified Model Artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "version",
+    "runtime",
+    "fileName",
+    "sizeBytes",
+    "sha256",
+    "license",
+    "source",
+    "minimumRamMb",
+    "recommendedRamMb",
+    "qualificationStatus"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$" },
+    "version": { "type": "string", "minLength": 1 },
+    "runtime": { "enum": ["litertlm", "onnx", "sherpa-onnx", "tflite"] },
+    "fileName": { "type": "string", "minLength": 1 },
+    "sizeBytes": { "type": "integer", "minimum": 1 },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "license": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "repository", "revision"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "repository": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 },
+        "upstreamFile": { "type": "string" }
+      }
+    },
+    "minimumRamMb": { "type": "integer", "minimum": 512 },
+    "recommendedRamMb": { "type": "integer", "minimum": 512 },
+    "qualificationStatus": {
+      "enum": ["acquired", "integrity-verified", "load-tested", "tool-tested", "device-qualified", "production-approved"]
+    },
+    "testedDevices": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "notes": { "type": "string" }
+  }
+}

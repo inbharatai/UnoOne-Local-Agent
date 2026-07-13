@@ -12,7 +12,6 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { url = uri("https://jitpack.io") }
-        // The correct maven repo for sherpa-onnx
         maven { url = uri("https://k2-fsa.github.io/sherpa/onnx/android/") }
     }
 }
@@ -24,6 +23,7 @@ include(
     ":core",
     ":storage",
     ":modelmanager",
+    ":languagepacks",
     ":localbrain",
     ":voice",
     ":agentrouter",
@@ -32,5 +32,6 @@ include(
     ":memory",
     ":skills",
     ":observability",
-    ":accessibilitycontrol"
+    ":accessibilitycontrol",
+    ":securebrowser"
 )

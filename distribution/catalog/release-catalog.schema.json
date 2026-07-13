@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://models.unoone.inbharat.ai/schema/release-catalog-v1.json",
+  "title": "UnoOne Signed Release Catalogue",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "keyId", "signatureAlgorithm", "payload", "signature"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "keyId": { "type": "string", "pattern": "^[a-zA-Z0-9._-]{3,80}$" },
+    "signatureAlgorithm": { "const": "Ed25519" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{64,}$" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalogVersion",
+        "channel",
+        "generatedAt",
+        "minimumInstallerVersion",
+        "apps",
+        "models",
+        "languagePacks"
+      ],
+      "properties": {
+        "catalogVersion": { "type": "integer", "minimum": 1 },
+        "channel": { "enum": ["stable", "beta"] },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "minimumInstallerVersion": { "type": "integer", "minimum": 1 },
+        "apps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/appRelease" }
+        },
+        "models": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/modelRelease" }
+        },
+        "languagePacks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/languagePackRelease" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sizeBytes", "sha256", "mimeType"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))(apk|brain|speech|vision)/[A-Za-z0-9._/-]+$"
+        },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "mimeType": {
+          "type": "string",
+          "minLength": 3,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+        }
+      }
+    },
+    "appRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "platform", "versionName", "versionCode", "releaseDate", "minimumAndroidApi", "artifact"],
+      "properties": {
+        "id": { "const": "unoone-android" },
+        "platform": { "const": "android" },
+        "versionName": { "type": "string", "minLength": 1 },
+        "versionCode": { "type": "integer", "minimum": 1 },
+        "releaseDate": { "type": "string", "format": "date" },
+        "minimumAndroidApi": { "type": "integer", "minimum": 28 },
+        "releaseNotes": { "type": "string" },
+        "artifact": { "$ref": "#/$defs/artifact" }
+      }
+    },
+    "modelRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "runtime", "qualificationStatus", "minimumRamMb", "artifact"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$" },
+        "version": { "type": "string", "minLength": 1 },
+        "runtime": { "enum": ["litertlm", "onnx", "sherpa-onnx", "tflite"] },
+        "qualificationStatus": {
+          "enum": ["integrity-verified", "load-tested", "tool-tested", "device-qualified", "production-approved"]
+        },
+        "minimumRamMb": { "type": "integer", "minimum": 512 },
+        "recommendedRamMb": { "type": "integer", "minimum": 512 },
+        "license": { "type": "string", "minLength": 1 },
+        "artifact": { "$ref": "#/$defs/artifact" }
+      }
+    },
+    "languagePackRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "languageCode", "displayName", "nativeName", "version", "status", "requiredModelIds"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9._-]+$" },
+        "languageCode": { "type": "string", "pattern": "^[a-z]{2,3}-[A-Z]{2}$" },
+        "displayName": { "type": "string", "minLength": 1 },
+        "nativeName": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["planned", "baseline", "beta", "stable", "deprecated"] },
+        "requiredModelIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "downloadable": { "type": "boolean" },
+        "notes": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "downloadable": { "const": true } }, "required": ["downloadable"] },
+          "then": {
+            "properties": {
+              "requiredModelIds": { "minItems": 1 },
+              "status": { "enum": ["baseline", "beta", "stable"] }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

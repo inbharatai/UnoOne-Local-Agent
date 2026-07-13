@@ -2,6 +2,9 @@ package com.unoone.agent.parsing
 
 import com.unoone.agent.accessibilitycontrol.AccessibilityControl
 import com.unoone.agent.core.interfaces.ICommandParser
+import com.unoone.agent.core.agent.SafetyVerdict
+import com.unoone.agent.core.model.BrainModelSpec
+import com.unoone.agent.core.model.ExclusiveBrainLeaseState
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
 import com.unoone.agent.core.util.InputSanitizer
@@ -20,10 +23,11 @@ import kotlinx.coroutines.withContext
  * Parses user input into structured [ToolCall]s.
  *
  * - [RuleBasedParser] is always tried first: it is fast, deterministic, and works offline.
- * - If no rule matches and a Gemma model is loaded, the input + an enriched context snapshot are
- *   sent to [LocalBrain] via LiteRT-LM for planning. The snapshot pulls in recent notes, active
- *   skills, an OCR fallback, plus the recent-commands / last-result ring buffer the orchestrator
- *   maintains, so the model can disambiguate follow-up commands.
+ * - If no rule matches and Gemma 4 is loaded by the phone-agent mode, the input and enriched context
+ *   are sent to [LocalBrain].
+ * - When Gemma is exclusively leased to Secure Browser, rules remain available but phone-agent LLM
+ *   planning stays intentionally unavailable. [isModelLoaded] still reports occupied so the
+ *   orchestrator does not misclassify the lease as a crash and self-heal a second model copy.
  */
 class CommandParser(
     private val localBrain: LocalBrain = LocalBrain(),
@@ -34,32 +38,55 @@ class CommandParser(
     private val skillDao: SkillDao? = null
 ) : ICommandParser {
 
-    /**
-     * Synchronous parse path. Only uses [RuleBasedParser]; it never blocks on LLM inference.
-     */
-    override fun parse(text: String): ToolCall? {
-        return RuleBasedParser.parse(text)
-    }
+    override fun parse(text: String): ToolCall? = RuleBasedParser.parse(text)
 
-    /**
-     * Asynchronous parse path. Tries rules first, then falls back to Gemma when loaded, passing
-     * the recent-commands / last-result context to enrich the snapshot.
-     */
     override suspend fun parseAsync(
         text: String,
         recentCommands: List<String>,
         lastToolResult: String
-    ): ToolCall? {
+    ): ToolCall? = parseAsyncWithProvenance(text, recentCommands, lastToolResult).toolCallOrNull()
+
+    suspend fun parseAsyncWithProvenance(
+        text: String,
+        recentCommands: List<String>,
+        lastToolResult: String
+    ): ParseOutcome {
         val ruleResult = RuleBasedParser.parse(text)
-        if (ruleResult != null) return ruleResult
+        if (ruleResult != null) return ParseOutcome.Rule(ruleResult)
 
         if (localBrain.isModelLoaded()) {
             val snapshot = buildContextSnapshot(text, recentCommands, lastToolResult)
             val inferenceResult = localBrain.runInference(text, snapshot)
-            if (inferenceResult is Result.Success) return inferenceResult.data
+            if (inferenceResult is Result.Success) return ParseOutcome.Llm(inferenceResult.data)
         }
-        return null
+        return ParseOutcome.None
     }
+
+    suspend fun parseStreamingWithProvenance(
+        text: String,
+        recentCommands: List<String>,
+        lastToolResult: String,
+        onDelta: (String) -> Unit
+    ): ParseOutcome {
+        val ruleResult = RuleBasedParser.parse(text)
+        if (ruleResult != null) return ParseOutcome.Rule(ruleResult)
+
+        if (localBrain.isModelLoaded()) {
+            val snapshot = buildContextSnapshot(text, recentCommands, lastToolResult)
+            val inferenceResult = localBrain.runInferenceStreaming(text, snapshot, onDelta)
+            if (inferenceResult is Result.Success) return ParseOutcome.Llm(inferenceResult.data)
+        }
+        return ParseOutcome.None
+    }
+
+    suspend fun planNext(prevTool: String, observation: String): Result<ToolCall> =
+        localBrain.planNext(prevTool, observation)
+
+    suspend fun judgeSafety(toolName: String, argsJson: String, inputText: String): Result<SafetyVerdict> =
+        localBrain.judgeSafety(toolName, argsJson, inputText)
+
+    suspend fun describeSceneWithVision(imageBytes: ByteArray, aspect: String): Result<String> =
+        localBrain.describeSceneWithVision(imageBytes, aspect)
 
     override fun sanitizeAndParse(rawInput: String): ToolCall? {
         val sanitized = InputSanitizer.sanitize(rawInput)
@@ -67,27 +94,29 @@ class CommandParser(
         return parse(sanitized)
     }
 
-    override fun isModelLoaded(): Boolean = localBrain.isModelLoaded()
-
     /**
-     * Exposed so callers (e.g., tests) can load a model into this parser's brain.
+     * Reports model availability to orchestration and lifecycle code.
+     *
+     * An external lease counts as intentionally occupied, preventing the normal self-heal path from
+     * loading another Gemma engine. Actual phone-agent inference methods still check
+     * [localBrain.isModelLoaded] directly and therefore never call the browser-owned conversation.
      */
+    override fun isModelLoaded(): Boolean =
+        localBrain.isModelLoaded() || ExclusiveBrainLeaseState.isActive()
+
+    fun loadedProfile(): BrainModelSpec? = localBrain.loadedProfile()
+
+    fun activeBackend(): String = localBrain.activeBackend()
+
+    fun lastLoadError(): String = localBrain.lastLoadError()
+
     suspend fun loadModel(modelPath: String): Result<Unit> = localBrain.loadModel(modelPath)
 
-    /**
-     * Unloads the Gemma brain, freeing native memory. Used by [com.unoone.agent.AgentOrchestrator]
-     * on system memory pressure (see [com.unoone.agent.UnoOneApplication.onTrimMemory]). Safe to call
-     * when no model is loaded; [LocalBrain.unloadModel] / [com.unoone.agent.localbrain.GemmaPlanner.close]
-     * are idempotent.
-     */
+    suspend fun loadModel(modelPath: String, spec: BrainModelSpec): Result<Unit> =
+        localBrain.loadModel(modelPath, spec)
+
     fun unloadModel() = localBrain.unloadModel()
 
-    /**
-     * Builds a context snapshot for the LLM. Runs on [Dispatchers.Default] so that
-     * accessibility / OCR / DAO / memory work does not block the caller thread. `internal` so
-     * the enrichment (recent notes / active skills / recent commands / last result) is unit-testable
-     * with fake DAOs without spinning up Robolectric or a real model.
-     */
     internal suspend fun buildContextSnapshot(
         command: String,
         recentCommands: List<String>,
@@ -99,8 +128,6 @@ class CommandParser(
         val visibleText = accessibilityControl?.captureScreenText()
             ?.let { if (it is Result.Success) it.data.take(2_000) else "" } ?: ""
 
-        // OCR is expensive (MediaProjection screenshot + ML Kit) — only run it as a fallback
-        // when the accessibility tree gave us nothing on screen.
         val ocrText = if (visibleText.isBlank()) {
             try {
                 ocrControl?.recognizeScreen()

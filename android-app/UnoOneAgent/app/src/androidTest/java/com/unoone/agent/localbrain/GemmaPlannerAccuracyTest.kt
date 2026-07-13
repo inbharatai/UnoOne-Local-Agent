@@ -9,15 +9,15 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Real accuracy test for the Gemma 3n E4B brain.
+ * Real device-time accuracy test for the Gemma 4 E2B brain.
  *
  * This test only runs when a `.litertlm` model file is present on the device.
  * It loads the model, sends a set of known commands, and verifies that the
  * returned tool name matches the expected action.
  *
  * To run this test, push a model first:
- *   adb push /path/to/gemma-4-e2b-it.litertlm \
- *     /sdcard/Android/data/com.unoone.agent/files/models/gemma-local/
+ *   adb push /path/to/gemma-4-E2B-it.litertlm \
+ *     /sdcard/Android/data/com.unoone.agent/files/models/brain/gemma-4-e2b/
  */
 class GemmaPlannerAccuracyTest {
 

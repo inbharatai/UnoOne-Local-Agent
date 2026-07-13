@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#08111f" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; connect-src 'self' https://models.unoone.inbharat.ai http://localhost:* http://127.0.0.1:*; img-src 'self' data:; style-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; font-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'"
+    />
+    <meta
+      name="description"
+      content="Install UnoOne and verify official Android releases from a signed catalogue."
+    />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <title>UnoOne Installer</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="UnoOne installer home">
+        <span class="brand-mark" aria-hidden="true">U1</span>
+        <span>
+          <strong>UnoOne</strong>
+          <small>Official Installer</small>
+        </span>
+      </a>
+      <button id="install-pwa-button" class="button button-secondary" type="button" hidden>
+        Install this portal
+      </button>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Private, offline-first Android AI</p>
+        <h1>Install UnoOne from a release you can verify.</h1>
+        <p class="hero-copy">
+          The portal validates the signed release catalogue, freshness, installer compatibility and
+          rollback state before enabling APK downloads. Models and language packs are downloaded by the
+          Android app after installation.
+        </p>
+        <div id="catalog-status" class="status-card" role="status" aria-live="polite">
+          Loading signed release catalogue…
+        </div>
+        <div class="catalog-controls">
+          <label class="channel-field" for="release-channel">
+            <span>Release channel</span>
+            <select id="release-channel" aria-describedby="channel-help">
+              <option value="stable" selected>Stable</option>
+              <option value="beta">Beta</option>
+            </select>
+          </label>
+          <button id="reload-button" class="button button-secondary" type="button">Reload catalogue</button>
+        </div>
+        <p id="channel-help" class="muted channel-help">
+          Stable is the default. Beta releases are signed and verified but may be incomplete or unstable.
+        </p>
+      </section>
+
+      <section class="section" aria-labelledby="android-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Android application</p>
+            <h2 id="android-heading">Latest release</h2>
+          </div>
+        </div>
+        <div id="app-release" class="release-card skeleton">Waiting for catalogue…</div>
+      </section>
+
+      <section class="section" aria-labelledby="verify-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Local integrity check</p>
+            <h2 id="verify-heading">Verify a downloaded APK</h2>
+          </div>
+        </div>
+        <div class="verify-card">
+          <p>
+            Select the APK after downloading it. The SHA-256 check runs in this browser; the file is not
+            uploaded.
+          </p>
+          <label class="file-picker">
+            <span>Choose APK</span>
+            <input id="apk-file" type="file" accept=".apk,application/vnd.android.package-archive" />
+          </label>
+          <div id="file-verification" class="verification-result" aria-live="polite">
+            No file selected.
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="models-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">On-device intelligence</p>
+            <h2 id="models-heading">Model catalogue</h2>
+          </div>
+        </div>
+        <div id="model-grid" class="grid"></div>
+      </section>
+
+      <section class="section" aria-labelledby="languages-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Download once, use offline</p>
+            <h2 id="languages-heading">Language packs</h2>
+          </div>
+        </div>
+        <div id="language-grid" class="grid"></div>
+      </section>
+
+      <section class="section trust-section" aria-labelledby="trust-heading">
+        <div>
+          <p class="eyebrow">Distribution boundary</p>
+          <h2 id="trust-heading">What this server does—and does not do</h2>
+        </div>
+        <div class="trust-grid">
+          <article>
+            <h3>It distributes</h3>
+            <p>Signed APKs, model files, language packs, checksums, licences and release metadata.</p>
+          </article>
+          <article>
+            <h3>It never receives</h3>
+            <p>Your prompts, speech, screenshots, contacts, browser forms, passwords, OTPs or local memories.</p>
+          </article>
+          <article>
+            <h3>It does not run AI</h3>
+            <p>Gemma, speech recognition, text-to-speech and PageAgent planning run on the Android device.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>UnoOne by InBharat.ai</span>
+      <span id="catalog-version">Catalogue not loaded</span>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+name = "unoone-distribution-api"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGINS = "https://unoone.inbharat.ai,https://www.inbharat.ai"
+
+[[r2_buckets]]
+binding = "RELEASES"
+bucket_name = "unoone-releases"
+preview_bucket_name = "unoone-releases-preview"
+
+[observability]
+enabled = true

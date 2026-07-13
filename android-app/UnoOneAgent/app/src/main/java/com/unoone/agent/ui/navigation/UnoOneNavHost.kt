@@ -11,11 +11,13 @@ import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -35,19 +37,23 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.unoone.agent.ui.screens.AgentScreen
 import com.unoone.agent.ui.screens.AuditViewerScreen
+import com.unoone.agent.ui.screens.LanguagePacksScreen
 import com.unoone.agent.ui.screens.LogsScreen
 import com.unoone.agent.ui.screens.ModelStatusScreen
 import com.unoone.agent.ui.screens.NotesScreen
 import com.unoone.agent.ui.screens.PrivacySettingsScreen
+import com.unoone.agent.ui.screens.SecureBrowserScreen
 import com.unoone.agent.ui.screens.SettingsScreen
 import com.unoone.agent.ui.screens.SkillsScreen
 import com.unoone.agent.ui.screens.VoiceTestScreen
 import com.unoone.agent.ui.viewmodel.AgentViewModel
 import com.unoone.agent.ui.viewmodel.AuditViewerViewModel
+import com.unoone.agent.ui.viewmodel.LanguagePacksViewModel
 import com.unoone.agent.ui.viewmodel.LogsViewModel
 import com.unoone.agent.ui.viewmodel.ModelStatusViewModel
 import com.unoone.agent.ui.viewmodel.NotesViewModel
 import com.unoone.agent.ui.viewmodel.PrivacySettingsViewModel
+import com.unoone.agent.ui.viewmodel.SecureBrowserViewModel
 import com.unoone.agent.ui.viewmodel.SettingsViewModel
 import com.unoone.agent.ui.viewmodel.SkillsViewModel
 import com.unoone.agent.ui.viewmodel.VoiceTestViewModel
@@ -63,8 +69,10 @@ fun UnoOneNavHost(
     settingsViewModel: SettingsViewModel,
     privacySettingsViewModel: PrivacySettingsViewModel,
     modelStatusViewModel: ModelStatusViewModel,
+    languagePacksViewModel: LanguagePacksViewModel,
     voiceTestViewModel: VoiceTestViewModel,
-    auditViewerViewModel: AuditViewerViewModel
+    auditViewerViewModel: AuditViewerViewModel,
+    secureBrowserViewModel: SecureBrowserViewModel
 ) {
     Scaffold(
         bottomBar = {
@@ -80,9 +88,7 @@ fun UnoOneNavHost(
                         selected = selected,
                         onClick = {
                             navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                 launchSingleTop = true
                                 restoreState = true
                             }
@@ -106,14 +112,30 @@ fun UnoOneNavHost(
                     viewModel = settingsViewModel,
                     onNavigateToPrivacy = { navController.navigate(Screen.PrivacySettings.route) },
                     onNavigateToModels = { navController.navigate(Screen.Models.route) },
+                    onNavigateToLanguagePacks = { navController.navigate(Screen.LanguagePacks.route) },
                     onNavigateToVoiceTest = { navController.navigate(Screen.VoiceTest.route) },
-                    onNavigateToAudit = { navController.navigate(Screen.Audit.route) }
+                    onNavigateToAudit = { navController.navigate(Screen.Audit.route) },
+                    onNavigateToSecureBrowser = { navController.navigate(Screen.SecureBrowser.route) }
                 )
             }
-            composable(Screen.PrivacySettings.route) { PrivacySettingsScreen(viewModel = privacySettingsViewModel, onBack = { navController.popBackStack() }) }
-            composable(Screen.Models.route) { ModelStatusScreen(viewModel = modelStatusViewModel, onBack = { navController.popBackStack() }) }
-            composable(Screen.VoiceTest.route) { VoiceTestScreen(viewModel = voiceTestViewModel, onBack = { navController.popBackStack() }) }
-            composable(Screen.Audit.route) { AuditViewerScreen(viewModel = auditViewerViewModel, onBack = { navController.popBackStack() }) }
+            composable(Screen.PrivacySettings.route) {
+                PrivacySettingsScreen(viewModel = privacySettingsViewModel, onBack = { navController.popBackStack() })
+            }
+            composable(Screen.Models.route) {
+                ModelStatusScreen(viewModel = modelStatusViewModel, onBack = { navController.popBackStack() })
+            }
+            composable(Screen.LanguagePacks.route) {
+                LanguagePacksScreen(viewModel = languagePacksViewModel, onBack = { navController.popBackStack() })
+            }
+            composable(Screen.VoiceTest.route) {
+                VoiceTestScreen(viewModel = voiceTestViewModel, onBack = { navController.popBackStack() })
+            }
+            composable(Screen.Audit.route) {
+                AuditViewerScreen(viewModel = auditViewerViewModel, onBack = { navController.popBackStack() })
+            }
+            composable(Screen.SecureBrowser.route) {
+                SecureBrowserScreen(viewModel = secureBrowserViewModel, onBack = { navController.popBackStack() })
+            }
         }
     }
 }
@@ -127,8 +149,10 @@ private val Screen.selectedIcon: ImageVector
         Screen.Settings -> Icons.Filled.Settings
         Screen.PrivacySettings -> Icons.Filled.Settings
         Screen.Models -> Icons.Filled.Memory
+        Screen.LanguagePacks -> Icons.Filled.Language
         Screen.VoiceTest -> Icons.Filled.GraphicEq
         Screen.Audit -> Icons.AutoMirrored.Filled.ReceiptLong
+        Screen.SecureBrowser -> Icons.Filled.Language
     }
 
 private val Screen.unselectedIcon: ImageVector
@@ -140,6 +164,8 @@ private val Screen.unselectedIcon: ImageVector
         Screen.Settings -> Icons.Outlined.Settings
         Screen.PrivacySettings -> Icons.Outlined.Settings
         Screen.Models -> Icons.Outlined.Memory
+        Screen.LanguagePacks -> Icons.Outlined.Language
         Screen.VoiceTest -> Icons.Outlined.GraphicEq
         Screen.Audit -> Icons.AutoMirrored.Outlined.ReceiptLong
+        Screen.SecureBrowser -> Icons.Outlined.Language
     }

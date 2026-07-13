@@ -5,8 +5,11 @@ import com.unoone.agent.core.util.Logger
 import kotlinx.serialization.json.Json
 
 /**
- * Parses and caches the bundled `models_manifest.json` asset. The parse path is split out as
- * [parse] so it is unit-testable without an Android [Context] (tests feed a JSON string).
+ * Parses and caches the bundled `models_manifest.json` asset.
+ *
+ * The manifest is part of the signed APK. Downloaded artifacts are independently checked by exact
+ * size and SHA-256, while public releases are governed by the signed distribution catalogue. Read or
+ * parse failure returns an empty manifest so no model installation proceeds.
  */
 class ModelManifestLoader {
 
@@ -19,20 +22,26 @@ class ModelManifestLoader {
     fun parse(jsonString: String): ModelManifest =
         json.decodeFromString(ModelManifest.serializer(), jsonString)
 
-    /** Loads and caches the manifest asset, returning an empty manifest (not null) on read error. */
+    /** Loads and caches the manifest asset, returning an empty manifest on any read/parse error. */
     fun load(context: Context): ModelManifest {
         cached?.let { return it }
         val manifest = try {
             context.assets.open(ASSET_NAME).bufferedReader().use { parse(it.readText()) }
         } catch (e: Exception) {
             Logger.e("ModelManifestLoader: failed to read asset $ASSET_NAME", e)
-            ModelManifest(manifestVersion = 1, models = emptyList())
+            empty()
         }
         cached = manifest
         return manifest
     }
 
     fun find(context: Context, id: String): ModelDescriptor? = load(context).find(id)
+
+    fun clearCache() {
+        cached = null
+    }
+
+    private fun empty() = ModelManifest(manifestVersion = 2, models = emptyList())
 
     companion object {
         const val ASSET_NAME = "models_manifest.json"
