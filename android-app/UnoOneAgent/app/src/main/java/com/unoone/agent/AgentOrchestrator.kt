@@ -249,8 +249,8 @@ class AgentOrchestrator(
     }
 
     /**
-     * Profile-aware load — loads [modelPath] as [spec] (Gemma 4 E2B or the legacy Gemma 3n E4B)
-     * through the same safe GemmaPlanner interface. Should be called from a coroutine.
+     * Explicit Gemma 4 E2B load — loads [modelPath] using [spec] through the same safe
+     * GemmaPlanner interface. Should be called from a coroutine.
      */
     suspend fun loadLlmModel(
         modelPath: String,

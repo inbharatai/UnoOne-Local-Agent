@@ -342,8 +342,8 @@ class GemmaPlanner {
      * (`Message.user(Contents.of(Content.Text(prompt), Content.ImageBytes(bytes)))`), and returns the
      * model's free-text scene description.
      *
-     * **Honesty (INACTIVE with the shipped models):** the loaded Gemma 3n E4B / Gemma 4 E2B
-     * `.litertlm` artifacts are text-only — they have no vision weights — so this method either
+     * **Honesty (INACTIVE with the shipped model):** the loaded Gemma 4 E2B `.litertlm`
+     * artifact is text-only — they have no vision weights — so this method either
      * errors or ignores the image. The orchestrator does NOT call it unless a vision-capable model
      * is loaded (gated by `VISION_MODEL_ENABLED`); when it is called and fails, the caller falls
      * back to the always-available OCR + context description
