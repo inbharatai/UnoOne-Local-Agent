@@ -1,15 +1,15 @@
 # UnoOne V2 Status
 
-**Updated:** 2026-07-12  
-**Branch:** `feature/unoone-v2-gemma4-pageagent`  
-**Pull request:** Draft PR #1  
+**Updated:** 2026-07-13  
+**Branch:** `main`  
+**Pull request:** PR #1 merged  
 **Release state:** **Alpha / not production-ready**
 
 The full mandatory completion plan is maintained in [README.md](README.md). This file records the current evidence state and must not contain unverified claims.
 
 ## Status legend
 
-- **Implemented** — code exists on the V2 branch.
+- **Implemented** — code exists on `main`.
 - **Automated gate** — CI/test exists; only the latest green head counts.
 - **Device pending** — requires physical Android evidence.
 - **Blocked** — release must not proceed.
@@ -18,7 +18,7 @@ The full mandatory completion plan is maintained in [README.md](README.md). This
 
 | Area | Current state | Evidence still required |
 |---|---|---|
-| Android project | Implemented, 15 Gradle modules | latest lint, JVM tests and APK build green |
+| Android project | Implemented, 15 Gradle modules | automated lint, JVM tests and debug APK build are green; physical-device matrix pending |
 | Planning brain | Gemma 4 E2B only | Xiaomi 14 + secondary-device load/performance tests |
 | Model artifact | exact filename, size and SHA-256 recorded | self-hosted production mirror and device qualification |
 | Phone tools | preserved in V2 | regression matrix on devices |
@@ -28,7 +28,7 @@ The full mandatory completion plan is maintained in [README.md](README.md). This
 | Language packs | dependency-aware manager and UI implemented | clean-device install/repair/uninstall tests |
 | Secure Browser | Alibaba PageAgent + local Gemma bridge implemented | controlled workflows + approved-domain device tests |
 | Browser safety | native authorization implemented | bypass/prompt-injection/device testing |
-| Installer PWA | signed-catalogue flow implemented | latest distribution CI green and production deployment |
+| Installer PWA | signed-catalogue flow implemented | automated Distribution CI is green; production deployment pending |
 | Distribution API | read-only Worker/R2 design implemented | real buckets, bindings, signed catalogues and download tests |
 | Production signing | not configured | protected APK key + Ed25519 catalogue release key |
 
@@ -110,8 +110,8 @@ Only the latest commit status is authoritative. An older green run does not make
 
 ## Release blockers
 
-- [ ] Latest Android CI is green.
-- [ ] Latest Distribution CI is green.
+- [x] Latest Android CI is green.
+- [x] Latest Distribution CI is green.
 - [ ] Gemma loads and plans correctly on Xiaomi 14.
 - [ ] Secondary Android device passes the same Gemma and browser gates.
 - [ ] Offline speech baseline matrix is recorded.

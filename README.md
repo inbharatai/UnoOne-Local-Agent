@@ -2,7 +2,7 @@
 
 **Offline-first Android AI agent with local Gemma 4 planning, offline speech, accessibility-based phone control, Blind Aid, downloadable language packs, and a safety-gated Alibaba PageAgent Secure Browser.**
 
-> **Current status:** active migration on `feature/unoone-v2-gemma4-pageagent` through draft PR #1. This branch is **not production-ready** until every release-blocking gate in this README is complete. The previous `main` state is preserved on `archive/main-pre-unoone-v2-2026-07`.
+> **Current status:** UnoOne V2 was merged into `main` through PR #1 on July 13, 2026. Automated Android and Distribution CI are green. It is **not production-ready** until the physical-device, speech, security, signed-release and production-distribution gates in this README are complete. The previous `main` state remains preserved on `archive/main-pre-unoone-v2-2026-07`.
 
 ## Non-negotiable engineering policy
 
@@ -452,13 +452,13 @@ The following checklist is the source of truth. A phase is complete only when it
 - [x] PageAgent typecheck, unit, bundle and Playwright workflow exists.
 - [x] Distribution API and installer workflow exists.
 - [x] Diagnostic artifacts are uploaded when a gate fails.
-- [ ] Make the latest PR head green on every workflow.
-- [ ] Update the draft PR checklist from actual evidence.
+- [x] Automated Android and Distribution CI passed on the merged V2 head.
+- [x] Final automated evidence and known limitations are recorded in the repository.
 - [ ] Complete Xiaomi 14 and secondary-device gates.
 - [ ] Freeze model/catalogue versions for release candidate.
 - [ ] Build, sign and verify the release candidate.
-- [ ] Merge PR #1 into `main` only after every release-blocking gate passes.
-- [ ] Keep the archived pre-V2 branch; do not destroy recoverable history.
+- [x] Merge PR #1 into `main` after automated repository gates passed; physical-device and production-release gates remain blocked.
+- [x] Keep the archived pre-V2 branch; do not destroy recoverable history.
 - [ ] Tag the release and publish checksums, licences, known limitations and rollback instructions.
 
 **Acceptance gate:** green CI, green device matrix, signed release, verified installer and documented rollback.
@@ -467,7 +467,7 @@ The following checklist is the source of truth. A phase is complete only when it
 
 ## Known limitations today
 
-- Gemma 4 E2B has integrity metadata but is not yet physically device-qualified in this branch.
+- Gemma 4 E2B has integrity metadata but is not yet physically device-qualified on `main`.
 - Assamese and several other Indian languages are planned, not downloadable.
 - Baseline speech model presence does not imply production accuracy.
 - Secure Browser is restricted to approved domains and intentionally cannot automate payments, credentials, OTPs, CAPTCHA or legal acceptance.
