@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Fail CI when UnoOne V2's core architecture or integrity contracts regress.
 
-This checker intentionally scans executable source, tests and bundled manifests rather than prose
-files, where legacy names may be mentioned as migration history or prohibited examples.
+The text scan covers first-party executable source, tests and bundled manifests. Generated vendor
+bundles and lint baselines are excluded from string scanning; their source inputs and runtime safety
+configuration are validated separately.
 """
 
 from __future__ import annotations
@@ -29,6 +30,12 @@ ACTIVE_ROOTS = (
 
 TEXT_SUFFIXES = {".kt", ".kts", ".java", ".ts", ".tsx", ".js", ".mjs", ".json", ".xml", ".toml"}
 SKIP_DIRS = {"build", "dist", "node_modules", ".gradle", ".git", "playwright-report", "test-results"}
+SKIP_RELATIVE_PATHS = {
+    "android-app/UnoOneAgent/app/lint-baseline.xml",
+}
+SKIP_RELATIVE_PREFIXES = (
+    "android-app/UnoOneAgent/securebrowser/src/main/assets/page-agent/",
+)
 
 PROHIBITED_PATTERNS = {
     r"(?i)gemma[-_ ]?3n": "legacy Gemma 3n identifier",
@@ -56,6 +63,9 @@ def iter_active_files() -> Iterable[Path]:
             if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
                 continue
             if any(part in SKIP_DIRS for part in path.parts):
+                continue
+            relative = path.relative_to(ROOT).as_posix()
+            if relative in SKIP_RELATIVE_PATHS or any(relative.startswith(prefix) for prefix in SKIP_RELATIVE_PREFIXES):
                 continue
             resolved = path.resolve()
             if resolved not in seen:
@@ -226,9 +236,8 @@ def validate_language_manifest(errors: list[str], model_ids: set[str]) -> None:
                 errors.append(f"{relative}: downloadable {pack_id} has invalid status {status}")
             if not required:
                 errors.append(f"{relative}: downloadable {pack_id} has no required models")
-        else:
-            if status == "planned" and required:
-                errors.append(f"{relative}: planned non-downloadable {pack_id} must not bind unqualified models")
+        elif status == "planned" and required:
+            errors.append(f"{relative}: planned non-downloadable {pack_id} must not bind unqualified models")
 
 
 def validate_secure_browser(errors: list[str]) -> None:
