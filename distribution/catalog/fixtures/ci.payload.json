@@ -1,0 +1,37 @@
+{
+  "catalogVersion": 1,
+  "channel": "beta",
+  "generatedAt": "2026-07-12T00:00:00Z",
+  "minimumInstallerVersion": 1,
+  "apps": [],
+  "models": [
+    {
+      "id": "gemma-4-e2b",
+      "version": "gemma-4-E2B-it-litert-lm-main-6e5c4f1",
+      "runtime": "litertlm",
+      "qualificationStatus": "integrity-verified",
+      "minimumRamMb": 6144,
+      "recommendedRamMb": 8192,
+      "license": "Apache-2.0",
+      "artifact": {
+        "path": "brain/gemma-4-e2b/gemma-4-E2B-it.litertlm",
+        "sizeBytes": 2588147712,
+        "sha256": "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+        "mimeType": "application/octet-stream"
+      }
+    }
+  ],
+  "languagePacks": [
+    {
+      "id": "as-IN-standard",
+      "languageCode": "as-IN",
+      "displayName": "Assamese",
+      "nativeName": "অসমীয়া",
+      "version": "planned",
+      "status": "planned",
+      "requiredModelIds": [],
+      "downloadable": false,
+      "notes": "CI fixture only. Assamese remains disabled until exact mobile STT and TTS artifacts are qualified."
+    }
+  ]
+}
