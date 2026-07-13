@@ -4,7 +4,7 @@ package com.unoone.agent.core.eval
  * One calibration case: a prompt, the tool the brain should select, and the argument values it
  * should extract. Used by the device-time eval harness ([..BrainEvalHarnessTest]) to turn "does
  * Gemma work?" from a vibe into a number — per-prompt tool-match + arg-match, summarized to an
- * accuracy score, for Gemma 3n E4B vs Gemma 4 E2B.
+ * accuracy score for the qualified Gemma 4 E2B artifact and backend configuration.
  *
  * [expectedArgs] lists only the arguments worth checking (others are ignored). A blank expected
  * value means "the arg must be present and non-empty" — useful when the exact wording varies.

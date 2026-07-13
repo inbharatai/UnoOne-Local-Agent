@@ -5,7 +5,7 @@ import com.google.ai.edge.litertlm.ToolParam
 import com.google.ai.edge.litertlm.ToolSet
 
 /**
- * Declares every capability UnoOne exposes to Gemma 3n E4B via LiteRT-LM manual tool calling.
+ * Declares every capability UnoOne exposes to Gemma 4 E2B via LiteRT-LM manual tool calling.
  *
  * The function bodies are stubs: with [automaticToolCalling = false] the model only uses
  * these signatures to generate tool-call JSON. Real execution always routes through

@@ -14,8 +14,8 @@ import kotlinx.serialization.json.jsonPrimitive
  * Local LLM brain for UnoOne.
  *
  * Thin wrapper around [GemmaPlanner], which loads a Gemma `.litertlm` model via LiteRT-LM and
- * performs manual tool calling. Profile-aware: callers can load either Gemma 4 E2B or the legacy
- * Gemma 3n E4B through the same interface by passing a [BrainModelSpec].
+ * performs manual tool calling. Callers pass the sole Gemma 4 E2B [BrainModelSpec] so model
+ * identity, backend preference and device gates remain explicit.
  *
  * The old ONNX shell has been removed. RuleBasedParser remains the fast offline
  * fallback when no model is loaded.
@@ -36,10 +36,10 @@ class LocalBrain {
     /** The profile currently loaded, or null when no model is loaded. */
     fun loadedProfile(): BrainModelSpec? = planner.loadedProfile()
 
-    /** Legacy single-path load (default profile, Gemma 3n E4B). */
+    /** Convenience load using the sole Gemma 4 E2B profile. */
     suspend fun loadModel(modelPath: String): Result<Unit> = planner.load(modelPath)
 
-    /** Profile-aware load — loads [modelPath] as [spec] (Gemma 4 E2B or Gemma 3n E4B). */
+    /** Loads [modelPath] using the explicit Gemma 4 E2B [spec]. */
     suspend fun loadModel(modelPath: String, spec: BrainModelSpec): Result<Unit> =
         planner.load(modelPath, spec)
 

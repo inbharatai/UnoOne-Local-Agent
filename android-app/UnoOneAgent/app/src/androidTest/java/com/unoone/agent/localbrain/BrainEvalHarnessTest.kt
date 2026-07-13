@@ -18,16 +18,16 @@ import org.junit.Test
  * This is the "is Gemma actually good enough?" measurement tool: it loads whichever `.litertlm`
  * profile is present on the device, runs the fixed [EvalPromptSet] through [GemmaPlanner.plan] one
  * case at a time, scores tool + arg accuracy with the pure-JVM [EvalScorer], and **prints** a real
- * [com.unoone.agent.core.eval.EvalSummary] to logcat. To compare Gemma 3n E4B vs Gemma 4 E2B, push
- * one model, run, record the numbers, push the other, run again.
+ * [com.unoone.agent.core.eval.EvalSummary] to logcat. Run it against the exact Gemma 4 E2B
+ * artifact and record the backend, device and model hash with the result.
  *
  * This test does NOT gate on an accuracy threshold — a profile being evaluated is allowed to score
  * low; that low number is the point. It only asserts that every case produced a verdict (i.e. the
  * harness executed completely). Read the printed summary for the real verdict.
  *
  * To run it, push a model first:
- *   adb push /path/to/gemma-4-e2b-it.litertlm \
- *     /sdcard/Android/data/com.unoone.agent/files/models/gemma-local/
+ *   adb push /path/to/gemma-4-E2B-it.litertlm \
+ *     /sdcard/Android/data/com.unoone.agent/files/models/brain/gemma-4-e2b/
  *
  * Then: ./gradlew :app:connectedDebugAndroidTest --tests *.BrainEvalHarnessTest
  * and read the `EvalSummary` block in the logcat / test report.

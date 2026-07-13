@@ -79,8 +79,8 @@ private const val SELF_HEAL_ENABLED = true
 private const val STREAMING_INFERENCE_ENABLED = true
 
 /**
- * Multimodal vision gate for `describe_scene`. False by default: the shipped Gemma 3n E4B / Gemma 4
- * E2B `.litertlm` artifacts are text-only (no vision weights), so the LiteRT-LM
+ * Multimodal vision gate for `describe_scene`. False by default: the shipped Gemma 4 E2B
+ * `.litertlm` artifact is text-only (no vision weights), so the LiteRT-LM
  * `Content.ImageBytes` path ([com.unoone.agent.localbrain.GemmaPlanner.describeSceneWithVision]) is
  * wired against the real AAR but INACTIVE. `describe_scene` instead uses the always-available OCR
  * + foreground-context description ([com.unoone.agent.core.agent.SceneDescriptionBuilder]), which is

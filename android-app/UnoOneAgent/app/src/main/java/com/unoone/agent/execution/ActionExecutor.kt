@@ -238,8 +238,8 @@ class ActionExecutor(
     /**
      * Optional multimodal-vision path for `describe_scene`: when set AND a vision-capable Gemma
      * model is loaded, the orchestrator supplies a callback that describes a screenshot image via
-     * LiteRT-LM `Content.ImageBytes`. Null by default → vision is inactive (the shipped Gemma 3n E4B
-     * / Gemma 4 E2B models are text-only), so `describe_scene` falls back to the always-available
+     * LiteRT-LM `Content.ImageBytes`. Null by default → vision is inactive (the shipped Gemma 4 E2B
+     * artifact is text-only), so `describe_scene` falls back to the always-available
      * OCR + foreground-context description built by [com.unoone.agent.core.agent.SceneDescriptionBuilder].
      * Device-time-only; not exercised by unit tests.
      */

@@ -33,8 +33,8 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * Model-profile aware: [load] takes a [BrainModelSpec] so it can build the correct
  * family-specific system instruction ([PromptBuilder.buildSystemInstruction]) and try the
- * profile's preferred backend order. Either Gemma 4 E2B or Gemma 3n E4B loads through this same
- * safe interface.
+ * Gemma 4 E2B profile's preferred backend order. No secondary or legacy brain is accepted by
+ * this runtime contract.
  *
  * - Loads a `.litertlm` model once and keeps a reusable [Conversation].
  * - Registers [UnoOneToolSet] so Gemma can plan phone actions.
