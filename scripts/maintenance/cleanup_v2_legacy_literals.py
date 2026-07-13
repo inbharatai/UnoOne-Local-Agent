@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""One-time cleanup of stale dual-brain comments and instrumentation model paths."""
+"""One-time cleanup of stale dual-brain comments and instrumentation model paths.
+
+This file is temporary and will be removed after the cleanup commit is verified.
+"""
 
 from pathlib import Path
 
