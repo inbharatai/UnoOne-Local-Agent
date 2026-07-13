@@ -6,12 +6,14 @@ on:
     paths:
       - 'android-app/**'
       - 'web-runtime/page-agent-unoone/**'
+      - 'scripts/ci/**'
       - '.github/workflows/android-ci.yml'
   pull_request:
     branches: [ main ]
     paths:
       - 'android-app/**'
       - 'web-runtime/page-agent-unoone/**'
+      - 'scripts/ci/**'
       - '.github/workflows/android-ci.yml'
 
 concurrency:
@@ -24,6 +26,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify UnoOne V2 repository invariants
+        run: python3 scripts/ci/check_repo_invariants.py
 
       - name: Set up Node 24
         uses: actions/setup-node@v4
