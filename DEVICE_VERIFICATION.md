@@ -214,13 +214,15 @@ Assamese remains planned until exact artifacts are selected.
 
 ## 7. Blind Aid and OCR
 
+- [x] Camera-access tools are canonical, permission-gated and safety-classified — ✅ 2026-07-14 headless (CameraAccessHeadlessTest on Xiaomi 14: `open_camera`→CAMERA runtime perm + CONFIRM; `detect_objects`(Blind Aid)→CAMERA+Accessibility + STRONG_CONFIRM; `deactivate_blind_aid`→DIRECT/no-perm; `ocr_screen`→MediaProjection NOT camera).
 - [ ] CameraX preview starts and stops cleanly.
 - [ ] Object detection produces expected labels/locations.
 - [ ] Haptic feedback works.
 - [ ] Spoken guidance works with the active offline TTS pack.
 - [ ] Low light, motion blur, covered camera and camera-denied states are handled.
 - [ ] Background/foreground transition does not leak camera resources.
-- [ ] OCR permission and capture flow work.
+- [x] OCR recognizer runs on-device against rendered text — ✅ 2026-07-14 headless (OcrControlHeadlessTest on Xiaomi 14: bundled ML Kit Latin recognizes a rendered Latin string end-to-end; `recognizeScreen()` honors the MediaProjection gate headlessly).
+- [ ] Live on-screen OCR capture flow (MediaProjection screenshot of a real app screen) — manual.
 - [ ] Blind Aid remains functional when Gemma is absent or unloaded.
 
 ## 8. Lifecycle, update and recovery

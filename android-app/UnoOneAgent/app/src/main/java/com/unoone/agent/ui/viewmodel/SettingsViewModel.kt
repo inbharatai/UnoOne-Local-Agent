@@ -91,13 +91,17 @@ class SettingsViewModel(context: Context) : ViewModel() {
         Logger.i("SettingsViewModel: voice language set to '$normalized'")
         // Rebuild engines for the new language. VoiceService owns the wake-word loop path; the
         // shared VoiceModule owns the mic-button / VoiceTest path. Both read the pref we just wrote.
+        // reinitForLanguage is heavy blocking model I/O — it MUST NOT run on viewModelScope's default
+        // Main dispatcher, or switching to a larger Indic/Whisper language freezes the UI (ANR).
         VoiceService.reinitLanguage(appContext)
         val shared = (appContext as? com.unoone.agent.UnoOneApplication)?.sharedVoiceModule
         if (shared != null) {
             viewModelScope.launch {
                 val modelBaseDir = (appContext.getExternalFilesDir(null)?.absolutePath
                     ?: appContext.filesDir.absolutePath) + "/models"
-                shared.reinitForLanguage(modelBaseDir, normalized)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    shared.reinitForLanguage(modelBaseDir, normalized)
+                }
             }
         }
     }

@@ -36,6 +36,8 @@ Development-only values must be visibly labelled and must fail closed in product
 - Room-based notes, memory, skills, logs and browser audit records.
 - Offline Sherpa-ONNX STT/TTS with explicit model health checks.
 - CameraX/ML Kit Blind Aid preserved independently of the Gemma model folder.
+- Camera access via the `open_camera` tool (system camera capture intent, CONFIRM + CAMERA permission) and CameraX Blind Aid (`detect_objects`, STRONG_CONFIRM + CAMERA + Accessibility); `deactivate_blind_aid` stops it. The CAMERA runtime permission is requested on first use.
+- On-device OCR via bundled ML Kit Latin text recognition (no model download, no network); used by the `ocr_screen` tool and the always-available OCR fallback of `describe_scene` (the multimodal-vision path is wired but inactive until a vision-capable Gemma artifact is provided).
 - Floating assistant and background voice service.
 - In-app **Security Level** chooser (Standard / Relaxed / Off) and **Voice Language** chooser (English, Hindi, Bengali, Tamil, Telugu, Kannada, Malayalam) — see below.
 
@@ -349,7 +351,7 @@ The following checklist is the source of truth. A phase is complete only when it
 - [x] Base V2 on the existing Gemma 4 E2B work.
 - [x] Remove Gemma 3n from the runtime contract.
 - [x] Remove `gemma-local` filesystem fallbacks.
-- [x] Normalize model folders under `brain/`, `speech/`, `vision/`, `ocr/` and `staging/`.
+- [x] Normalize model folders under `brain/`, `speech/`, `vision/` and `staging/`. (OCR is bundled ML Kit Latin in the APK — it is not a downloaded model and has no model folder; the unused `ModelType.ocr` enum value is retained only for catalogue forward-compat.)
 - [x] Keep Blind Aid independent of the LLM folder.
 - [x] Add invariant checks preventing legacy model paths from returning.
 - [ ] Confirm the current branch contains no dead, unreachable or duplicate V1 implementation after full static review.
@@ -425,7 +427,7 @@ The following checklist is the source of truth. A phase is complete only when it
 - [ ] Accessibility tap, type, swipe, long press and visible-text capture.
 - [ ] Android intent launching and system actions.
 - [ ] CameraX Blind Aid startup, object detection, haptic and spoken guidance.
-- [ ] OCR path.
+- [x] OCR path — ✅ 2026-07-14 headless (OcrControlHeadlessTest on Xiaomi 14: bundled ML Kit Latin recognizes rendered text end-to-end; `recognizeScreen()` honors the MediaProjection gate headlessly). Live on-screen screenshot OCR remains a manual MediaProjection item.
 - [ ] Permission denial and permanent-denial recovery.
 - [ ] Memory-pressure unload and safe reload.
 - [x] Process restart and app update preserve Room data + model repair — ✅ 2026-07-14 headless (Room survives DB reopen; language-pack uninstall/reinstall/repair proven on device).
