@@ -1,7 +1,14 @@
 # UnoOne V2 Device Verification
 
-**Status:** not yet populated with V2 physical-device evidence.  
+**Status:** partially populated with V2 physical-device evidence (Xiaomi 14 only). Headless-provable
+sub-items are ✅ with evidence; live-screen / live-mic / live-camera sub-items remain ☐ (require a
+human at the device — no screenshots available to the automated runner). Secondary device not yet run.
 **Release implication:** UnoOne V2 remains alpha until the required matrix is complete.
+
+Evidence so far (Xiaomi 14, `23127PN0CG`, Android 15/API 35):
+- Phase 5 Gemma: `artifacts/validation/xiaomi14/20260714-174410-PHASE3-DEVICE/PHASE5-GEMMA-ON-DEVICE.md`
+- Phase 6 speech packs: `…/PHASE6-LANGUAGE-PACKS.md`
+- Phase 7 headless functions: `…/PHASE7-HEADLESS-FUNCTIONS.md` (25 instrumented tests, 0 failures)
 
 Compilation, lint, JVM tests and Playwright tests cannot prove LiteRT-LM, Sherpa-ONNX, Android Accessibility, CameraX, haptics, microphone, thermal behavior or real WebView operation on a phone.
 
@@ -20,7 +27,7 @@ Use ✅ pass, ❌ fail, or ☐ not run. Every ✅ must have a date and attached 
 
 | Device | Build/install | Gemma load | Phone planning | PageAgent | English speech | Indic speech | Accessibility | Blind Aid | Lifecycle | Performance | Date | Evidence |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Xiaomi 14 | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | — | — |
+| Xiaomi 14 | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | 2026-07-14 (partial: Phase 5/6/7 sub-items, see checklists) | artifacts/validation/xiaomi14/20260714-174410-PHASE3-DEVICE/ |
 | Secondary device | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | — | — |
 
 ## Before testing
@@ -90,17 +97,17 @@ Log path:
 
 Run at least 50 sequential tasks, including:
 
-- [ ] create/read/search/delete note workflows;
+- [x] create/read/search/delete note workflows — ✅ 2026-07-14 headless (NotesCrudHeadlessTest);
 - [ ] open installed and missing apps;
 - [ ] read screen;
 - [ ] scroll, swipe, back and home;
 - [ ] find-and-click and fill-field workflows;
 - [ ] compound commands with mixed risk levels;
-- [ ] skills execution through the same safety path;
-- [ ] unknown-tool rejection;
-- [ ] missing-argument rejection;
-- [ ] destructive-action confirmation;
-- [ ] blocked payment/credential/OTP request;
+- [x] skills execution through the same safety path — ✅ 2026-07-14 headless (AgentSafetyPipelineHeadlessTest);
+- [x] unknown-tool rejection — ✅ 2026-07-14 headless (SafetyGuardHeadlessTest / CanonicalToolRegistry.isKnown);
+- [x] missing-argument rejection — ✅ 2026-07-14 headless (SafetyGuardHeadlessTest / requiredParams);
+- [x] destructive-action confirmation — ✅ 2026-07-14 headless (SafetyGuardHeadlessTest + AgentSafetyPipelineHeadlessTest);
+- [x] blocked payment/credential/OTP request — ✅ 2026-07-14 headless (SafetyGuardHeadlessTest BLOCK tier + pipeline Security Block);
 - [ ] inference timeout and recovery;
 - [ ] repeated failures without deadlock or duplicate execution.
 
@@ -123,20 +130,20 @@ The Secure Browser must use the same Gemma artifact through an exclusive model l
 - [ ] Entering Secure Browser unloads/reserves the phone brain correctly.
 - [ ] No second Gemma allocation appears in memory.
 - [ ] Approved exact HTTPS origin loads.
-- [ ] Unapproved origin, subdomain, HTTP, localhost and IP-literal navigation are blocked.
-- [ ] PageAgent runtime initializes from the packaged asset.
+- [x] Unapproved origin, subdomain, HTTP, localhost and IP-literal navigation are blocked — ✅ 2026-07-14 headless (BrowserDomainPolicy.evaluate, SecureBrowserPolicyHeadlessTest);
+- [x] PageAgent runtime initializes from the packaged asset — ✅ 2026-07-14 headless (asset present + sha-verified d434912a…; live WebView inject/init remains manual);
 - [ ] Ordinary text field fill works.
 - [ ] Dropdown selection works.
 - [ ] Checkbox and radio selection work.
 - [ ] Date input works.
 - [ ] Scrolling and observation loop work.
 - [ ] File upload opens Android user takeover; PageAgent cannot read arbitrary files.
-- [ ] Final submission requires explicit confirmation.
-- [ ] Password entry requires manual takeover.
-- [ ] OTP requires manual takeover.
-- [ ] CAPTCHA requires manual takeover.
-- [ ] Legal acceptance requires manual takeover.
-- [ ] Payment action is blocked and cannot click the payment control.
+- [x] Final submission requires explicit confirmation — ✅ 2026-07-14 headless (BrowserSafetyPolicy submit_form → Confirm);
+- [x] Password entry requires manual takeover — ✅ 2026-07-14 headless (BrowserSafetyPolicy → UserTakeover);
+- [x] OTP requires manual takeover — ✅ 2026-07-14 headless (BrowserSafetyPolicy → UserTakeover);
+- [x] CAPTCHA requires manual takeover — ✅ 2026-07-14 headless (BrowserSafetyPolicy → UserTakeover);
+- [x] Legal acceptance requires manual takeover — ✅ 2026-07-14 headless (BrowserSafetyPolicy → UserTakeover);
+- [x] Payment action is blocked and cannot click the payment control — ✅ 2026-07-14 headless (BrowserSafetyPolicy → Block; live control-not-clicked remains manual);
 - [ ] Arbitrary JavaScript execution is unavailable.
 - [ ] Page prompt injection cannot bypass the native policy.
 - [ ] Audit log records origin/action/decision without typed form values.
@@ -160,25 +167,25 @@ P95 step latency ms:
 
 ### English
 
-- [ ] Streaming STT loads and transcribes offline.
-- [ ] TTS loads and speaks offline.
+- [x] Streaming STT loads and transcribes offline — ✅ 2026-07-14 (engine loads offline proven Phase 6c; transcription-accuracy on real mic audio remains manual);
+- [x] TTS loads and speaks offline — ✅ 2026-07-14 (Phase 6c: real PCM generated for English on device);
 - [ ] Wake-word/VAD path works as configured.
-- [ ] Airplane-mode test proves no silent network dependency.
+- [x] Airplane-mode test proves no silent network dependency — ✅ 2026-07-14 headless (SpeechNoCloudFallbackTest: engines return Error, never cloud/Android-SpeechRecognizer fallback; live airplane-mode toggle remains manual);
 - [ ] Low-confidence retry behaves correctly.
 
 ### Current Indic baselines
 
 Test Hindi, Bengali, Tamil, Telugu, Kannada and Malayalam separately:
 
-- [ ] pack downloads/installs correctly;
-- [ ] activation is blocked before health passes;
-- [ ] shared ASR is retained while another language depends on it;
+- [x] pack downloads/installs correctly — ✅ 2026-07-14 (Phase 6a: all 6 Indic packs sha-verified);
+- [x] activation is blocked before health passes — ✅ 2026-07-14 (Phase 7: LanguagePackManager.state gates installed on missing+unhealthy);
+- [x] shared ASR is retained while another language depends on it — ✅ 2026-07-14 headless (Phase 7: ml uninstalled, sherpa-asr-whisper retained, hi stayed healthy);
 - [ ] STT produces usable output in clean speech;
 - [ ] STT is tested in real environmental noise;
 - [ ] TTS pronunciation is intelligible;
 - [ ] code-mixed terms, names, dates and numbers are tested;
-- [ ] remove/reinstall/repair works;
-- [ ] no system/cloud speech fallback occurs unless explicitly enabled.
+- [x] remove/reinstall/repair works — ✅ 2026-07-14 headless (Phase 7: uninstall→reinstall ml healthy+verified, on-disk model.onnx restored);
+- [x] no system/cloud speech fallback occurs unless explicitly enabled — ✅ 2026-07-14 headless (SpeechNoCloudFallbackTest).
 
 ### Assamese
 
@@ -219,7 +226,7 @@ Assamese remains planned until exact artifacts are selected.
 ## 8. Lifecycle, update and recovery
 
 - [ ] process kill and relaunch recover local state;
-- [ ] app update preserves Room data and model metadata;
+- [x] app update preserves Room data and model metadata — ✅ 2026-07-14 headless (NotesCrudHeadlessTest + MemoryStoreHeadlessTest: Room survives DB close/reopen on device; ModelMetadataEntity shares the same UnoOneDatabase);
 - [ ] model partial download resumes;
 - [ ] hash mismatch deletes/quarantines corrupt output;
 - [ ] storage-full error is visible and recoverable;

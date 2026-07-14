@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.modelmanager.ModelManager
+import com.unoone.agent.safety.SecurityLevel
 import com.unoone.agent.voice.VoiceLanguage
 import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceService
@@ -41,6 +42,12 @@ class SettingsViewModel(context: Context) : ViewModel() {
     private val _voiceLanguage = MutableStateFlow(VoiceLanguage.normalize(prefs.getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT)))
     val voiceLanguage: StateFlow<String> = _voiceLanguage.asStateFlow()
 
+    // User-selectable agent security posture (Settings → Security Level). Default STANDARD so the
+    // app never silently weakens safety. The orchestrator re-reads this per tool call, so a change
+    // here takes effect on the next command without a restart.
+    private val _securityLevel = MutableStateFlow(SecurityLevel.current(context))
+    val securityLevel: StateFlow<SecurityLevel> = _securityLevel.asStateFlow()
+
     init {
         refresh()
     }
@@ -60,6 +67,16 @@ class SettingsViewModel(context: Context) : ViewModel() {
     fun setDarkMode(enabled: Boolean) {
         _darkMode.value = enabled
         prefs.edit().putBoolean("dark_mode", enabled).apply()
+    }
+
+    /**
+     * Set the agent security level (STANDARD / RELAXED / OFF) and persist it. The orchestrator
+     * re-reads the pref on the next tool call, so the change is live without a restart.
+     */
+    fun setSecurityLevel(level: SecurityLevel) {
+        _securityLevel.value = level
+        SecurityLevel.set(appContext, level)
+        Logger.i("SettingsViewModel: security level set to ${level.name}")
     }
 
     /**

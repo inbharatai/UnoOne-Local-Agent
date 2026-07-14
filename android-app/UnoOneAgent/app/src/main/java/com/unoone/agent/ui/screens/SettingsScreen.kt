@@ -2,7 +2,9 @@ package com.unoone.agent.ui.screens
 
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Language
@@ -24,6 +27,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,7 +47,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.unoone.agent.safety.SecurityLevel
 import com.unoone.agent.ui.viewmodel.SettingsViewModel
+import com.unoone.agent.voice.VoiceLanguage
 
 @Composable
 fun SettingsScreen(
@@ -58,6 +65,7 @@ fun SettingsScreen(
     val storageUsageMb by viewModel.storageUsageMb.collectAsState()
     val darkMode by viewModel.darkMode.collectAsState()
     val voiceLanguage by viewModel.voiceLanguage.collectAsState()
+    val securityLevel by viewModel.securityLevel.collectAsState()
     var showClearConfirmation by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -94,10 +102,16 @@ fun SettingsScreen(
             ManageButton("Voice Test (STT / TTS)", Icons.Default.Mic, onNavigateToVoiceTest)
             ManageButton("Secure Browser (PageAgent)", Icons.Default.Language, onNavigateToSecureBrowser)
             ManageButton("Audit Log", Icons.AutoMirrored.Filled.ReceiptLong, onNavigateToAudit)
-            Text(
-                "Active voice runtime: $voiceLanguage. Change it only through Offline Languages after the pack passes health checks.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            // Voice language picker — sets the offline STT/TTS language live (rebuilds the Sherpa
+            // engines without a restart). Speak in the language you pick here, or STT transcribes
+            // in the wrong language (English-only transducer can't transcribe Hindi, etc.).
+            val langLabel = VoiceLanguage.SUPPORTED.firstOrNull { it.code == voiceLanguage }?.display
+                ?: VoiceLanguage.displayName(voiceLanguage)
+            DropdownPicker(
+                label = "Voice language",
+                selectedLabel = langLabel,
+                options = VoiceLanguage.SUPPORTED.map { it.code to it.display },
+                onSelect = { code -> viewModel.setVoiceLanguage(code) }
             )
             Text(
                 "Secure Browser reserves Gemma 4 exclusively, automates approved HTTPS pages through Alibaba PageAgent, and requires manual control for credentials, OTP, CAPTCHA, payments and legal declarations.",
@@ -105,6 +119,46 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 4.dp)
             )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        SettingsSection(title = "Security Level") {
+            val levelLabel = when (securityLevel) {
+                SecurityLevel.STANDARD -> "Standard — full safety"
+                SecurityLevel.RELAXED -> "Relaxed — judge off, auto-confirm"
+                SecurityLevel.OFF -> "Off — demo / developer (everything runs)"
+            }
+            DropdownPicker(
+                label = "Agent security",
+                selectedLabel = levelLabel,
+                options = listOf(
+                    SecurityLevel.STANDARD to "Standard — full safety",
+                    SecurityLevel.RELAXED to "Relaxed — judge off, auto-confirm",
+                    SecurityLevel.OFF to "Off — demo / developer (everything runs)"
+                ),
+                onSelect = { level -> viewModel.setSecurityLevel(level) }
+            )
+            Text(
+                when (securityLevel) {
+                    SecurityLevel.STANDARD ->
+                        "The on-device safety judge runs, destructive actions require a confirm tap, and payments / credentials / install are blocked. Use for real use."
+                    SecurityLevel.RELAXED ->
+                        "Safety judge off and confirmations auto-approved, so benign commands like \"add a calendar event\" are not over-blocked. Payments / credentials / install stay blocked."
+                    SecurityLevel.OFF ->
+                        "Demo mode: every module runs with no judge, no confirm tap and no block. Safe only because blocked tool names have no executor — no real payment / SMS / credential action fires. Switch back to Standard for real use."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 6.dp)
+            )
+            if (securityLevel == SecurityLevel.OFF) {
+                Text(
+                    "⚠ Security is OFF. For demos only.",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -203,6 +257,44 @@ private fun ManageButton(
         Text(label, modifier = Modifier.padding(start = 8.dp))
     }
     Spacer(modifier = Modifier.height(8.dp))
+}
+
+/**
+ * Compact label + dropdown picker used by the Security Level and Voice Language settings. Tapping
+ * the right-hand value opens a [DropdownMenu] of [options]; selecting one calls [onSelect].
+ */
+@Composable
+private fun <T> DropdownPicker(
+    label: String,
+    selectedLabel: String,
+    options: List<Pair<T, String>>,
+    onSelect: (T) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontWeight = FontWeight.Medium)
+        Box {
+            Row(
+                modifier = Modifier.clickable { expanded = true },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(selectedLabel, style = MaterialTheme.typography.bodyMedium)
+                Icon(Icons.Default.ArrowDropDown, contentDescription = label)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { (value, display) ->
+                    DropdownMenuItem(
+                        text = { Text(display) },
+                        onClick = { onSelect(value); expanded = false }
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

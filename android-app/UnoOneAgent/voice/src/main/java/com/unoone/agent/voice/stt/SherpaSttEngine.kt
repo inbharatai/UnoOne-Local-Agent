@@ -118,7 +118,11 @@ class SherpaSttEngine(
             // useful here; disable it so the recognizer does not cut off mid-utterance.
             enableEndpoint = false
         }
-        onlineRecognizer = OnlineRecognizer(context.assets, config)
+        // Models live on external storage (absolute paths); pass a null assetManager so Sherpa-ONNX
+        // takes its newFromFile() native path. A non-null AssetManager makes Sherpa resolve the
+        // absolute path through the APK assets, fail, and fatally abort the process
+        // (k2-fsa/sherpa-onnx#2562). See Phase 6 device evidence.
+        onlineRecognizer = OnlineRecognizer(null, config)
         initialized = true
         Logger.i("SherpaSttEngine: Online STT initialized (streaming transducer, 4 threads)")
         return Result.Success(Unit)
@@ -150,7 +154,9 @@ class SherpaSttEngine(
             featConfig = FeatureConfig(16000, 80, 0f)
             this.modelConfig = modelConfig
         }
-        offlineRecognizer = OfflineRecognizer(context.assets, config)
+        // See note above: filesystem (absolute-path) models require a null assetManager so Sherpa
+        // uses newFromFile(); a non-null AssetManager fatally aborts (k2-fsa/sherpa-onnx#2562).
+        offlineRecognizer = OfflineRecognizer(null, config)
         initialized = true
         Logger.i("SherpaSttEngine: Offline STT initialized (whisper-tiny, lang=$language, 4 threads)")
         return Result.Success(Unit)

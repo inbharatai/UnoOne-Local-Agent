@@ -66,7 +66,12 @@ class KeywordSpotterEngine(
                 numTrailingBlanks = 1
             }
 
-            val kws = KeywordSpotter(context.assets, config)
+            // Models are downloaded to external storage (absolute paths), so the Sherpa-ONNX
+            // assetManager MUST be null to take the newFromFile() native path. Passing a non-null
+            // AssetManager makes Sherpa try to resolve the absolute path through the APK assets,
+            // which fails and fatally aborts the process (k2-fsa/sherpa-onnx#2562). See
+            // validation evidence artifacts/validation/xiaomi14/.../PHASE6-LANGUAGE-PACKS.md.
+            val kws = KeywordSpotter(null, config)
             spotter = kws
             stream = kws.createStream()
             initialized = true
