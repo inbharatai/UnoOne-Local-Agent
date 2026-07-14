@@ -4,12 +4,12 @@
     <issue
         id="BatteryLife"
         message="Use of `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` violates the Play Store Content Policy regarding acceptable use cases, as described in https://developer.android.com/training/monitoring-device-state/doze-standby.html"
-        errorLine1="                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {"
-        errorLine2="                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        errorLine1="                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {"
+        errorLine2="                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/unoone/agent/MainActivity.kt"
-            line="170"
-            column="37"/>
+            line="173"
+            column="46"/>
     </issue>
 
     <issue
@@ -30,7 +30,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="88"
+            line="82"
             column="20"/>
     </issue>
 
@@ -41,7 +41,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="89"
+            line="83"
             column="20"/>
     </issue>
 
@@ -52,7 +52,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="90"
+            line="84"
             column="20"/>
     </issue>
 
@@ -63,7 +63,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="91"
+            line="85"
             column="20"/>
     </issue>
 
@@ -74,7 +74,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="92"
+            line="86"
             column="20"/>
     </issue>
 
@@ -85,7 +85,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="93"
+            line="87"
             column="20"/>
     </issue>
 
@@ -96,7 +96,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="94"
+            line="88"
             column="20"/>
     </issue>
 
@@ -107,7 +107,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="106"
+            line="100"
             column="20"/>
     </issue>
 
@@ -118,7 +118,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="108"
+            line="104"
             column="20"/>
     </issue>
 
@@ -129,7 +129,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="111"
+            line="110"
             column="20"/>
     </issue>
 
@@ -140,7 +140,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="112"
+            line="111"
             column="20"/>
     </issue>
 
@@ -151,7 +151,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="113"
+            line="112"
             column="20"/>
     </issue>
 
@@ -162,7 +162,7 @@
         errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="build.gradle.kts"
-            line="114"
+            line="113"
             column="20"/>
     </issue>
 
@@ -251,47 +251,124 @@
     </issue>
 
     <issue
+        id="UnusedResources"
+        message="The resource `R.xml.backup_rules` appears to be unused"
+        errorLine1="&lt;full-backup-content>"
+        errorLine2="^">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="2"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.tagline` appears to be unused"
+        errorLine1="    &lt;string name=&quot;tagline&quot;>One private AI agent for every phone action.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="3"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.offline_badge` appears to be unused"
+        errorLine1="    &lt;string name=&quot;offline_badge&quot;>Offline Local&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="4"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.mic_permission_rationale` appears to be unused"
+        errorLine1="    &lt;string name=&quot;mic_permission_rationale&quot;>UnoOne needs microphone access to listen to your voice commands. Audio is processed entirely on your phone and never uploaded.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="5"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.storage_permission_rationale` appears to be unused"
+        errorLine1="    &lt;string name=&quot;storage_permission_rationale&quot;>UnoOne needs storage access to load AI model files. These files stay on your device.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="6"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.camera_permission_rationale` appears to be unused"
+        errorLine1="    &lt;string name=&quot;camera_permission_rationale&quot;>UnoOne can open your camera when you ask. The app does not take photos without your command.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="7"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.calendar_permission_rationale` appears to be unused"
+        errorLine1="    &lt;string name=&quot;calendar_permission_rationale&quot;>UnoOne can help you create calendar events. It only opens the calendar screen with pre-filled details.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="8"
+            column="13"/>
+    </issue>
+
+    <issue
         id="UseKtx"
         message="Use the KTX extension function `SharedPreferences.edit` instead?"
-        errorLine1="        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)"
-        errorLine2="        ^">
+        errorLine1="        prefs.edit().putInt(KEY_PROMPTED_VERSION, CURRENT_PERMISSIONS_VERSION).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
         <location
             file="src/main/java/com/unoone/agent/MainActivity.kt"
-            line="131"
+            line="138"
             column="9"/>
     </issue>
 
     <issue
         id="UseKtx"
         message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="                    Uri.parse(&quot;package:$packageName&quot;)"
-        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        errorLine1="            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse(&quot;package:$packageName&quot;))"
+        errorLine2="                                                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/unoone/agent/MainActivity.kt"
-            line="145"
-            column="21"/>
+            line="149"
+            column="76"/>
     </issue>
 
     <issue
         id="UseKtx"
         message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="                        data = Uri.parse(&quot;package:$packageName&quot;)"
-        errorLine2="                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        errorLine1="                    data = Uri.parse(&quot;package:$packageName&quot;)"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/unoone/agent/MainActivity.kt"
-            line="171"
-            column="32"/>
+            line="174"
+            column="28"/>
     </issue>
 
     <issue
         id="UseKtx"
         message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="                        data = Uri.parse(&quot;package:$packageName&quot;)"
-        errorLine2="                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        errorLine1="                    data = Uri.parse(&quot;package:$packageName&quot;)"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/unoone/agent/MainActivity.kt"
-            line="171"
-            column="32"/>
+            line="174"
+            column="28"/>
     </issue>
 
     <issue
@@ -345,7 +422,7 @@
         errorLine2="        ~~~~~~~~~~~~">
         <location
             file="src/main/java/com/unoone/agent/ui/viewmodel/SettingsViewModel.kt"
-            line="69"
+            line="55"
             column="9"/>
     </issue>
 

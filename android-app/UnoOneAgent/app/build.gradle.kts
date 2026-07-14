@@ -17,6 +17,11 @@ android {
         targetSdk = 35
         versionCode = 4
         versionName = "0.4.0-alpha-v2"
+        // Required so instrumented androidTest classes (JUnit4 @Test, ApplicationProvider,
+        // androidx.test.ext.junit) are discovered on-device. Without this AGP falls back to the
+        // legacy android.test.InstrumentationTestRunner, which cannot load the androidx test
+        // classes and fails with INSTRUMENTATION_FAILED / "0 tests".
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {

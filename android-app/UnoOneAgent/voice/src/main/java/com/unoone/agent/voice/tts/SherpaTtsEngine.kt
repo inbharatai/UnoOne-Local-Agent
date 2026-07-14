@@ -60,7 +60,11 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
                 this.model = modelConfig
             }
 
-            tts = OfflineTts(context.assets, config)
+            // Models live on external storage (absolute paths); pass a null assetManager so
+            // Sherpa-ONNX uses newFromFile(). A non-null AssetManager makes Sherpa resolve the
+            // absolute path through the APK assets, fail, and fatally abort the process
+            // (k2-fsa/sherpa-onnx#2562). See Phase 6 device evidence.
+            tts = OfflineTts(null, config)
             initialized = true
             Logger.i("SherpaTtsEngine: Offline TTS initialized (${if (espeakFrontend) "espeak" else "MMS/character"} frontend, 2 threads)")
             Result.Success(Unit)

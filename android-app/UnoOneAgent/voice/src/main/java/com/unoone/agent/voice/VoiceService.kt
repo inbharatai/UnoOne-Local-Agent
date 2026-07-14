@@ -22,12 +22,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class VoiceService : Service() {
 
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     private var monitoringJob: Job? = null
+
+    /** Serializes runtime STT/TTS rebuilds so rapid language switches never overlap on the IO pool. */
+    private val reinitLock = Mutex()
 
     private val recorder = AudioRecorder()
     private var keywordSpotter: KeywordSpotterEngine? = null
@@ -94,7 +99,9 @@ class VoiceService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_REINIT_LANG) {
             // Language changed at runtime: rebuild STT/TTS only, keep the wake-word loop running.
-            reinitSttTts()
+            // MUST run off the main thread — Sherpa model load (especially the larger Indic Whisper
+            // ASR models) is heavy I/O and blocks onStartCommand's main thread, freezing the UI/ANR.
+            serviceScope.launch { reinitSttTts() }
             return START_STICKY
         }
         initEngines()
@@ -154,14 +161,16 @@ class VoiceService : Service() {
     }
 
     /** Releases and rebuilds STT/TTS for the current language pref; keeps KWS running. */
-    private fun reinitSttTts() {
-        runCatching { sttEngine?.release() }
-        sttEngine = null
-        runCatching { ttsEngine?.release() }
-        ttsEngine = null
-        val lang = currentLanguage()
-        Logger.i("VoiceService: reinitializing STT/TTS for language '$lang'")
-        initSttTts(modelRoot(), lang)
+    private suspend fun reinitSttTts() {
+        reinitLock.withLock {
+            runCatching { sttEngine?.release() }
+            sttEngine = null
+            runCatching { ttsEngine?.release() }
+            ttsEngine = null
+            val lang = currentLanguage()
+            Logger.i("VoiceService: reinitializing STT/TTS for language '$lang'")
+            initSttTts(modelRoot(), lang)
+        }
     }
 
     private fun startMonitoring() {

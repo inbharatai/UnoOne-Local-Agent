@@ -29,6 +29,7 @@ import com.unoone.agent.parsing.CommandParser
 import com.unoone.agent.parsing.ParseOutcome
 import com.unoone.agent.safety.AuditLogger
 import com.unoone.agent.safety.SafetyPipeline
+import com.unoone.agent.safety.SecurityLevel
 import com.unoone.agent.skills.SkillsModule
 import com.unoone.agent.storage.dao.ActionLogDao
 import com.unoone.agent.storage.dao.MemoryDao
@@ -889,13 +890,28 @@ class AgentOrchestrator(
         // 3. Risk classification (tool risk + input risk, max wins)
         var riskLevel = safetyPipeline.classifyRisk(toolCall.tool, sanitizedText)
 
+        // User-selected security posture (Settings → Security Level). Re-read per call so a change
+        // in the app takes effect on the next command without a restart. See [SecurityLevel] for
+        // the contract: STANDARD keeps the judge + BLOCK tier + confirmations; RELAXED drops the
+        // judge and auto-approves confirmations but keeps the BLOCK tier; OFF drops the judge, the
+        // BLOCK tier AND confirmations so every module can be exercised for a demo. The BLOCK-tier
+        // tool names have no executor handlers, so OFF triggers no real payment/SMS/credential
+        // side effect — it only removes the rejection message.
+        val securityLevel = SecurityLevel.current(context)
+        val judgeEnabled = securityLevel == SecurityLevel.STANDARD
+        val blockEnforced = securityLevel != SecurityLevel.OFF
+        val confirmationEnforced = securityLevel == SecurityLevel.STANDARD
+
         // 3b. LLM safety judge — a second on-device pass that catches paraphrased harm the keyword
         // filter misses (e.g. "wipe everything" → delete_all_notes). Only ever ESCALATES the tier
         // (see [SafetyJudgePolicy.escalate]); it can never weaken the keyword result. Skipped when
-        // the brain is not loaded (offline / no model) or the judge conversation is unavailable —
-        // the keyword tier then stands unchanged, so this never creates a safety hole. Gated by a
-        // flag so the per-step latency cost of an extra inference can be turned off if needed.
-        if (SAFETY_JUDGE_ENABLED && commandParser.isModelLoaded()) {
+        // the brain is not loaded (offline / no model), the judge conversation is unavailable, OR
+        // the user has lowered the security level below STANDARD (the judge's "when unsure, choose
+        // the stricter verdict" bias is what hard-blocks benign commands like "add a calendar
+        // event" via a false-positive UNSAFE — RELAXED/OFF turn that off). The keyword tier then
+        // stands unchanged, so this never creates a safety hole. Gated by a flag so the per-step
+        // latency cost of an extra inference can be turned off if needed.
+        if (judgeEnabled && SAFETY_JUDGE_ENABLED && commandParser.isModelLoaded()) {
             val verdict = commandParser.judgeSafety(toolCall.tool, toolCall.args.toString(), sanitizedText)
             if (verdict is Result.Success) {
                 val judged = SafetyJudgePolicy.escalate(riskLevel, verdict.data)
@@ -907,15 +923,19 @@ class AgentOrchestrator(
             }
         }
 
+        addStep(
+            AgentStatus.SAFETY_CHECK, "Security Level",
+            "security: ${securityLevel.name}"
+        )
         addStep(AgentStatus.SAFETY_CHECK, "Safety Filter", "Risk: ${riskLevel.name}")
 
-        if (safetyPipeline.isBlocked(riskLevel)) {
+        if (blockEnforced && safetyPipeline.isBlocked(riskLevel)) {
             addStep(AgentStatus.FAILED, "Security Block", "Action blocked for security.")
             AuditLogger.log(toolCall.tool, riskLevel, "blocked", sanitizedText)
             return StepOutcome.Blocked(riskLevel)
         }
 
-        if (safetyPipeline.requiresConfirmation(riskLevel)) {
+        if (confirmationEnforced && safetyPipeline.requiresConfirmation(riskLevel)) {
             val confirmationMessage = safetyPipeline.confirmationMessage(toolCall.tool, riskLevel)
             addStep(AgentStatus.SAFETY_CHECK, "Confirmation Required", confirmationMessage)
             val confirmed = awaitConfirmation(confirmationMessage)
@@ -924,6 +944,12 @@ class AgentOrchestrator(
                 AuditLogger.log(toolCall.tool, riskLevel, "cancelled", sanitizedText)
                 return StepOutcome.Cancelled
             }
+        } else if (!confirmationEnforced && safetyPipeline.requiresConfirmation(riskLevel)) {
+            // RELAXED / OFF: auto-approve the confirmation so the demo isn't blocked on a tap.
+            addStep(
+                AgentStatus.SAFETY_CHECK, "Auto-Confirmed",
+                "Confirmation auto-approved (security: ${securityLevel.name})"
+            )
         }
 
         // 4. Execute

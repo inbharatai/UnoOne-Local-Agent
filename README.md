@@ -36,7 +36,10 @@ Development-only values must be visibly labelled and must fail closed in product
 - Room-based notes, memory, skills, logs and browser audit records.
 - Offline Sherpa-ONNX STT/TTS with explicit model health checks.
 - CameraX/ML Kit Blind Aid preserved independently of the Gemma model folder.
+- Camera access via the `open_camera` tool (system camera capture intent, CONFIRM + CAMERA permission) and CameraX Blind Aid (`detect_objects`, STRONG_CONFIRM + CAMERA + Accessibility); `deactivate_blind_aid` stops it. The CAMERA runtime permission is requested on first use.
+- On-device OCR via bundled ML Kit Latin text recognition (no model download, no network); used by the `ocr_screen` tool and the always-available OCR fallback of `describe_scene` (the multimodal-vision path is wired but inactive until a vision-capable Gemma artifact is provided).
 - Floating assistant and background voice service.
+- In-app **Security Level** chooser (Standard / Relaxed / Off) and **Voice Language** chooser (English, Hindi, Bengali, Tamil, Telugu, Kannada, Malayalam) — see below.
 
 ### Secure Browser
 
@@ -54,7 +57,7 @@ Development-only values must be visibly labelled and must fail closed in product
 ### Offline language packs
 
 - Typed language-pack manifest and dependency graph.
-- Shared ASR/VAD artifacts are installed once and retained while referenced.
+- Shared ASR artifacts are installed once and retained while referenced. The wake-word (keyword-spotter) model lives in the shared `speech/shared/vad` folder and is optional — it is not required for any language pack, so it is not downloaded by default (the "red" indicator on the Model Status screen means "optional wake-word model not installed", not a pack failure).
 - Pack activation is blocked until every required model passes health checks.
 - English is the required base language.
 - Hindi, Bengali, Tamil, Telugu, Kannada and Malayalam are current baseline packs.
@@ -84,20 +87,23 @@ User voice / text / overlay / accessibility input
           Rule parser ──► local Gemma 4
                      │
                      ▼
-          CanonicalToolRegistry
+          CanonicalToolRegistry   (unknown tools rejected, required args validated)
                      │
                      ▼
-        SafetyGuard + permission policy
+        SafetyGuard + permission policy   ◄── SecurityLevel (Standard / Relaxed / Off)
+                     │                          sets judge on/off, block on/off, confirm on/off
+                     ▼
+   [Standard only] Gemma safety judge (2nd pass, escalate-only)
                      │
                      ▼
-   phone tools / notes / memory / skills / Blind Aid
+        block gate ── confirm gate ──►   phone tools / notes / memory / skills / Blind Aid
 
 Secure Browser WebView
         │
         ▼
 Alibaba PageAgent DOM controller
         │
-        ├── local Gemma planning through secured native bridge
+        ├── local Gemma planning through secured native bridge (exclusive model lease)
         ├── native action authorization before DOM execution
         └── Room audit trail without form values
 ```
@@ -112,7 +118,7 @@ Alibaba PageAgent DOM controller
 | `:modelmanager` | Manifest loading, downloads, integrity checks, health and uninstall |
 | `:languagepacks` | Language catalogue, dependency-aware install and pack health |
 | `:localbrain` | Gemma planner, PageAgent planner, prompts and inference lifecycle |
-| `:voice` | Offline STT/TTS, VAD, recording and background voice service |
+| `:voice` | Offline STT/TTS, wake-word (keyword spotter), recording and background voice service |
 | `:agentrouter` | Tool and plugin routing |
 | `:safetyguard` | Risk classification and approval policy |
 | `:phonecontrol` | Intents, OCR, object detection and Blind Aid |
@@ -139,7 +145,7 @@ UnoOne V2 has **one planning brain only**: Gemma 4 E2B.
 | Minimum product RAM gate | 6 GB |
 | Recommended product RAM gate | 8 GB |
 | Licence | Apache-2.0 upstream artifact |
-| Device qualification | **Pending** |
+| Device qualification | **Primary device qualified 2026-07-14** (Xiaomi 14, Android 15 / API 35): bytes authenticated, loads on CPU backend (GPU delegate fails on SM8650 → safe CPU fallback), 18/18 canonical tool-match. Secondary device still pending. Full 50-task planning/PageAgent benchmark + thermal run still pending. |
 
 The development manifest can acquire the exact upstream bytes for engineering tests. A public release must mirror the same verified bytes to UnoOne-controlled storage and publish them through a signed production catalogue.
 
@@ -201,7 +207,27 @@ See [Speech Model Qualification](docs/SPEECH_MODEL_QUALIFICATION.md).
 
 Only approved exact HTTPS origins may use the PageAgent bridge. Subdomains are not implicitly trusted.
 
-See [PageAgent Integration](docs/PAGE_AGENT_INTEGRATION.md) and [Security and Threat Model](docs/SECURITY_AND_THREAT_MODEL.md).
+See [SAFETY](docs/SAFETY.md) and [Architecture](docs/ARCHITECTURE.md).
+
+---
+
+## User-selectable security level and voice language
+
+Both are exposed in **Settings** (no rebuild needed; the change takes effect on the next command).
+
+### Security Level
+
+| Level | Judge | BLOCK tier | Confirm tap | Use |
+|---|---|---|---|---|
+| Standard (default) | on | enforced | required | real use / production posture |
+| Relaxed | off | enforced | auto-approved | everyday testing — benign commands like "add a calendar event" are no longer over-blocked by the judge, but payments / credentials / install stay blocked |
+| Off (demo) | off | bypassed | auto-approved | demo / developer — every module can be exercised |
+
+Off is safe only because the BLOCK-tier tool names (`make_payment`, `send_message`, `access_passwords`, `install_app`, `silent_control`) have **no `ActionExecutor` handlers** — they fall through to the plugin router (a no-op error) — so unblocking them triggers no real payment / SMS / credential / install action. Standard is the default and the production posture; the app never silently weakens safety on first launch.
+
+### Voice Language
+
+The offline STT/TTS language is chosen in **Settings → Voice language**. English uses the streaming zipformer transducer (`speech/shared/sherpa-asr-en`); every Indic language uses the multilingual Whisper model (`speech/shared/sherpa-asr-whisper`) pinned to that language code. **Speak in the language you have selected** — the English-only transducer cannot transcribe Hindi, so Hindi speech with English selected will not transcribe correctly. There is no automatic language detection today. Changing the language rebuilds the Sherpa engines live (no restart).
 
 ---
 
@@ -325,7 +351,7 @@ The following checklist is the source of truth. A phase is complete only when it
 - [x] Base V2 on the existing Gemma 4 E2B work.
 - [x] Remove Gemma 3n from the runtime contract.
 - [x] Remove `gemma-local` filesystem fallbacks.
-- [x] Normalize model folders under `brain/`, `speech/`, `vision/`, `ocr/` and `staging/`.
+- [x] Normalize model folders under `brain/`, `speech/`, `vision/` and `staging/`. (OCR is bundled ML Kit Latin in the APK — it is not a downloaded model and has no model folder; the unused `ModelType.ocr` enum value is retained only for catalogue forward-compat.)
 - [x] Keep Blind Aid independent of the LLM folder.
 - [x] Add invariant checks preventing legacy model paths from returning.
 - [ ] Confirm the current branch contains no dead, unreachable or duplicate V1 implementation after full static review.
@@ -340,12 +366,12 @@ The following checklist is the source of truth. A phase is complete only when it
 - [x] Preserve GPU-to-CPU backend fallback.
 - [x] Add exclusive phone/PageAgent model ownership.
 - [x] Add timeout and error handling for browser planning.
-- [ ] Download the exact artifact on an engineering device.
-- [ ] Prove LiteRT-LM load on Xiaomi 14.
-- [ ] Prove CPU fallback on a supported non-GPU path.
-- [ ] Measure cold load, first token, tokens/second, peak RAM, temperature and battery.
+- [x] Download the exact artifact on an engineering device. (Xiaomi 14, 2026-07-14; bytes authenticated sha256 `181938105e…`.)
+- [x] Prove LiteRT-LM load on Xiaomi 14. (Loads on CPU backend; GPU delegate fails on SM8650 → safe CPU fallback by design.)
+- [x] Prove CPU fallback on a supported non-GPU path. (CPU backend is the running path; cold load ~7.5s, warm ~0.9s.)
+- [ ] Measure cold load, first token, tokens/second, peak RAM, temperature and battery (full benchmark).
 - [ ] Run 50 sequential phone-planning tasks and 50 PageAgent planning tasks without memory duplication.
-- [ ] Record device evidence and update qualification status.
+- [x] Record device evidence and update qualification status. (Phase 5 evidence: `artifacts/validation/xiaomi14/20260714-174410-PHASE3-DEVICE/PHASE5-GEMMA-ON-DEVICE.md`; 18/18 tool-match.)
 
 **Acceptance gate:** device-qualified artifact record; no OOM, corrupt output or duplicate engine allocation.
 
@@ -394,16 +420,19 @@ The following checklist is the source of truth. A phase is complete only when it
 - [ ] Voice command input and spoken response.
 - [ ] Floating assistant lifecycle.
 - [ ] Background VoiceService routing.
-- [ ] Notes CRUD and search.
-- [ ] Skills CRUD and execution.
-- [ ] Memory retrieval and correction.
+- [x] Notes CRUD and search — ✅ 2026-07-14 headless (NotesCrudHeadlessTest on Xiaomi 14).
+- [x] Skills execution through the same safety path — ✅ 2026-07-14 headless (AgentSafetyPipelineHeadlessTest; skill CRUD live-UI remains manual).
+- [x] Memory retrieval and correction — ✅ 2026-07-14 headless (MemoryStoreHeadlessTest).
+- [x] Safety routing (unknown-tool rejection, missing-argument rejection, destructive confirmation, blocked payment/credential/OTP, user-selectable Security Level) — ✅ 2026-07-14 headless (SafetyGuardHeadlessTest + SecurityLevelHeadlessTest).
 - [ ] Accessibility tap, type, swipe, long press and visible-text capture.
 - [ ] Android intent launching and system actions.
 - [ ] CameraX Blind Aid startup, object detection, haptic and spoken guidance.
-- [ ] OCR path.
+- [x] OCR path — ✅ 2026-07-14 headless (OcrControlHeadlessTest on Xiaomi 14: bundled ML Kit Latin recognizes rendered text end-to-end; `recognizeScreen()` honors the MediaProjection gate headlessly). Live on-screen screenshot OCR remains a manual MediaProjection item.
 - [ ] Permission denial and permanent-denial recovery.
 - [ ] Memory-pressure unload and safe reload.
-- [ ] Process restart, app update and model repair.
+- [x] Process restart and app update preserve Room data + model repair — ✅ 2026-07-14 headless (Room survives DB reopen; language-pack uninstall/reinstall/repair proven on device).
+
+The granular per-item ✅/☐ matrix with evidence paths is in [DEVICE_VERIFICATION.md](DEVICE_VERIFICATION.md). Headless-provable items are ✅; live-screen / live-mic / live-camera items remain ☐ until driven manually on the device.
 
 **Acceptance gate:** committed device verification matrix with pass/fail evidence; no old function silently removed.
 
@@ -454,7 +483,7 @@ The following checklist is the source of truth. A phase is complete only when it
 - [x] Diagnostic artifacts are uploaded when a gate fails.
 - [x] Automated Android and Distribution CI passed on the merged V2 head.
 - [x] Final automated evidence and known limitations are recorded in the repository.
-- [ ] Complete Xiaomi 14 and secondary-device gates.
+- [ ] Complete Xiaomi 14 and secondary-device gates. (Xiaomi 14: Phases 5/6/7 done 2026-07-14 — Gemma load, language packs, 28 headless instrumented tests green; live-UI / live-mic / live-camera / 30-min thermal / secondary device remain.)
 - [ ] Freeze model/catalogue versions for release candidate.
 - [ ] Build, sign and verify the release candidate.
 - [x] Merge PR #1 into `main` after automated repository gates passed; physical-device and production-release gates remain blocked.
@@ -467,7 +496,7 @@ The following checklist is the source of truth. A phase is complete only when it
 
 ## Known limitations today
 
-- Gemma 4 E2B has integrity metadata but is not yet physically device-qualified on `main`.
+- Gemma 4 E2B is device-qualified on the primary Xiaomi 14 (loads on CPU, 18/18 tool-match) but not yet on a secondary device; the full 50-task planning/PageAgent benchmark and 30-minute thermal run are not yet recorded.
 - Assamese and several other Indian languages are planned, not downloadable.
 - Baseline speech model presence does not imply production accuracy.
 - Secure Browser is restricted to approved domains and intentionally cannot automate payments, credentials, OTPs, CAPTCHA or legal acceptance.
@@ -479,13 +508,14 @@ The following checklist is the source of truth. A phase is complete only when it
 ## Documentation
 
 - [Implementation status](STATUS.md)
-- [Security and threat model](docs/SECURITY_AND_THREAT_MODEL.md)
-- [Privacy](docs/PRIVACY.md)
-- [PageAgent integration](docs/PAGE_AGENT_INTEGRATION.md)
-- [Model acquisition and distribution](docs/MODEL_ACQUISITION_AND_DISTRIBUTION.md)
-- [Speech model qualification](docs/SPEECH_MODEL_QUALIFICATION.md)
-- [Codex and device handoff](docs/CODEX_AND_DEVICE_HANDOFF.md)
-- [Third-party notices](docs/THIRD_PARTY_NOTICES.md)
+- [Device verification matrix](DEVICE_VERIFICATION.md)
+- [Architecture](docs/ARCHITECTURE.md) and [detailed module walkthrough](docs/local-architecture.md)
+- [Agent flow](docs/agent-flow.md)
+- [Safety](docs/SAFETY.md) and [permissions](docs/permissions.md)
+- [Model acquisition and distribution](docs/MODEL_ACQUISITION_AND_DISTRIBUTION.md) and [models](docs/MODELS.md)
+- [Speech model qualification](docs/SPEECH_MODEL_QUALIFICATION.md) and [voice module](docs/voice-module-implementation.md)
+- [Privacy policy](docs/play-review/privacy-policy.md) and [data safety](docs/play-review/data-safety.md)
+- [Tool schema registry](docs/tool-schema-registry.md)
 
 ---
 
