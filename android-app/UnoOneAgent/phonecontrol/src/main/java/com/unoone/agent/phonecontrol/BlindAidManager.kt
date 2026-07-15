@@ -15,6 +15,7 @@ import com.google.mlkit.vision.objects.DetectedObject
 import com.google.mlkit.vision.objects.ObjectDetection
 import com.google.mlkit.vision.objects.custom.CustomObjectDetectorOptions
 import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
+import com.unoone.agent.core.agent.BlindAidNarrator
 import com.unoone.agent.core.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -100,6 +101,13 @@ class BlindAidManager(
     private var lastSpokenTime = 0L
     private var lastSpokenObject = ""
 
+    // Eyes-free (WS3): periodic spoken scene summary ("In front of you: a chair, a desk, a
+    // person"), throttled by BlindAidNarrator. Set quietMode=true to suppress scene narration
+    // (close-obstacle warnings still fire). State is read/written only from the analyzer thread.
+    @Volatile var quietMode: Boolean = false
+    private var lastSceneNarrationTime = 0L
+    private var lastSceneLabels: Set<String> = emptySet()
+
     fun getAnalyzer(): ImageAnalysis.Analyzer {
         return object : ImageAnalysis.Analyzer {
             private var frameCount = 0
@@ -155,6 +163,26 @@ class BlindAidManager(
             )
         }
         _overlay.value = DetectionOverlay(boxes, aspectRatio)
+
+        // Eyes-free (WS3): periodic spoken scene summary alongside the close-obstacle warnings
+        // below. The throttle (BlindAidNarrator) absorbs label flicker and re-narrates a steady
+        // scene at a longer interval so a blind user keeps a periodic sense of what's in front.
+        val currentLabels = objects.mapNotNull { it.labels.firstOrNull()?.text }.toSet()
+        val now = System.currentTimeMillis()
+        if (BlindAidNarrator.shouldNarrateScene(
+                nowMs = now,
+                lastNarrationMs = lastSceneNarrationTime,
+                lastLabels = lastSceneLabels,
+                currentLabels = currentLabels,
+                quietMode = quietMode
+            )) {
+            val summary = BlindAidNarrator.sceneSummary(currentLabels)
+            if (summary.isNotBlank()) {
+                lastSceneNarrationTime = now
+                lastSceneLabels = BlindAidNarrator.normalize(currentLabels)
+                onFeedbackSpoken(summary)
+            }
+        }
 
         var closestObject: DetectedObject? = null
         var maxArea = 0
