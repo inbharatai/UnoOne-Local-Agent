@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -71,7 +72,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -207,7 +210,10 @@ fun AgentScreen(
                         text = "Blind Aid Active",
                         style = MaterialTheme.typography.labelLarge,
                         color = SafetyOrange,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        // Eyes-free (WS6): announce when Blind Aid turns on/off. Live region so
+                        // TalkBack speaks the change without the user touching the badge.
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
                     )
                 }
             }
@@ -348,6 +354,9 @@ fun AgentScreen(
             OutlinedTextField(
                 value = textInput,
                 onValueChange = { textInput = it },
+                // Eyes-free (WS6): a real floating label (not just a placeholder) so TalkBack
+                // announces "Command" when focus lands on the field.
+                label = { Text("Command") },
                 placeholder = { Text("Type a command...") },
                 modifier = Modifier.weight(1f),
                 singleLine = true,
@@ -399,8 +408,11 @@ fun AgentScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
-            items(timeline) { step ->
-                TimelineStepCard(step)
+            itemsIndexed(timeline) { index, step ->
+                // Eyes-free (WS6): the newest timeline step is a TalkBack live region, so a blind
+                // user hears each progression ("Listening", "Processing", "Done") as it happens
+                // without scrubbing the list. Older steps remain plain cards for review.
+                TimelineStepCard(step, isLatest = index == timeline.lastIndex)
             }
         }
     }
@@ -654,7 +666,7 @@ private fun capabilityIcon(capability: Capability): ImageVector = when (capabili
 }
 
 @Composable
-private fun TimelineStepCard(step: TimelineStep) {
+private fun TimelineStepCard(step: TimelineStep, isLatest: Boolean = false) {
     val color = when (step.status) {
         AgentStatus.LISTENING -> ListeningRed
         AgentStatus.TRANSCRIBING -> TranscribingYellow
@@ -687,7 +699,9 @@ private fun TimelineStepCard(step: TimelineStep) {
     )
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (isLatest) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier),
         colors = CardDefaults.cardColors(
             containerColor = animatedColor.copy(alpha = 0.1f)
         ),
