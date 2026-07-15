@@ -147,6 +147,7 @@ class ActionExecutorToolCoverageTest {
         "draft_email" to obj { put("to", "a@b.com"); put("subject", "s"); put("body", "b") },
         "send_whatsapp" to obj { put("number", "+919999999999"); put("message", "hi") },
         "check_calendar" to JsonObject(emptyMap()),
+        "open_calendar" to JsonObject(emptyMap()),
         "open_calendar_insert" to obj { put("title", "Meeting") },
         "open_dialer" to obj { put("number", "911") },
         "share_text" to obj { put("text", "hi") },
@@ -161,7 +162,11 @@ class ActionExecutorToolCoverageTest {
         "web_search" to obj { put("query", "weather") },
         // describe_scene without MediaProjection permission returns a handled permission Error
         // (not a router fallback); with permission it builds the OCR + context description.
-        "describe_scene" to obj { put("aspect", "any buttons") }
+        "describe_scene" to obj { put("aspect", "any buttons") },
+        // secure_browser_task: the origin resolves (approved), but no _openSecureBrowserTask runner
+        // is wired in this unit test → a handled "Secure Browser is not available" Result.Error
+        // (NOT a router fallback). A non-approved origin would return the "not approved" error.
+        "secure_browser_task" to obj { put("origin", "unigurus"); put("task", "fill the form") }
     )
 
     private fun obj(build: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit): JsonObject =

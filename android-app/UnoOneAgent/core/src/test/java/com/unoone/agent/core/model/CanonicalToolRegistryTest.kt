@@ -16,9 +16,9 @@ import org.junit.Test
 class CanonicalToolRegistryTest {
 
     @Test
-    fun hasExactly26Tools() {
-        assertEquals(26, CanonicalToolRegistry.tools.size)
-        assertEquals(26, CanonicalToolRegistry.names.size)
+    fun hasExactly28Tools() {
+        assertEquals(28, CanonicalToolRegistry.tools.size)
+        assertEquals(28, CanonicalToolRegistry.names.size)
     }
 
     @Test
@@ -45,6 +45,17 @@ class CanonicalToolRegistryTest {
     fun schemaForReturnsNullForUnknown() {
         assertNull(CanonicalToolRegistry.schemaFor("not_a_tool"))
         assertNull(CanonicalToolRegistry.schemaFor(""))
+    }
+
+    @Test
+    fun secureBrowserTaskRequiresOriginAndTask() {
+        assertTrue(CanonicalToolRegistry.isKnown("secure_browser_task"))
+        val s = CanonicalToolRegistry.schemaFor("secure_browser_task")!!
+        assertEquals(ToolParamType.STRING, s.param("origin")!!.type)
+        assertTrue(s.param("origin")!!.required)
+        assertEquals(ToolParamType.STRING, s.param("task")!!.type)
+        assertTrue(s.param("task")!!.required)
+        assertEquals(2, s.requiredParams.size)
     }
 
     @Test
@@ -77,7 +88,7 @@ class CanonicalToolRegistryTest {
     @Test
     fun noArgToolsHaveNoRequiredParams() {
         for (name in listOf("open_chrome", "open_camera", "read_screen", "ocr_screen",
-            "check_calendar", "delete_all_notes", "export_data", "detect_objects",
+            "check_calendar", "open_calendar", "delete_all_notes", "export_data", "detect_objects",
             "deactivate_blind_aid")) {
             val s = CanonicalToolRegistry.schemaFor(name)!!
             assertTrue("$name should have no required params", s.requiredParams.isEmpty())

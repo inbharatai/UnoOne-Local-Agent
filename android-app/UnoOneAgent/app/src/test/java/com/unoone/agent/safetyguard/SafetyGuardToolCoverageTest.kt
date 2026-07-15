@@ -35,6 +35,7 @@ class SafetyGuardToolCoverageTest {
             "draft_email" to RiskLevel.STRONG_CONFIRM,
             "send_whatsapp" to RiskLevel.STRONG_CONFIRM,
             "check_calendar" to RiskLevel.DIRECT,
+            "open_calendar" to RiskLevel.DIRECT,
             "open_calendar_insert" to RiskLevel.CONFIRM,
             "open_dialer" to RiskLevel.CONFIRM,
             "share_text" to RiskLevel.CONFIRM,
@@ -45,7 +46,8 @@ class SafetyGuardToolCoverageTest {
             "deactivate_blind_aid" to RiskLevel.DIRECT,
             "voice_recording" to RiskLevel.CONFIRM,   // mic capture → single confirmation
             "web_search" to RiskLevel.CONFIRM,         // online lookup → single confirmation
-            "describe_scene" to RiskLevel.STRONG_CONFIRM  // captures + analyzes the screen
+            "describe_scene" to RiskLevel.STRONG_CONFIRM,  // captures + analyzes the screen
+            "secure_browser_task" to RiskLevel.CONFIRM  // drives the Secure Browser on an approved origin
         )
 
         for ((tool, expectedLevel) in expected) {

@@ -69,6 +69,15 @@ class ContextSnapshotTest {
         assertTrue("Snapshot with no sources must report isEmpty()", snapshot.isEmpty())
     }
 
+    @Test
+    fun snapshotPopulatesVoiceLanguageFromProvider() = runBlocking {
+        // The orchestrator wires this provider to the unoone_settings/voice_language preference so
+        // the planner knows the user's current language and keeps its reply in it (A6).
+        val parser = CommandParser(voiceLanguageProvider = { "hi" })
+        val snapshot = parser.buildContextSnapshot("create note buy milk", emptyList(), "")
+        assertEquals("hi", snapshot.voiceLanguage)
+    }
+
     private class FakeNoteDao(private val recentNotes: List<NoteEntity>) : NoteDao {
         override suspend fun insert(note: NoteEntity): Long = 0
         override suspend fun update(note: NoteEntity) = Unit

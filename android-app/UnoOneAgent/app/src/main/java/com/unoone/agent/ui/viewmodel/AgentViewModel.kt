@@ -154,6 +154,28 @@ class AgentViewModel(
         }
     }
 
+    /**
+     * Eyes-free (WS5): inject a command as a VOICE input so the orchestrator speaks the result
+     * (milestone narration + the final answer). Used by the main-page "Read Screen" capability so a
+     * blind user hears what's on screen instead of only seeing it in the timeline. The full safety
+     * pipeline (permissions, risk, confirmation) still applies — this only sets the input type.
+     */
+    fun onVoiceCommand(text: String) {
+        viewModelScope.launch {
+            orchestrator.processCommand(text, InputType.VOICE)
+        }
+    }
+
+    /**
+     * Eyes-free (WS4): wire the `secure_browser_task` tool to the UI. The handler navigates to the
+     * Secure Browser screen and stashes the (origin, task) so the PageAgent run starts once the
+     * Gemma lease is acquired and the runtime is ready. Set once from [com.unoone.agent.UnoOneApp]
+     * which owns the nav controller + SecureBrowserViewModel. Pass null to detach (e.g. on dispose).
+     */
+    fun setSecureBrowserTaskHandler(handler: ((origin: String, task: String) -> Unit)?) {
+        orchestrator.onSecureBrowserTask = handler
+    }
+
     fun onQuickAction(label: String) {
         viewModelScope.launch {
             val command = when (label) {

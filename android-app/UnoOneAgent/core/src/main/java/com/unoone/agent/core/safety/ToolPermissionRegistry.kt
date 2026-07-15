@@ -43,6 +43,7 @@ object ToolPermissionRegistry {
         "open_camera" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.CAMERA)),
 
         // Calendar.
+        "open_calendar" to listOf(PermissionRequirement.None), // launcher intent; no permission
         "check_calendar" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.READ_CALENDAR)),
         "open_calendar_insert" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.WRITE_CALENDAR)),
 
@@ -65,10 +66,18 @@ object ToolPermissionRegistry {
         // (ConnectivityManager check) lives in ActionExecutor.
         "web_search" to listOf(PermissionRequirement.None),
 
-        // Blind aid — camera + accessibility (uses camera preview + accessibility for context).
+        // Secure Browser task — opens the hardened WebView session. No runtime permission is needed
+        // at the tool level: navigation is origin-gated by ApprovedOriginPolicy and the in-browser
+        // action policy handles its own confirm/takeover. Risk tier CONFIRM lives in SafetyGuard.
+        "secure_browser_task" to listOf(PermissionRequirement.None),
+
+        // Blind aid — CameraX preview + on-device ML Kit object detection + haptic/tone/TTS guidance.
+        // Pure camera path (BlindAidManager uses no Accessibility service), so it needs ONLY the
+        // CAMERA runtime permission — not the Accessibility gate it previously carried. That vestigial
+        // Accessibility requirement is what blocked Blind Aid with a misleading "needs system access"
+        // prompt even after the camera was granted. STRONG_CONFIRM risk (in SafetyGuard) still gates it.
         "detect_objects" to listOf(
-            PermissionRequirement.RuntimePerm(Manifest.permission.CAMERA),
-            PermissionRequirement.Accessibility
+            PermissionRequirement.RuntimePerm(Manifest.permission.CAMERA)
         ),
 
         "deactivate_blind_aid" to listOf(PermissionRequirement.None),

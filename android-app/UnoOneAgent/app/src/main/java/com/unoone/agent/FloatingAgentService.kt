@@ -34,6 +34,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.*
@@ -93,6 +97,17 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
             }
             startActivity(intent)
             Toast.makeText(this, "Permissions required. Opening UnoOne...", Toast.LENGTH_SHORT).show()
+        }
+
+        // System permissions (Accessibility / MediaProjection / Overlay) need a settings/consent
+        // screen — hand off to MainActivity, which deep-links to the right one and resumes the
+        // stashed command on return. Mirrors the runtime-perm redirect above.
+        orchestrator.onSystemPermissionRequired = { _ ->
+            val intent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            Toast.makeText(this, "System access required. Opening UnoOne...", Toast.LENGTH_SHORT).show()
         }
 
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -262,7 +277,14 @@ fun FloatingBubbleUI(onDrag: (Float, Float) -> Unit, onClick: () -> Unit) {
         shadowElevation = 12.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.SmartToy, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
+            Icon(
+                imageVector = Icons.Default.SmartToy,
+                // Eyes-free (WS6): TalkBack reads this when the floating bubble gets focus. The
+                // bubble is both tap (open chat) and drag (move), so the label says both.
+                contentDescription = "UnoOne AI assistant — double tap to open, drag to move",
+                tint = Color.White,
+                modifier = Modifier.size(32.dp)
+            )
         }
     }
 }
@@ -295,11 +317,11 @@ fun ChatOverlayCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.SmartToy, null, tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.SmartToy, contentDescription = "UnoOne AI", tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.dp))
                 Text("UnoOne AI", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = onClose) { Icon(Icons.Default.Close, null) }
+                IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close") }
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -307,12 +329,18 @@ fun ChatOverlayCard(
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 val scrollState = rememberScrollState()
                 Column(modifier = Modifier.verticalScroll(scrollState)) {
-                    steps.forEach { step ->
+                    steps.forEachIndexed { index, step ->
+                        // Eyes-free (WS6): the most recent step is a TalkBack live region, so a blind
+                        // user hears progress ("Listening", "Processing", "Done") without touching the
+                        // list. Earlier steps are plain text for review.
+                        val isLatest = index == steps.lastIndex
                         Text(
                             text = "${step.status}: ${step.label}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (step.status.name.contains("FAILED")) MaterialTheme.colorScheme.error else Color.Unspecified,
-                            modifier = Modifier.padding(vertical = 4.dp)
+                            modifier = Modifier
+                                .padding(vertical = 4.dp)
+                                .then(if (isLatest) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier)
                         )
                     }
                 }
@@ -323,7 +351,11 @@ fun ChatOverlayCard(
                     value = text,
                     onValueChange = { text = it },
                     modifier = Modifier.weight(1f),
+                    // Eyes-free (WS6): a real floating label (not just a placeholder) so TalkBack
+                    // announces the field's purpose when focus lands on it.
+                    label = { Text("Command") },
                     placeholder = { Text("What can I help with?") },
+                    singleLine = true,
                     shape = CircleShape
                 )
                 Spacer(Modifier.width(8.dp))
@@ -360,7 +392,10 @@ fun ChatOverlayCard(
                         containerColor = if (isListening) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer
                     )
                 ) {
-                    Icon(Icons.Default.Mic, null)
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = if (isListening) "Stop listening" else "Speak a command"
+                    )
                 }
 
                 Spacer(Modifier.width(4.dp))
@@ -376,7 +411,7 @@ fun ChatOverlayCard(
                     modifier = Modifier.size(48.dp),
                     shape = CircleShape
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.Send, null)
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send command")
                 }
             }
         }

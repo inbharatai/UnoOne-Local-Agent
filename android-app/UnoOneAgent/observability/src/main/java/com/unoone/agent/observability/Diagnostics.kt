@@ -40,6 +40,20 @@ object Diagnostics {
         recordActionResult(tool, success)
     }
 
+    /**
+     * Records the wall-clock duration of a named pipeline stage (e.g. "planning",
+     * "safety_judge", "chat_inference", "command_total"), stored as `stage_<name>_last_ms`.
+     * Negative durations are clamped to 0 so a clock skew can never record a misleading negative.
+     * Called from [com.unoone.agent.AgentOrchestrator] so per-stage latency is observable alongside
+     * the existing tool/STT/TTS counters — replacing the overloaded whole-command `modelLatencyMs`
+     * view with a per-stage breakdown while `ActionLogEntity.modelLatencyMs` is kept for log continuity.
+     */
+    fun recordStage(stageName: String, ms: Long) {
+        val clamped = if (ms < 0) 0L else ms
+        metrics["stage_${stageName}_last_ms"] = clamped
+        Logger.i("Stage $stageName: ${clamped}ms")
+    }
+
     fun getAllMetrics(): Map<String, Long> = metrics.toMap()
 
     fun reset() {

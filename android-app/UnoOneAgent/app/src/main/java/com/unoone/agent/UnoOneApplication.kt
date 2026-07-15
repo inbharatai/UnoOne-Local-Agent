@@ -97,6 +97,15 @@ class UnoOneApplication : Application() {
         }
 
         VoiceService.voiceCommandCallback = { command -> postVoiceCommand(command) }
+        // Eyes-free (WS2): when the KWS loop fires a wake word, speak the "I'm listening" cue via the
+        // shared VoiceModule. Dispatched off the audio thread (Dispatchers.IO) so the cue does not
+        // block the spotting loop from capturing the command that follows.
+        VoiceService.onWakeWord = {
+            appScope.launch(Dispatchers.IO) {
+                runCatching { sharedVoiceModule.speak("Yes, I'm listening.") }
+                    .onFailure { Logger.w("UnoOneApplication: wake cue speak failed: ${it.message}") }
+            }
+        }
         try {
             VoiceService.start(this)
         } catch (e: Exception) {

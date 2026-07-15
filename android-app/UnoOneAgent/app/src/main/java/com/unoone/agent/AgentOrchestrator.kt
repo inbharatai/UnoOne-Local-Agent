@@ -14,6 +14,9 @@ import com.unoone.agent.core.model.compoundSteps
 import com.unoone.agent.core.agent.LoopDecision
 import com.unoone.agent.core.agent.ReActLoopController
 import com.unoone.agent.core.agent.SafetyJudgePolicy
+import com.unoone.agent.core.agent.IntentClassifier
+import com.unoone.agent.core.agent.IntentType
+import com.unoone.agent.core.agent.NarrationPolicy
 import com.unoone.agent.core.agent.StopReason
 import com.unoone.agent.core.agent.ToolHealthTracker
 import com.unoone.agent.core.agent.BrainHealthPolicy
@@ -36,6 +39,7 @@ import com.unoone.agent.storage.dao.MemoryDao
 import com.unoone.agent.storage.dao.NoteDao
 import com.unoone.agent.storage.dao.SkillDao
 import com.unoone.agent.storage.entity.ActionLogEntity
+import com.unoone.agent.voice.VoiceLanguage
 import com.unoone.agent.voice.VoiceModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,14 +48,24 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /** Max wall-clock time to wait for a user confirmation before denying for safety (avoids a hung agent). */
 private const val CONFIRMATION_TIMEOUT_MS = 60_000L
+
+/**
+ * Minimum gap between spoken step narrations (eyes-free/WS2). Rapid timeline milestones are throttled
+ * so a blind user isn't flooded with cues; the final answer is spoken through the same serialized
+ * channel ([AgentOrchestrator.speakAnswer]) so it never overlaps a queued milestone.
+ */
+private const val NARRATION_MIN_INTERVAL_MS = 1_200L
 
 /**
  * Enables the second-pass LLM safety judge on every validated tool step when the brain is loaded.
@@ -112,6 +126,28 @@ class AgentOrchestrator(
     lateinit var voiceModule: VoiceModule
         private set
 
+    // ---- Eyes-free (WS2) step narration -----------------------------------------------------
+    // The input type of the command currently being processed; set at processCommand entry so addStep
+    // knows whether to speak milestones. VOICE commands always narrate; TEXT commands narrate only
+    // when [narrateTextCommands] is toggled on (default off — text users have the timeline to read).
+    @Volatile
+    private var currentInputType: InputType = InputType.TEXT
+
+    /** When true, TEXT commands also get spoken step narration (default off; VOICE always narrates). */
+    @Volatile
+    var narrateTextCommands: Boolean = false
+
+    /**
+     * Single serialized TTS channel. Milestone narration is launched async under this mutex; the
+     * final answer ([speakAnswer]) acquires it too, so a queued milestone drains before the answer
+     * plays — narration and the final answer never overlap on the speaker.
+     */
+    private val speakMutex = Mutex()
+
+    /** Timestamp of the last spoken milestone; used by the [NARRATION_MIN_INTERVAL_MS] throttle. */
+    private val lastNarrationAt = AtomicLong(0L)
+    // ----------------------------------------------------------------------------------------
+
     // Extracted components — Phase 1A: God object split
     private val memoryModule = com.unoone.agent.memory.MemoryModule(memoryDao)
     // One OcrControl shared by the parser (OCR fallback for the context snapshot) and the
@@ -126,7 +162,8 @@ class AgentOrchestrator(
         ocrControl = ocrControl,
         memoryModule = memoryModule,
         noteDao = noteDao,
-        skillDao = skillDao
+        skillDao = skillDao,
+        voiceLanguageProvider = { currentVoiceLanguageCode() }
     )
     private val actionExecutor = ActionExecutor(
         context = context,
@@ -162,6 +199,28 @@ class AgentOrchestrator(
                 commandParser.describeSceneWithVision(imageBytes, aspect)
             }
         }
+        actionExecutor._openSecureBrowserTask = { origin, task -> openSecureBrowserTask(origin, task) }
+    }
+
+    /**
+     * Eyes-free (WS4): UI-owned handler invoked by the `secure_browser_task` tool. Set by
+     * MainActivity (which owns the SecureBrowserViewModel + nav controller) via AgentViewModel. The
+     * handler navigates to the Secure Browser screen and stashes the pending (origin, task) so the
+     * PageAgent run starts once the Gemma lease is acquired and the runtime is ready. When null the
+     * tool returns a handled "not available" error instead of a fake success. The live executeTask +
+     * spoken page read are device-time gates (see DEVICE_VERIFICATION.md).
+     */
+    @Volatile
+    var onSecureBrowserTask: ((origin: String, task: String) -> Unit)? = null
+
+    private fun openSecureBrowserTask(origin: String, task: String): Result<String> {
+        val handler = onSecureBrowserTask
+            ?: return Result.Error(
+                "Secure Browser is not available right now. Open it from the main page first."
+            )
+        handler(origin, task)
+        return if (task.isBlank()) Result.Success("Opening Secure Browser for $origin.")
+        else Result.Success("Opening Secure Browser for $origin. I'll start: $task")
     }
 
     /** Speaks text via the shared VoiceModule, used by the speak_response tool. */
@@ -172,6 +231,20 @@ class AgentOrchestrator(
         } catch (e: Exception) {
             Logger.e("Orchestrator: speak_response exception", e)
         }
+    }
+
+    /**
+     * The user's currently selected voice/TTS language code, read fresh per call from the same
+     * `unoone_settings`/`voice_language` preference the voice module uses (so a Settings change
+     * takes effect on the next command without a restart). Surfaced to the planner via the context
+     * snapshot so the model keeps its reply in the user's language. Fails safe to the default
+     * ("en") if the preference cannot be read.
+     */
+    private fun currentVoiceLanguageCode(): String = try {
+        context.getSharedPreferences(VoiceLanguage.PREF_NAME, Context.MODE_PRIVATE)
+            .getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT) ?: VoiceLanguage.DEFAULT
+    } catch (_: Exception) {
+        VoiceLanguage.DEFAULT
     }
 
     /**
@@ -364,6 +437,12 @@ class AgentOrchestrator(
         _isProcessing.value = true
         _timelineSteps.value = emptyList()
 
+        // Eyes-free (WS2): remember this command's input type for step narration, and interrupt any
+        // TTS still playing from the previous command so a new spoken command isn't talked over.
+        currentInputType = inputType
+        runCatching { voiceModule.stopSpeaking() }
+        lastNarrationAt.set(0L)
+
         // SECURITY: Sanitize user input before processing
         val sanitizedText = InputSanitizer.sanitize(text)
         if (sanitizedText.isBlank()) {
@@ -460,6 +539,46 @@ class AgentOrchestrator(
                 return
             }
 
+            // Step 1b: Intent routing — classify the command into a lane BEFORE planning.
+            //
+            // Simple conversational questions (CHAT) are answered in ONE inference on a dedicated
+            // tool-less conversation: no agent planning, no safety/confirm gate (a tool-less answer
+            // has nothing to gate), no ReAct loop, no screen/OCR context snapshot. Everything else —
+            // a rule match (FAST_ACTION), an action order, or an ambiguous input (AGENT_ACTION /
+            // UNKNOWN) — flows into the proven planning → safety → execute → ReAct path below.
+            // UNKNOWN defaults into that path on purpose: a specific multi-step order the classifier
+            // does not recognize is still caught by the agent pipeline (owner-endorsed: chats skip
+            // the agent flow; specific orders do not).
+            val ruleMatch = commandParser.parse(sanitizedText)
+            val intent = IntentClassifier.classify(sanitizedText, ruleMatch)
+            Logger.i("Orchestrator: intent=$intent ruleMatch=${ruleMatch?.tool} text=\"${sanitizedText.take(60)}\"")
+            if (intent == IntentType.CHAT && commandParser.isModelLoaded()) {
+                val chatStart = System.currentTimeMillis()
+                addStep(AgentStatus.UNDERSTANDING, "Thinking", sanitizedText)
+                val chatResult = commandParser.chat(sanitizedText)
+                val answer = (chatResult as? Result.Success)?.data
+                com.unoone.agent.observability.Diagnostics.recordStage("chat_inference", System.currentTimeMillis() - chatStart)
+                if (!answer.isNullOrBlank()) {
+                    if (inputType == InputType.VOICE) {
+                        addStep(AgentStatus.SPEAKING, "Response", answer)
+                        speakAnswer(answer)
+                    } else {
+                        addStep(AgentStatus.DONE, "Done", answer)
+                    }
+                    lastToolResult = answer
+                    saveLog(log.copy(
+                        selectedTool = "chat",
+                        status = "success",
+                        modelLatencyMs = System.currentTimeMillis() - chatStart
+                    ))
+                    releaseProcessingLock()
+                    return
+                }
+                // Chat produced no answer (brain not loaded, conversation unavailable, timed out, or
+                // blank) — fall through to the agent pipeline so the user still gets a response.
+                Logger.w("Orchestrator: CHAT lane produced no answer; falling back to agent pipeline")
+            }
+
             // Step 2: Planning / Intent Extraction — delegate to CommandParser.
             // We ask for provenance (rule-based vs LLM) because the ReAct loop may only continue a
             // conversation that the LLM actually started — a rule match never opened one.
@@ -471,6 +590,7 @@ class AgentOrchestrator(
             // commands stream nothing — identical to before.
             val streamingBuffer = StringBuilder()
             var streamingStepAdded = false
+            val planningStart = System.currentTimeMillis()
             val parseOutcome = try {
                 if (STREAMING_INFERENCE_ENABLED) {
                     commandParser.parseStreamingWithProvenance(sanitizedText, contextCommands, lastToolResult) { delta ->
@@ -492,6 +612,7 @@ class AgentOrchestrator(
                 Logger.w("Orchestrator: streaming plan unavailable, falling back to sync plan (${e.message})")
                 commandParser.parseAsyncWithProvenance(sanitizedText, contextCommands, lastToolResult)
             }
+            com.unoone.agent.observability.Diagnostics.recordStage("planning", System.currentTimeMillis() - planningStart)
             val toolCall = parseOutcome.toolCallOrNull()
             if (toolCall == null) {
                 addStep(AgentStatus.FAILED, "Accuracy Alert", "Intent not clear. Please rephrase.")
@@ -582,8 +703,7 @@ class AgentOrchestrator(
                         addStep(AgentStatus.DONE, "Done", observation)
                     } else if (inputType == InputType.VOICE) {
                         addStep(AgentStatus.SPEAKING, "Response", observation)
-                        voiceModule.speak(observation)
-                            .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: Response speak failed: $msg") }
+                        speakAnswer(observation)
                     } else {
                         addStep(AgentStatus.DONE, "Done", observation)
                     }
@@ -604,6 +724,10 @@ class AgentOrchestrator(
             // Single release point. releaseProcessingLock() already sets processingLock=false;
             // the extra set(false) was dead code that could clobber a concurrent command's lock
             // in the (suspension-free) window between an early return's release and this finally.
+            // Command-to-completion latency for every lane (chat / rule / agent / error), recorded
+            // here so no return path is missed. ActionLogEntity.modelLatencyMs is kept per-path for
+            // log continuity; this is the diagnostics-aggregate total.
+            com.unoone.agent.observability.Diagnostics.recordStage("command_total", System.currentTimeMillis() - startTime)
             releaseProcessingLock()
         }
     }
@@ -696,8 +820,7 @@ class AgentOrchestrator(
             if (inputType == InputType.VOICE) {
                 val responseText = combined.getOrNull() ?: ""
                 addStep(AgentStatus.SPEAKING, "Response", responseText)
-                voiceModule.speak(responseText)
-                    .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: Compound speak failed: $msg") }
+                speakAnswer(responseText)
             }
         }
         saveLog(log.copy(
@@ -829,8 +952,7 @@ class AgentOrchestrator(
                     }
                     if (inputType == InputType.VOICE) {
                         addStep(AgentStatus.SPEAKING, "Response", spoken)
-                        voiceModule.speak(spoken)
-                            .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: ReAct speak failed: $msg") }
+                        speakAnswer(spoken)
                     } else {
                         addStep(AgentStatus.DONE, "Done", spoken)
                     }
@@ -911,8 +1033,19 @@ class AgentOrchestrator(
         // event" via a false-positive UNSAFE — RELAXED/OFF turn that off). The keyword tier then
         // stands unchanged, so this never creates a safety hole. Gated by a flag so the per-step
         // latency cost of an extra inference can be turned off if needed.
-        if (judgeEnabled && SAFETY_JUDGE_ENABLED && commandParser.isModelLoaded()) {
+        //
+        // DIRECT tools are also skipped: the judge's value is catching paraphrased harm the keyword
+        // tier UNDER-rates, and DIRECT is by definition the inert/launch tier (speak_response,
+        // open_chrome, open_app, open_calendar, check_calendar, create_note, search_notes,
+        // summarize_text, deactivate_blind_aid). Running a second inference + "stricter verdict"
+        // bias on these is what produced the "speak_response → CONFIRM" confirmation popup for plain
+        // answers. The keyword tier (SafetyGuard.classify + classifyFromInput) still classifies
+        // them, so no safety hole is created; the judge still runs for every CONFIRM/STRONG_CONFIRM/
+        // BLOCK tier where escalation matters.
+        if (SafetyJudgePolicy.shouldRun(judgeEnabled, SAFETY_JUDGE_ENABLED, commandParser.isModelLoaded(), riskLevel)) {
+            val judgeStart = System.currentTimeMillis()
             val verdict = commandParser.judgeSafety(toolCall.tool, toolCall.args.toString(), sanitizedText)
+            com.unoone.agent.observability.Diagnostics.recordStage("safety_judge", System.currentTimeMillis() - judgeStart)
             if (verdict is Result.Success) {
                 val judged = SafetyJudgePolicy.escalate(riskLevel, verdict.data)
                 if (judged != riskLevel) {
@@ -1040,6 +1173,42 @@ class AgentOrchestrator(
             _timelineSteps.value = _timelineSteps.value + TimelineStep(status, label, detail)
         } catch (e: Exception) {
             Logger.e("Orchestrator: Failed to add timeline step", e)
+        }
+        narrateMilestone(status, label, detail)
+    }
+
+    /**
+     * Eyes-free (WS2): speak a short milestone phrase for the given timeline step when the current
+     * command is a voice command (or [narrateTextCommands] is on). Async + serialized via
+     * [speakMutex] so it never blocks the pipeline nor overlaps the final answer. Throttled by
+     * [NARRATION_MIN_INTERVAL_MS] to avoid cue-spam. The phrase selection lives in [NarrationPolicy]
+     * (pure, JVM-tested); returns early when the policy says the step should stay silent.
+     */
+    private fun narrateMilestone(status: AgentStatus, label: String, detail: String) {
+        if (currentInputType != InputType.VOICE && !narrateTextCommands) return
+        val phrase = NarrationPolicy.narrationFor(status, label, detail) ?: return
+        val now = System.currentTimeMillis()
+        if (now - lastNarrationAt.get() < NARRATION_MIN_INTERVAL_MS) return
+        lastNarrationAt.set(now)
+        scope.launch {
+            speakMutex.withLock {
+                voiceModule.speak(phrase)
+                    .onError { msg: String, _: Throwable? -> Logger.w("Orchestrator: milestone narration failed: $msg") }
+            }
+        }
+    }
+
+    /**
+     * Speak the final answer through the same serialized channel as milestone narration, so a queued
+     * milestone drains before the answer plays (no overlap). Blocks the calling coroutine while
+     * speaking — the timeline steps are already set, and the processing lock is released only after
+     * the answer finishes, keeping the voice response atomic with respect to the next command.
+     */
+    private suspend fun speakAnswer(text: String) {
+        if (text.isBlank()) return
+        speakMutex.withLock {
+            voiceModule.speak(text)
+                .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: answer speak failed: $msg") }
         }
     }
 

@@ -79,6 +79,31 @@ class MainActivity : ComponentActivity() {
             requestPermissionLauncher.launch(missing.toTypedArray())
         }
 
+        // System permissions (Accessibility / MediaProjection / Overlay) cannot be granted via the
+        // runtime-permission dialog — they each need their own settings/consent screen. Surface the
+        // first still-missing one as a one-tap deep-link, stash the command in the orchestrator
+        // (it sets pendingCommand itself before invoking this callback), and resume it on return.
+        agentOrchestrator.onSystemPermissionRequired = { missing ->
+            val intent = missing.firstNotNullOfOrNull { req ->
+                PermissionManager.getRequirementIntent(this, req)
+            }
+            if (intent != null) {
+                try {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                    Toast.makeText(
+                        this,
+                        "Grant the system access, then return — your command resumes.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } catch (_: Exception) {
+                    Toast.makeText(this, "Unable to open system settings.", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                Toast.makeText(this, "System access is required for that action.", Toast.LENGTH_LONG).show()
+            }
+        }
+
         val agentViewModel = AgentViewModel(agentOrchestrator, voiceModule)
         val notesViewModel = NotesViewModel(database.noteDao())
         val logsViewModel = LogsViewModel(database.actionLogDao())
@@ -92,7 +117,8 @@ class MainActivity : ComponentActivity() {
         val secureBrowserViewModel = SecureBrowserViewModel(
             this,
             app.secureBrowserModelLease,
-            database.actionLogDao()
+            database.actionLogDao(),
+            voiceModule
         )
 
         setContent {
@@ -196,6 +222,10 @@ class MainActivity : ComponentActivity() {
             startService(Intent(this, FloatingAgentService::class.java))
         }
         (application as? UnoOneApplication)?.reloadLlmIfUnloaded()
+        // Resume a command that was paused on a missing system permission once the user returns
+        // from the settings/consent screen. No-op when nothing is pending; the orchestrator re-checks
+        // access and re-surfaces only whatever is still missing.
+        agentOrchestrator.clearPendingAndReExecute()
     }
 }
 
@@ -214,6 +244,21 @@ fun UnoOneApp(
     secureBrowserViewModel: SecureBrowserViewModel
 ) {
     val navController = rememberNavController()
+
+    // Eyes-free (WS4): bridge the `secure_browser_task` tool (fired by the orchestrator with an
+    // already-approved origin) to the Secure Browser screen — navigate there and stash the pending
+    // (origin, task) so the PageAgent run starts once the Gemma lease + runtime are ready. The live
+    // executeTask + spoken page read are device-time gates; this wiring only requests the UI handoff.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        agentViewModel.setSecureBrowserTaskHandler { origin, task ->
+            secureBrowserViewModel.setPendingTask(origin, task)
+            navController.navigate(com.unoone.agent.ui.navigation.Screen.SecureBrowser.route)
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { agentViewModel.setSecureBrowserTaskHandler(null) }
+    }
+
     UnoOneNavHost(
         navController = navController,
         agentViewModel = agentViewModel,

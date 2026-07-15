@@ -252,6 +252,29 @@ class RuleBasedParserTest {
     }
 
     @Test
+    fun testOpenCalendarLaunches() {
+        // Regression: plain "open calendar" used to hit the calendar-keyword branch, find no
+        // check/add verb, return null, and never reach the open_app catch-all. Now it routes to
+        // the dedicated open_calendar launcher.
+        for (phrase in listOf(
+            "open calendar", "open the calendar", "open my calendar", "open calendar app",
+            "launch calendar", "launch the calendar", "launch calendar app",
+            "show calendar app", "show the calendar app"
+        )) {
+            val toolCall = RuleBasedParser.parse(phrase)
+            assertNotNull("$phrase should parse", toolCall)
+            assertEquals("$phrase -> open_calendar", "open_calendar", toolCall!!.tool)
+        }
+    }
+
+    @Test
+    fun testOpenCalendarInsertStillRoutesToInsert() {
+        val toolCall = RuleBasedParser.parse("add meeting to calendar")
+        assertNotNull(toolCall)
+        assertEquals("open_calendar_insert", toolCall!!.tool)
+    }
+
+    @Test
     fun testReadScreen() {
         val toolCall = RuleBasedParser.parse("read screen")
         assertNotNull(toolCall)
@@ -295,5 +318,68 @@ class RuleBasedParserTest {
         assertNotNull(toolCall)
         assertEquals("system_control", toolCall!!.tool)
         assertEquals("scroll_down", toolCall.args["action"]?.toString()?.replace("\"", ""))
+    }
+
+    // Eyes-free (WS4): the secure-browser friendly names are domain-specific so a trailing task
+    // clause is not split off, and each friendly name resolves to its canonical approved origin.
+    @Test
+    fun openUnigurusRoutesToSecureBrowserNavigateOnly() {
+        val toolCall = RuleBasedParser.parse("open unigurus")
+        assertNotNull(toolCall)
+        assertEquals("secure_browser_task", toolCall!!.tool)
+        assertEquals("https://unigurus.com", toolCall.args["origin"]?.jsonPrimitive?.content)
+        assertEquals("", toolCall.args["task"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun openUniassistAndFillFormKeepsTaskIntact() {
+        val toolCall = RuleBasedParser.parse("open uniassist and fill the profile form")
+        assertNotNull(toolCall)
+        assertEquals("secure_browser_task", toolCall!!.tool)
+        assertEquals("https://uniassist.ai", toolCall.args["origin"]?.jsonPrimitive?.content)
+        assertEquals("fill the profile form", toolCall.args["task"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun eachApprovedFriendlyNameResolvesToItsCanonicalOrigin() {
+        val cases = listOf(
+            "open testsprep" to "https://testsprep.in",
+            "open inbharat and read the page" to "https://inbharat.ai",
+            "open uni-assist" to "https://uniassist.ai",
+            "open in bharat" to "https://inbharat.ai"
+        )
+        for ((command, expectedOrigin) in cases) {
+            val toolCall = RuleBasedParser.parse(command)
+            assertNotNull("Failed to parse: $command", toolCall)
+            assertEquals("secure_browser_task", toolCall!!.tool)
+            assertEquals(expectedOrigin, toolCall.args["origin"]?.jsonPrimitive?.content)
+        }
+    }
+
+    @Test
+    fun secureBrowserPhraseDefaultsToUnigurus() {
+        val toolCall = RuleBasedParser.parse("secure browser")
+        assertNotNull(toolCall)
+        assertEquals("secure_browser_task", toolCall!!.tool)
+        assertEquals("https://unigurus.com", toolCall.args["origin"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun friendlyNameInsideAnUnrelatedIntentIsNotHijackedIntoBrowser() {
+        // "inbharat" appears, but the user wants a NOTE — no open/launch verb + "secure browser".
+        // Must route to create_note, not secure_browser_task.
+        val toolCall = RuleBasedParser.parse("create a note about inbharat")
+        assertNotNull(toolCall)
+        assertEquals("create_note", toolCall!!.tool)
+    }
+
+    @Test
+    fun openUnigurusAndFillFormBeatsTheFillBranch() {
+        // Regression: the `fill` gesture branch must not shadow secure_browser_task.
+        val toolCall = RuleBasedParser.parse("open unigurus and fill the contact form")
+        assertNotNull(toolCall)
+        assertEquals("secure_browser_task", toolCall!!.tool)
+        assertEquals("https://unigurus.com", toolCall.args["origin"]?.jsonPrimitive?.content)
+        assertEquals("fill the contact form", toolCall.args["task"]?.jsonPrimitive?.content)
     }
 }

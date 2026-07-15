@@ -16,7 +16,14 @@ data class ContextSnapshot(
     /** Last few commands the user issued (oldest→newest), for continuity/disambiguation. */
     val recentCommands: List<String> = emptyList(),
     /** Human-readable result of the most recent tool execution, if any. */
-    val lastToolResult: String = ""
+    val lastToolResult: String = "",
+    /**
+     * The user's currently selected voice/TTS language code (e.g. "en", "hi"), surfaced to the
+     * planner so it can keep its reply in the user's language. Not a screen/action fact — it does
+     * not by itself fix the response language (the prompt directive does that); it only tells the
+     * model which language the user is currently using.
+     */
+    val voiceLanguage: String = ""
 ) {
     fun isEmpty(): Boolean =
         currentPackage.isBlank() &&
@@ -27,5 +34,6 @@ data class ContextSnapshot(
             userMemory.isBlank() &&
             activeSkills.isEmpty() &&
             recentCommands.isEmpty() &&
-            lastToolResult.isBlank()
+            lastToolResult.isBlank() &&
+            voiceLanguage.isBlank()
 }

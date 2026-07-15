@@ -139,6 +139,9 @@ class ActionExecutor(
                     phoneControl.openCalendarInsert(title, start, end)
                         .map { "Calendar insert opened for '$title'." }
                 }
+                "open_calendar" -> {
+                    phoneControl.openCalendar().map { "Calendar opened." }
+                }
                 "open_app" -> {
                     val appName = toolCall.args["app_name"]?.jsonPrimitive?.content ?: ""
                     val pkg = toolCall.args["package_name"]?.jsonPrimitive?.content
@@ -209,6 +212,31 @@ class ActionExecutor(
                         else Result.Success("Web results for '$query':\n$snippets")
                     }
                 }
+                "secure_browser_task" -> {
+                    // Eyes-free (WS4): drive the Secure Browser (Alibaba PageAgent on a hardened
+                    // WebView) to an APPROVED origin and run a task. The origin is resolved + approved
+                    // gated BEFORE the session opens, so the model cannot drive an arbitrary site.
+                    // In-browser sensitivity (passwords/OTP/payments/legal) stays gated by the
+                    // BrowserSafetyPolicy per-action confirm/takeover inside the session.
+                    // A blank task means "navigate to the approved origin only" (no PageAgent run);
+                    // the model is told `task` is required, but the rule-based parser may emit a blank
+                    // task for a bare "open unigurus".
+                    val originRaw = toolCall.args["origin"]?.jsonPrimitive?.content ?: ""
+                    val task = toolCall.args["task"]?.jsonPrimitive?.content ?: ""
+                    val origin = com.unoone.agent.securebrowser.ApprovedOriginPolicy.originFor(originRaw)
+                    if (origin == null) {
+                        Result.Error(
+                            "Origin '$originRaw' is not approved for UnoOne automation. " +
+                                "Approved origins: unigurus, uniassist, testsprep, inbharat."
+                        )
+                    } else {
+                        val runner = _openSecureBrowserTask
+                            ?: return Result.Error(
+                                "Secure Browser is not available right now. Open it from the main page first."
+                            )
+                        runner(origin, task)
+                    }
+                }
                 // "compound" is expanded into ordered sub-calls by AgentOrchestrator and never
                 // reaches executeTool; fall through to the plugin router for anything unrecognized.
                 else -> agentRouter.route(toolCall)
@@ -244,6 +272,16 @@ class ActionExecutor(
      * Device-time-only; not exercised by unit tests.
      */
     var _describeSceneWithVision: (suspend (imageBytes: ByteArray, aspect: String) -> Result<String>)? = null
+    /**
+     * Eyes-free (WS4): bridge the `secure_browser_task` tool to the UI-owned Secure Browser session.
+     * Set by the Orchestrator, which exposes it to MainActivity (the owner of the SecureBrowserViewModel
+     * + nav controller). Receives the already-approved canonical origin + the task; returns the
+     * tool result string. When null (Secure Browser screen not reachable in this build / not wired),
+     * the tool returns a handled "not available" Result.Error — never a router fallback and never a
+     * fake success. The live handoff (navigate, acquire the Gemma lease, run the PageAgent task) is a
+     * device-time gate; the callback only fires the UI request and reports an acknowledgement.
+     */
+    var _openSecureBrowserTask: ((origin: String, task: String) -> Result<String>)? = null
 
     /**
      * True when the device has an active internet connection. Used by [web_search] so the

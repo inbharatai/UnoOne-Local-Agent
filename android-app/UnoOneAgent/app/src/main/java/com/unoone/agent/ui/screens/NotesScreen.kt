@@ -51,6 +51,9 @@ fun NotesScreen(viewModel: NotesViewModel) {
         OutlinedTextField(
             value = searchQuery,
             onValueChange = viewModel::onSearchQueryChange,
+            // Eyes-free (WS6): a real label (not just a placeholder) so TalkBack announces the
+            // field's purpose; the leading search icon is a redundant cue for sighted users.
+            label = { Text("Search notes") },
             placeholder = { Text("Search notes...") },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
             modifier = Modifier.fillMaxWidth(),

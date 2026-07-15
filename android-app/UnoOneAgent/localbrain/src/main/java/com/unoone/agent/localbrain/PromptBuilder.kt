@@ -52,6 +52,7 @@ object PromptBuilder {
         appendLine("Email and WhatsApp tools only prepare drafts that the user must review and send.")
         appendLine("If the request is genuinely ambiguous, use speak_response to ask one short clarifying question.")
         appendLine("Keep spoken responses concise because UnoOne reads them aloud.")
+        appendLine("Reply in the same language as the user's current command, unless the user explicitly asks for another language. Do not infer the response language only from the selected TTS voice or from previous turns.")
         appendLine()
         appendLine("Available tools:")
         appendLine("- create_note(title, content, tags?)")
@@ -71,6 +72,7 @@ object PromptBuilder {
         appendLine("- draft_email(to, subject, body)")
         appendLine("- send_whatsapp(number, message)")
         appendLine("- check_calendar()")
+        appendLine("- open_calendar()")
         appendLine("- open_calendar_insert(title, start_time?, end_time?)")
         appendLine("- open_dialer(number?)")
         appendLine("- share_text(text)")
@@ -80,6 +82,7 @@ object PromptBuilder {
         appendLine("- detect_objects()")
         appendLine("- deactivate_blind_aid()")
         appendLine("- describe_scene(aspect?)")
+        appendLine("- secure_browser_task(origin, task)  # origin: 'unigurus'|'uniassist'|'testsprep'|'inbharat' or an approved HTTPS URL. Drives the voice-controlled Secure Browser; passwords/OTP/payments/legal stay manual.")
     }
 
     /** Compatibility overload used by existing callers and tests. */
@@ -127,11 +130,39 @@ object PromptBuilder {
             if (context.lastToolResult.isNotBlank()) {
                 appendLine("- last tool result: ${sanitizeContext(context.lastToolResult).take(budget.lastResultChars)}")
             }
+            if (context.voiceLanguage.isNotBlank()) {
+                appendLine("- user language: ${sanitizeContext(context.voiceLanguage)}")
+            }
         }
     }
 
     fun buildChatPrompt(command: String): String =
         "You are UnoOne, a helpful local AI assistant. User said: ${sanitizeContext(command)}. Respond briefly."
+
+    /**
+     * System instruction for the dedicated CHAT conversation — a tool-less, conversational brain
+     * carved out of the same loaded engine (own KV-cache). It is explicitly NOT a phone-action
+     * planner: it answers questions, and if asked to do something on the phone it declines and asks
+     * the user to phrase it as a command (so the action still reaches the safety-gated agent path).
+     */
+    fun buildChatSystemInstruction(): String = buildString {
+        appendLine("You are UnoOne, a helpful, privacy-first offline AI assistant that converses with the user.")
+        appendLine("Answer conversationally and briefly — UnoOne reads your reply aloud, so keep it short and clear.")
+        appendLine("You have no tools here and are not planning phone actions. If the user asks you to DO something on the phone (open an app, create or read a note, read the screen, send a message, make a call), tell them you cannot do that in chat and ask them to phrase it as a command.")
+        appendLine("Never reveal passwords, OTPs, card data, banking credentials or any secret.")
+    }
+
+    /**
+     * Per-turn user message for the CHAT lane. Carries the response-language directive up front so
+     * the model answers in the user's current language and does not switch based on the TTS voice
+     * or earlier turns (the "English question → Hindi answer" regression). The command is sanitized
+     * like any untrusted context.
+     */
+    fun buildChatUserMessage(command: String): String = buildString {
+        appendLine("Reply in the same language as the user's current message, unless they explicitly ask for a different language. Do not infer the reply language from the voice/TTS setting or from earlier turns.")
+        append("User: ")
+        append(sanitizeContext(command))
+    }
 
     fun sanitizeContext(text: String): String {
         if (text.isBlank()) return text

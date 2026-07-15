@@ -81,6 +81,25 @@ class PhoneControl(private val context: Context) {
         }
     }
 
+    /**
+     * Opens the device's default calendar app via the standard [Intent.CATEGORY_APP_CALENDAR]
+     * launcher intent — NOT an OEM-specific package (e.g. com.google.android.calendar), so it
+     * works on any device with a calendar app installed. No permission required (it only launches).
+     */
+    fun openCalendar(): Result<Unit> {
+        return try {
+            val intent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_APP_CALENDAR)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+            Result.Success(Unit)
+        } catch (e: Exception) {
+            Logger.e("Failed to open calendar", e)
+            Result.Error("Calendar is not installed", e)
+        }
+    }
+
     fun openCamera(): Result<Unit> {
         return try {
             val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {

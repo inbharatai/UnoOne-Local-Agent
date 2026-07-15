@@ -17,7 +17,7 @@ class SafetyGuardTest {
     fun directToolsClassifiedCorrectly() {
         val directTools = listOf(
             "create_note", "search_notes", "summarize_text", "speak_response",
-            "open_chrome", "open_app", "deactivate_blind_aid", "check_calendar"
+            "open_chrome", "open_app", "deactivate_blind_aid", "check_calendar", "open_calendar"
         )
         for (tool in directTools) {
             assertEquals("$tool should be DIRECT", RiskLevel.DIRECT, guard.classify(tool))

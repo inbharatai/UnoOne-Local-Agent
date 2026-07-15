@@ -54,7 +54,10 @@ fun ConfirmationDialog(
                     OutlinedTextField(
                         value = confirmText,
                         onValueChange = { confirmText = it },
-                        placeholder = { Text("Type confirm") },
+                        // Eyes-free (WS6): a real label so TalkBack announces the field's purpose
+                        // (type the word "confirm"), not just its placeholder hint.
+                        label = { Text("Type confirm") },
+                        placeholder = { Text("confirm") },
                         singleLine = true,
                         modifier = Modifier.padding(0.dp)
                     )

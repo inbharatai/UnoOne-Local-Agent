@@ -31,16 +31,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -70,6 +72,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -92,7 +99,10 @@ import com.unoone.agent.ui.theme.VerifyingTeal
 import com.unoone.agent.ui.viewmodel.AgentViewModel
 
 @Composable
-fun AgentScreen(viewModel: AgentViewModel) {
+fun AgentScreen(
+    viewModel: AgentViewModel,
+    onNavigateToSecureBrowser: () -> Unit = {}
+) {
     // 5B: rememberSaveable preserves text across configuration changes (rotation)
     var textInput by rememberSaveable { mutableStateOf("") }
     val timeline by viewModel.timelineSteps.collectAsState()
@@ -118,6 +128,18 @@ fun AgentScreen(viewModel: AgentViewModel) {
     ) { isGranted ->
         if (isGranted) {
             viewModel.startListening(context)
+        }
+    }
+
+    // Blind Aid is a direct UI toggle (not the "activate blind aid" text command through the agent
+    // pipeline). BlindAidManager is a pure camera path, so it needs only CAMERA — request it here,
+    // then activate on grant. Avoids the misleading "needs system access" prompt the vestigial
+    // Accessibility gate produced (the gate itself is removed in ToolPermissionRegistry).
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            viewModel.setBlindAidActive(true)
         }
     }
 
@@ -188,11 +210,53 @@ fun AgentScreen(viewModel: AgentViewModel) {
                         text = "Blind Aid Active",
                         style = MaterialTheme.typography.labelLarge,
                         color = SafetyOrange,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        // Eyes-free (WS6): announce when Blind Aid turns on/off. Live region so
+                        // TalkBack speaks the change without the user touching the badge.
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
                     )
                 }
             }
         }
+
+        // Eyes-free (WS5): large, TalkBack-labeled capability surface. The four primary actions a
+        // blind user reaches in one tap from the top of the screen — Listen (speak a command), Blind
+        // Aid (camera guidance), Read Screen (speak what's on screen), Secure Browser. The mic FAB,
+        // text input, and quick actions below remain for sighted/quick use.
+        CapabilitySurface(
+            isProcessing = isProcessing,
+            isListening = isListening,
+            isBlindAidActive = isBlindAidActive,
+            onListen = {
+                if (isListening) {
+                    viewModel.stopListening()
+                } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED
+                ) {
+                    viewModel.startListening(context)
+                } else {
+                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            },
+            onBlindAid = {
+                if (isBlindAidActive) {
+                    viewModel.setBlindAidActive(false)
+                } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                    == PackageManager.PERMISSION_GRANTED
+                ) {
+                    viewModel.setBlindAidActive(true)
+                } else {
+                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                }
+            },
+            onReadScreen = {
+                // VOICE input so the orchestrator speaks the screen contents back (eyes-free).
+                // Routes to the read_screen tool; if Accessibility isn't enabled, the B1
+                // onSystemPermissionRequired deep-link surfaces the settings and resumes on return.
+                viewModel.onVoiceCommand("read screen")
+            },
+            onSecureBrowser = onNavigateToSecureBrowser
+        )
 
         // Live Blind Aid Camera Preview
         AnimatedVisibility(visible = isBlindAidActive) {
@@ -290,6 +354,9 @@ fun AgentScreen(viewModel: AgentViewModel) {
             OutlinedTextField(
                 value = textInput,
                 onValueChange = { textInput = it },
+                // Eyes-free (WS6): a real floating label (not just a placeholder) so TalkBack
+                // announces "Command" when focus lands on the field.
+                label = { Text("Command") },
                 placeholder = { Text("Type a command...") },
                 modifier = Modifier.weight(1f),
                 singleLine = true,
@@ -324,9 +391,6 @@ fun AgentScreen(viewModel: AgentViewModel) {
             QuickActionButton("Calendar", Icons.Default.CalendarMonth, enabled = !isProcessing) {
                 viewModel.onQuickAction("Calendar")
             }
-            QuickActionButton("Blind Aid", Icons.Default.Language, enabled = !isProcessing) {
-                viewModel.onTextCommand("activate blind aid")
-            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -344,8 +408,11 @@ fun AgentScreen(viewModel: AgentViewModel) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
-            items(timeline) { step ->
-                TimelineStepCard(step)
+            itemsIndexed(timeline) { index, step ->
+                // Eyes-free (WS6): the newest timeline step is a TalkBack live region, so a blind
+                // user hears each progression ("Listening", "Processing", "Done") as it happens
+                // without scrubbing the list. Older steps remain plain cards for review.
+                TimelineStepCard(step, isLatest = index == timeline.lastIndex)
             }
         }
     }
@@ -493,8 +560,113 @@ private fun QuickActionButton(label: String, icon: androidx.compose.ui.graphics.
     }
 }
 
+/**
+ * Eyes-free (WS5): the 2x2 large-button capability surface at the top of the Agent screen. Each
+ * button is a TalkBack-live-region with a full spoken label ([Capability.talkBackLabel]) so a blind
+ * user hears the action before tapping. Routing is pure ([Capability]/[CapabilityHandler], JVM-tested
+ * in [CapabilityTest]); the live tap + TalkBack announcement are device-time gates.
+ */
 @Composable
-private fun TimelineStepCard(step: TimelineStep) {
+private fun CapabilitySurface(
+    isProcessing: Boolean,
+    isListening: Boolean,
+    isBlindAidActive: Boolean,
+    onListen: () -> Unit,
+    onBlindAid: () -> Unit,
+    onReadScreen: () -> Unit,
+    onSecureBrowser: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            CapabilityButton(
+                capability = Capability.LISTEN,
+                enabled = !isProcessing,
+                modifier = Modifier.weight(1f),
+                onClick = onListen
+            )
+            CapabilityButton(
+                capability = Capability.BLIND_AID,
+                enabled = !isProcessing,
+                modifier = Modifier.weight(1f),
+                onClick = onBlindAid
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            CapabilityButton(
+                capability = Capability.READ_SCREEN,
+                enabled = !isProcessing,
+                modifier = Modifier.weight(1f),
+                onClick = onReadScreen
+            )
+            CapabilityButton(
+                capability = Capability.SECURE_BROWSER,
+                enabled = true,
+                modifier = Modifier.weight(1f),
+                onClick = onSecureBrowser
+            )
+        }
+    }
+}
+
+@Composable
+private fun CapabilityButton(
+    capability: Capability,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 0.12f else 0.05f),
+        contentColor = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+        modifier = modifier
+            .height(96.dp)
+            .semantics { contentDescription = capability.talkBackLabel }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = capabilityIcon(capability),
+                contentDescription = null, // the surface's contentDescription carries the full label
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = capability.label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+private fun capabilityIcon(capability: Capability): ImageVector = when (capability) {
+    Capability.LISTEN -> Icons.Default.Mic
+    Capability.BLIND_AID -> Icons.Default.SmartToy
+    Capability.READ_SCREEN -> Icons.AutoMirrored.Filled.VolumeUp
+    Capability.SECURE_BROWSER -> Icons.Default.OpenInBrowser
+}
+
+@Composable
+private fun TimelineStepCard(step: TimelineStep, isLatest: Boolean = false) {
     val color = when (step.status) {
         AgentStatus.LISTENING -> ListeningRed
         AgentStatus.TRANSCRIBING -> TranscribingYellow
@@ -527,7 +699,9 @@ private fun TimelineStepCard(step: TimelineStep) {
     )
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (isLatest) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier),
         colors = CardDefaults.cardColors(
             containerColor = animatedColor.copy(alpha = 0.1f)
         ),

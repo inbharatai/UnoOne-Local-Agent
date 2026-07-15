@@ -15,6 +15,7 @@ class SafetyGuard {
         "open_app" to RiskLevel.DIRECT,
         "deactivate_blind_aid" to RiskLevel.DIRECT,
         "check_calendar" to RiskLevel.DIRECT,
+        "open_calendar" to RiskLevel.DIRECT,
 
         // Risk 1 — Single confirmation
         "open_url" to RiskLevel.CONFIRM,
@@ -31,6 +32,11 @@ class SafetyGuard {
         // Mic capture + online lookup both touch privacy-sensitive surfaces → single confirmation.
         "voice_recording" to RiskLevel.CONFIRM,
         "web_search" to RiskLevel.CONFIRM,
+        // Drives the Secure Browser (PageAgent) on an approved origin — the user confirms opening the
+        // session. In-browser sensitivity (passwords/OTP/payments/legal) is still gated by the
+        // BrowserSafetyPolicy per-action confirm/takeover inside the session; this tier only authorizes
+        // opening the automated browser session.
+        "secure_browser_task" to RiskLevel.CONFIRM,
 
         // Risk 2 — Strong confirmation (must type "confirm")
         "delete_notes" to RiskLevel.STRONG_CONFIRM,
