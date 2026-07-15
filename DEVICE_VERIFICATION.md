@@ -404,8 +404,9 @@ there is on-device evidence. No item is flipped to ✅ from compilation or JVM t
 
 ```text
 Run date: 2026-07-15
-Branch: fix/unoone-eyesfree-bulletproof
+Branch: fix/unoone-eyesfree-bulletproof (commit 0f2da99)
 Branch base: main@628d2c5
+Merged to main @ c335d76 (owner sign-off 2026-07-15, --no-ff)
 Device: Xiaomi 14 23127PN0CG (houji), serial 7f8cafef, Android 15/API 35
 Automated gate: lint ✅ (no new issues, 32 baseline), :app + :core JVM unit tests ✅,
   instrumented OK (42) ✅, assembleDebug ✅, assembleDebugAndroidTest ✅

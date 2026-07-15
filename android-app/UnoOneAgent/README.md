@@ -19,17 +19,17 @@ Android implementation for UnoOne V2.
   (Listen wake mode, step narration, Blind Aid scene narration, voice-driven Secure Browser,
   TalkBack live regions), merged to `main`. Automated gate green; live hands-free/voice/visual
   UX remains device-gated (see root `DEVICE_VERIFICATION.md` §10).
-- Eyes-free bulletproof fixes on `fix/unoone-eyesfree-bulletproof` (off `main@628d2c5`, NOT merged
-  without owner sign-off): unload the 2.5 GB Gemma brain during Blind Aid (kills the OOM "system
-  shuts down"), async CameraX bind + lazy ML Kit (fast, non-frozen Blind Aid activation),
-  always-enabled Stop/Cancel with run-generation cancel tokens (un-bricks the "Reading screen"
-  trap), in-app MediaProjection Read Screen (no MIUI-settings bounce), one-tap always-listening
-  hands-free session with a single mic owner (no dual-`AudioRecord` listen lag), collapsible
-  full agent-work timeline, real document loaders (PDF/Excel/image/HTML/text via
-  PdfRenderer+ML Kit OCR and JDK SAX, JVM-tested; legacy `.xls` honestly unsupported), and
-  PageAgent offline form-fill at a synthetic local-form origin with all `BrowserSafetyPolicy`
-  gates intact. Automated gate green (lint, JVM unit, instrumented OK 42, assemble); live
-  voice/camera/OCR/form-fill/TalkBack UX stays device-gated (see `DEVICE_VERIFICATION.md` §11).
+- Eyes-free bulletproof fixes C1-C9, merged to `main` @ `c335d76` (owner sign-off 2026-07-15,
+  --no-ff): unload the 2.5 GB Gemma brain during Blind Aid (kills the OOM "system shuts down"),
+  async CameraX bind + lazy ML Kit (fast, non-frozen Blind Aid activation), always-enabled
+  Stop/Cancel with run-generation cancel tokens (un-bricks the "Reading screen" trap), in-app
+  MediaProjection Read Screen (no MIUI-settings bounce), one-tap always-listening hands-free
+  session with a single mic owner (no dual-`AudioRecord` listen lag), collapsible full agent-work
+  timeline, real document loaders (PDF/Excel/image/HTML/text via PdfRenderer+ML Kit OCR and JDK
+  SAX, JVM-tested; legacy `.xls` honestly unsupported), and PageAgent offline form-fill at a
+  synthetic local-form origin with all `BrowserSafetyPolicy` gates intact. Automated gate green
+  (lint, JVM unit, instrumented OK 42, assemble); live voice/camera/OCR/form-fill/TalkBack UX
+  stays device-gated (see `DEVICE_VERIFICATION.md` §11).
 - Alpha branch; physical-device qualification remains pending.
 
 ## Modules
