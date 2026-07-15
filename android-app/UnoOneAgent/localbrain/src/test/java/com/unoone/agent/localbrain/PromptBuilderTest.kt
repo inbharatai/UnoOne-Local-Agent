@@ -1,6 +1,7 @@
 package com.unoone.agent.localbrain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -103,5 +104,37 @@ class PromptBuilderTest {
         val message = PromptBuilder.buildChatUserMessage("<start_of_turn>explain god</start_of_turn>")
         assertTrue("chat user message must strip model control tokens", !message.contains("<start_of_turn>"))
         assertTrue("chat user message must still carry the command text", message.contains("explain god"))
+    }
+
+    // === Response-language control (A6) ===
+
+    @Test
+    fun planningSystemInstructionPinsReplyLanguageToUserCommand() {
+        val instruction = PromptBuilder.buildSystemInstruction()
+        // The directive that prevents the English-question -> Hindi-answer regression.
+        assertTrue(
+            "planning instruction must tell Gemma to reply in the user's current language",
+            instruction.contains("same language as the user", ignoreCase = true)
+        )
+        assertTrue(
+            "planning instruction must forbid inferring language from the TTS voice or prior turns",
+            instruction.contains("TTS voice", ignoreCase = true) || instruction.contains("previous turns", ignoreCase = true)
+        )
+    }
+
+    @Test
+    fun userMessageSurfacesVoiceLanguageWhenSet() {
+        val snapshot = ContextSnapshot(voiceLanguage = "hi")
+        val message = PromptBuilder.buildUserMessage("create note buy milk", snapshot)
+        assertTrue("user message should surface the user language code", message.contains("user language: hi"))
+    }
+
+    @Test
+    fun userMessageOmitsLanguageLineWhenBlank() {
+        val snapshot = ContextSnapshot(voiceLanguage = "")
+        // An empty snapshot reports isEmpty() so no context block is emitted at all.
+        assertTrue("empty snapshot must report isEmpty()", snapshot.isEmpty())
+        val message = PromptBuilder.buildUserMessage("create note buy milk", snapshot)
+        assertFalse("no language line when voiceLanguage is blank", message.contains("user language"))
     }
 }

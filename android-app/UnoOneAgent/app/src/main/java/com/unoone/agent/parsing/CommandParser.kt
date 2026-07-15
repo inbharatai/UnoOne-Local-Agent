@@ -35,7 +35,14 @@ class CommandParser(
     private val ocrControl: OcrControl? = null,
     private val memoryModule: MemoryModule? = null,
     private val noteDao: NoteDao? = null,
-    private val skillDao: SkillDao? = null
+    private val skillDao: SkillDao? = null,
+    /**
+     * Supplies the user's currently selected voice/TTS language code so the planner can keep its
+     * reply in the user's language. Defaults to no language; the orchestrator wires it to the
+     * `unoone_settings`/`voice_language` preference. Pure provider so the parser stays free of
+     * Android-context dependencies.
+     */
+    private val voiceLanguageProvider: () -> String = { "" }
 ) : ICommandParser {
 
     override fun parse(text: String): ToolCall? = RuleBasedParser.parse(text)
@@ -188,7 +195,8 @@ class CommandParser(
             userMemory = memoryContext,
             activeSkills = activeSkills,
             recentCommands = recentCommands,
-            lastToolResult = lastToolResult
+            lastToolResult = lastToolResult,
+            voiceLanguage = voiceLanguageProvider()
         )
     }
 }

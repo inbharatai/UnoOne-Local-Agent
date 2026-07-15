@@ -52,6 +52,7 @@ object PromptBuilder {
         appendLine("Email and WhatsApp tools only prepare drafts that the user must review and send.")
         appendLine("If the request is genuinely ambiguous, use speak_response to ask one short clarifying question.")
         appendLine("Keep spoken responses concise because UnoOne reads them aloud.")
+        appendLine("Reply in the same language as the user's current command, unless the user explicitly asks for another language. Do not infer the response language only from the selected TTS voice or from previous turns.")
         appendLine()
         appendLine("Available tools:")
         appendLine("- create_note(title, content, tags?)")
@@ -127,6 +128,9 @@ object PromptBuilder {
             }
             if (context.lastToolResult.isNotBlank()) {
                 appendLine("- last tool result: ${sanitizeContext(context.lastToolResult).take(budget.lastResultChars)}")
+            }
+            if (context.voiceLanguage.isNotBlank()) {
+                appendLine("- user language: ${sanitizeContext(context.voiceLanguage)}")
             }
         }
     }

@@ -38,6 +38,7 @@ import com.unoone.agent.storage.dao.MemoryDao
 import com.unoone.agent.storage.dao.NoteDao
 import com.unoone.agent.storage.dao.SkillDao
 import com.unoone.agent.storage.entity.ActionLogEntity
+import com.unoone.agent.voice.VoiceLanguage
 import com.unoone.agent.voice.VoiceModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -128,7 +129,8 @@ class AgentOrchestrator(
         ocrControl = ocrControl,
         memoryModule = memoryModule,
         noteDao = noteDao,
-        skillDao = skillDao
+        skillDao = skillDao,
+        voiceLanguageProvider = { currentVoiceLanguageCode() }
     )
     private val actionExecutor = ActionExecutor(
         context = context,
@@ -174,6 +176,20 @@ class AgentOrchestrator(
         } catch (e: Exception) {
             Logger.e("Orchestrator: speak_response exception", e)
         }
+    }
+
+    /**
+     * The user's currently selected voice/TTS language code, read fresh per call from the same
+     * `unoone_settings`/`voice_language` preference the voice module uses (so a Settings change
+     * takes effect on the next command without a restart). Surfaced to the planner via the context
+     * snapshot so the model keeps its reply in the user's language. Fails safe to the default
+     * ("en") if the preference cannot be read.
+     */
+    private fun currentVoiceLanguageCode(): String = try {
+        context.getSharedPreferences(VoiceLanguage.PREF_NAME, Context.MODE_PRIVATE)
+            .getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT) ?: VoiceLanguage.DEFAULT
+    } catch (_: Exception) {
+        VoiceLanguage.DEFAULT
     }
 
     /**
