@@ -72,6 +72,14 @@ class VoiceService : Service() {
          */
         var voiceCommandCallback: ((String) -> Unit)? = null
 
+        /**
+         * Eyes-free (WS2): static wake callback. Set by the Application layer to speak the
+         * "Yes, I'm listening" cue (via the shared VoiceModule) when the KWS loop fires, without
+         * cross-module coupling — mirrors [voiceCommandCallback]. Invoked from the spotting loop
+         * off the audio thread so the cue does not block command capture.
+         */
+        var onWakeWord: (() -> Unit)? = null
+
         fun start(context: Context) {
             val intent = Intent(context, VoiceService::class.java)
             context.startForegroundService(intent)
@@ -92,7 +100,7 @@ class VoiceService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification("Listening locally — Mic active. Say 'UnoOne' to give a command."))
+        startForeground(NOTIFICATION_ID, createNotification("Listening locally — Mic active. Say 'UnoOne' or 'Listen' to give a command."))
         Logger.i("VoiceService: Created")
     }
 
@@ -102,6 +110,18 @@ class VoiceService : Service() {
             // MUST run off the main thread — Sherpa model load (especially the larger Indic Whisper
             // ASR models) is heavy I/O and blocks onStartCommand's main thread, freezing the UI/ANR.
             serviceScope.launch { reinitSttTts() }
+            return START_STICKY
+        }
+        if (intent?.action == ACTION_VOICE_COMMAND) {
+            // Eyes-free (WS2): a pre-transcribed command (e.g. from the main-page Listen button or the
+            // floating bubble) is injected through the one orchestrator path as a VOICE command —
+            // the same route a wake-word + STT transcript takes, so confirmation/narration/safety all
+            // apply identically. Declared since launch but previously unhandled.
+            val command = intent.getStringExtra(EXTRA_COMMAND)
+            if (!command.isNullOrBlank()) {
+                Logger.i("VoiceService: injected voice command: '$command'")
+                voiceCommandCallback?.invoke(command)
+            }
             return START_STICKY
         }
         initEngines()
@@ -152,9 +172,9 @@ class VoiceService : Service() {
     /** Wake-word (KWS) — always English (vad). No Indic keyword-spotter model exists. */
     private fun initKeywordSpotter(modelDir: String) {
         val kws = KeywordSpotterEngine(this, "$modelDir/${VoiceLanguage.KWS_FOLDER}", cacheDir?.absolutePath)
-        if (kws.initialize(listOf("uno one", "uno one")) is Result.Success) {
+        if (kws.initialize(WakePhrases.LIST) is Result.Success) {
             keywordSpotter = kws
-            Logger.i("VoiceService: Keyword spotter ready (English wake word)")
+            Logger.i("VoiceService: Keyword spotter ready (English wake words: ${WakePhrases.LIST})")
         } else {
             Logger.w("VoiceService: Keyword spotter unavailable, using continuous listen mode")
         }
@@ -241,6 +261,11 @@ class VoiceService : Service() {
                         isListeningForCommand = true
                         consecutiveSilenceChunks = 0
                         onWakeWordDetected?.invoke()
+                        // Eyes-free (WS2): speak the "I'm listening" cue. Invoked via the static
+                        // callback so the Application can route it to the shared VoiceModule without
+                        // cross-module coupling, and dispatched off the audio thread by the caller so
+                        // the cue does not block command capture.
+                        onWakeWord?.invoke()
 
                         // Update notification
                         updateNotification("Listening for command...")
@@ -344,7 +369,7 @@ class VoiceService : Service() {
         manager.createNotificationChannel(channel)
     }
 
-    private fun createNotification(text: String = "Listening locally — Mic active. Say 'UnoOne' to give a command."): Notification {
+    private fun createNotification(text: String = "Listening locally — Mic active. Say 'UnoOne' or 'Listen' to give a command."): Notification {
         // User-perceptible microphone FGS notification (Play policy): makes background mic capture
         // explicit and gives the user a visible, ongoing signal. No silent background voice mode.
         return NotificationCompat.Builder(this, CHANNEL_ID)

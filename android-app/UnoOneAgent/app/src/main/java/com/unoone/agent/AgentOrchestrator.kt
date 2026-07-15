@@ -16,6 +16,7 @@ import com.unoone.agent.core.agent.ReActLoopController
 import com.unoone.agent.core.agent.SafetyJudgePolicy
 import com.unoone.agent.core.agent.IntentClassifier
 import com.unoone.agent.core.agent.IntentType
+import com.unoone.agent.core.agent.NarrationPolicy
 import com.unoone.agent.core.agent.StopReason
 import com.unoone.agent.core.agent.ToolHealthTracker
 import com.unoone.agent.core.agent.BrainHealthPolicy
@@ -47,14 +48,24 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /** Max wall-clock time to wait for a user confirmation before denying for safety (avoids a hung agent). */
 private const val CONFIRMATION_TIMEOUT_MS = 60_000L
+
+/**
+ * Minimum gap between spoken step narrations (eyes-free/WS2). Rapid timeline milestones are throttled
+ * so a blind user isn't flooded with cues; the final answer is spoken through the same serialized
+ * channel ([AgentOrchestrator.speakAnswer]) so it never overlaps a queued milestone.
+ */
+private const val NARRATION_MIN_INTERVAL_MS = 1_200L
 
 /**
  * Enables the second-pass LLM safety judge on every validated tool step when the brain is loaded.
@@ -114,6 +125,28 @@ class AgentOrchestrator(
     // Shared VoiceModule — set externally by the Application/ViewModel to avoid duplicate instances.
     lateinit var voiceModule: VoiceModule
         private set
+
+    // ---- Eyes-free (WS2) step narration -----------------------------------------------------
+    // The input type of the command currently being processed; set at processCommand entry so addStep
+    // knows whether to speak milestones. VOICE commands always narrate; TEXT commands narrate only
+    // when [narrateTextCommands] is toggled on (default off — text users have the timeline to read).
+    @Volatile
+    private var currentInputType: InputType = InputType.TEXT
+
+    /** When true, TEXT commands also get spoken step narration (default off; VOICE always narrates). */
+    @Volatile
+    var narrateTextCommands: Boolean = false
+
+    /**
+     * Single serialized TTS channel. Milestone narration is launched async under this mutex; the
+     * final answer ([speakAnswer]) acquires it too, so a queued milestone drains before the answer
+     * plays — narration and the final answer never overlap on the speaker.
+     */
+    private val speakMutex = Mutex()
+
+    /** Timestamp of the last spoken milestone; used by the [NARRATION_MIN_INTERVAL_MS] throttle. */
+    private val lastNarrationAt = AtomicLong(0L)
+    // ----------------------------------------------------------------------------------------
 
     // Extracted components — Phase 1A: God object split
     private val memoryModule = com.unoone.agent.memory.MemoryModule(memoryDao)
@@ -382,6 +415,12 @@ class AgentOrchestrator(
         _isProcessing.value = true
         _timelineSteps.value = emptyList()
 
+        // Eyes-free (WS2): remember this command's input type for step narration, and interrupt any
+        // TTS still playing from the previous command so a new spoken command isn't talked over.
+        currentInputType = inputType
+        runCatching { voiceModule.stopSpeaking() }
+        lastNarrationAt.set(0L)
+
         // SECURITY: Sanitize user input before processing
         val sanitizedText = InputSanitizer.sanitize(text)
         if (sanitizedText.isBlank()) {
@@ -500,8 +539,7 @@ class AgentOrchestrator(
                 if (!answer.isNullOrBlank()) {
                     if (inputType == InputType.VOICE) {
                         addStep(AgentStatus.SPEAKING, "Response", answer)
-                        voiceModule.speak(answer)
-                            .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: chat speak failed: $msg") }
+                        speakAnswer(answer)
                     } else {
                         addStep(AgentStatus.DONE, "Done", answer)
                     }
@@ -643,8 +681,7 @@ class AgentOrchestrator(
                         addStep(AgentStatus.DONE, "Done", observation)
                     } else if (inputType == InputType.VOICE) {
                         addStep(AgentStatus.SPEAKING, "Response", observation)
-                        voiceModule.speak(observation)
-                            .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: Response speak failed: $msg") }
+                        speakAnswer(observation)
                     } else {
                         addStep(AgentStatus.DONE, "Done", observation)
                     }
@@ -761,8 +798,7 @@ class AgentOrchestrator(
             if (inputType == InputType.VOICE) {
                 val responseText = combined.getOrNull() ?: ""
                 addStep(AgentStatus.SPEAKING, "Response", responseText)
-                voiceModule.speak(responseText)
-                    .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: Compound speak failed: $msg") }
+                speakAnswer(responseText)
             }
         }
         saveLog(log.copy(
@@ -894,8 +930,7 @@ class AgentOrchestrator(
                     }
                     if (inputType == InputType.VOICE) {
                         addStep(AgentStatus.SPEAKING, "Response", spoken)
-                        voiceModule.speak(spoken)
-                            .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: ReAct speak failed: $msg") }
+                        speakAnswer(spoken)
                     } else {
                         addStep(AgentStatus.DONE, "Done", spoken)
                     }
@@ -1116,6 +1151,42 @@ class AgentOrchestrator(
             _timelineSteps.value = _timelineSteps.value + TimelineStep(status, label, detail)
         } catch (e: Exception) {
             Logger.e("Orchestrator: Failed to add timeline step", e)
+        }
+        narrateMilestone(status, label, detail)
+    }
+
+    /**
+     * Eyes-free (WS2): speak a short milestone phrase for the given timeline step when the current
+     * command is a voice command (or [narrateTextCommands] is on). Async + serialized via
+     * [speakMutex] so it never blocks the pipeline nor overlaps the final answer. Throttled by
+     * [NARRATION_MIN_INTERVAL_MS] to avoid cue-spam. The phrase selection lives in [NarrationPolicy]
+     * (pure, JVM-tested); returns early when the policy says the step should stay silent.
+     */
+    private fun narrateMilestone(status: AgentStatus, label: String, detail: String) {
+        if (currentInputType != InputType.VOICE && !narrateTextCommands) return
+        val phrase = NarrationPolicy.narrationFor(status, label, detail) ?: return
+        val now = System.currentTimeMillis()
+        if (now - lastNarrationAt.get() < NARRATION_MIN_INTERVAL_MS) return
+        lastNarrationAt.set(now)
+        scope.launch {
+            speakMutex.withLock {
+                voiceModule.speak(phrase)
+                    .onError { msg: String, _: Throwable? -> Logger.w("Orchestrator: milestone narration failed: $msg") }
+            }
+        }
+    }
+
+    /**
+     * Speak the final answer through the same serialized channel as milestone narration, so a queued
+     * milestone drains before the answer plays (no overlap). Blocks the calling coroutine while
+     * speaking — the timeline steps are already set, and the processing lock is released only after
+     * the answer finishes, keeping the voice response atomic with respect to the next command.
+     */
+    private suspend fun speakAnswer(text: String) {
+        if (text.isBlank()) return
+        speakMutex.withLock {
+            voiceModule.speak(text)
+                .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: answer speak failed: $msg") }
         }
     }
 
