@@ -132,10 +132,22 @@ class CommandParser(
         val currentContext = accessibilityControl?.getCurrentContext() ?: ""
         val packageName = currentContext.substringBefore("/").ifBlank { "" }
         val activityName = currentContext.substringAfter("/", "").ifBlank { "" }
-        val visibleText = accessibilityControl?.captureScreenText()
-            ?.let { if (it is Result.Success) it.data.take(2_000) else "" } ?: ""
 
-        val ocrText = if (visibleText.isBlank()) {
+        // Privacy + latency guard (A5): only grab accessibility screen text + OCR when the command
+        // actually references on-screen content. A non-screen command ("explain god", "draft an
+        // email", "search my notes") gets an empty visibleText/ocrText instead of needlessly
+        // reading the screen. Conservative: [ScreenReference] returns true whenever uncertain, so a
+        // screen-dependent plan is never starved of the screen text it needs. The cheap foreground
+        // package/activity above is always gathered (it is not screen text).
+        val screenRelevant = com.unoone.agent.core.agent.ScreenReference.isScreenReferencing(command)
+        val visibleText = if (screenRelevant) {
+            accessibilityControl?.captureScreenText()
+                ?.let { if (it is Result.Success) it.data.take(2_000) else "" } ?: ""
+        } else {
+            ""
+        }
+
+        val ocrText = if (screenRelevant && visibleText.isBlank()) {
             try {
                 ocrControl?.recognizeScreen()
                     ?.let { if (it is Result.Success) it.data.take(1_000) else "" }
