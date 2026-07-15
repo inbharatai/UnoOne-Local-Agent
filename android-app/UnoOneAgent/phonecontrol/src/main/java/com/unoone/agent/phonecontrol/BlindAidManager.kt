@@ -13,6 +13,7 @@ import androidx.camera.core.ImageProxy
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.objects.DetectedObject
 import com.google.mlkit.vision.objects.ObjectDetection
+import com.google.mlkit.vision.objects.ObjectDetector
 import com.google.mlkit.vision.objects.custom.CustomObjectDetectorOptions
 import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
 import com.unoone.agent.core.agent.BlindAidNarrator
@@ -76,26 +77,41 @@ class BlindAidManager(
         "vision/blind-aid/custom_yolov8.tflite"
     )
 
-    private val detector = if (customModelFile.exists()) {
-        Logger.i("BlindAidManager: Custom Blind Aid model found at ${customModelFile.absolutePath}")
-        val localModel = com.google.mlkit.common.model.LocalModel.Builder()
-            .setAbsoluteFilePath(customModelFile.absolutePath)
-            .build()
-        val customOptions = CustomObjectDetectorOptions.Builder(localModel)
-            .setDetectorMode(CustomObjectDetectorOptions.SINGLE_IMAGE_MODE)
-            .enableMultipleObjects()
-            .enableClassification()
-            .setMaxPerObjectLabelCount(3)
-            .build()
-        ObjectDetection.getClient(customOptions)
-    } else {
-        Logger.i("BlindAidManager: Custom model not installed; using offline ML Kit detector")
-        val defaultOptions = ObjectDetectorOptions.Builder()
-            .setDetectorMode(ObjectDetectorOptions.SINGLE_IMAGE_MODE)
-            .enableMultipleObjects()
-            .enableClassification()
-            .build()
-        ObjectDetection.getClient(defaultOptions)
+    // C2: the ML Kit ObjectDetector is created LAZILY on the first analyzed frame, not at manager
+    // construction. Eager construction blocks Blind Aid activation (native model load at composition
+    // time) and, combined with the brain's RAM footprint, contributed to the slow/frozen activation.
+    private var detector: ObjectDetector? = null
+
+    @Synchronized
+    private fun getDetector(): ObjectDetector? {
+        if (detector != null) return detector
+        detector = try {
+            if (customModelFile.exists()) {
+                Logger.i("BlindAidManager: Custom Blind Aid model found at ${customModelFile.absolutePath}")
+                val localModel = com.google.mlkit.common.model.LocalModel.Builder()
+                    .setAbsoluteFilePath(customModelFile.absolutePath)
+                    .build()
+                val customOptions = CustomObjectDetectorOptions.Builder(localModel)
+                    .setDetectorMode(CustomObjectDetectorOptions.SINGLE_IMAGE_MODE)
+                    .enableMultipleObjects()
+                    .enableClassification()
+                    .setMaxPerObjectLabelCount(3)
+                    .build()
+                ObjectDetection.getClient(customOptions)
+            } else {
+                Logger.i("BlindAidManager: Custom model not installed; using offline ML Kit detector")
+                val defaultOptions = ObjectDetectorOptions.Builder()
+                    .setDetectorMode(ObjectDetectorOptions.SINGLE_IMAGE_MODE)
+                    .enableMultipleObjects()
+                    .enableClassification()
+                    .build()
+                ObjectDetection.getClient(defaultOptions)
+            }
+        } catch (e: Exception) {
+            Logger.e("BlindAidManager: Failed to create object detector", e)
+            null
+        }
+        return detector
     }
 
     private var lastSpokenTime = 0L
@@ -126,7 +142,13 @@ class BlindAidManager(
                     val image = InputImage.fromMediaImage(mediaImage, rotation)
                     val uprightW = if (rotation == 90 || rotation == 270) imageProxy.height else imageProxy.width
                     val uprightH = if (rotation == 90 || rotation == 270) imageProxy.width else imageProxy.height
-                    detector.process(image)
+                    val det = getDetector()
+                    if (det == null) {
+                        // C2: detector not available — drop this frame, keep the preview alive.
+                        imageProxy.close()
+                        return
+                    }
+                    det.process(image)
                         .addOnSuccessListener { objects ->
                             if (objects.isEmpty()) {
                                 _overlay.value = DetectionOverlay(emptyList(), uprightW.toFloat() / uprightH.toFloat())
@@ -243,7 +265,7 @@ class BlindAidManager(
         }
 
         try {
-            detector.close()
+            detector?.close()
         } catch (e: Exception) {
             Logger.e("BlindAidManager: Error closing detector", e)
         }

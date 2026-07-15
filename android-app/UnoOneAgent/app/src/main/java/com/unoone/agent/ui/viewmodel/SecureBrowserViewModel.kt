@@ -179,6 +179,36 @@ class SecureBrowserViewModel(
         controller?.load(clean)
     }
 
+    /**
+     * C9: load a local/offline HTML form (e.g. a user-picked .html file) into the sandboxed WebView
+     * at the synthetic local-form origin, then inject the PageAgent runtime so the agent can work the
+     * form offline. Every action the agent plans still round-trips through AUTHORIZE_ACTION →
+     * BrowserSafetyPolicy (origin-agnostic) — payment/credential/OTP/captcha/legal/final-submission
+     * gates apply unchanged. No safety gate is weakened; the only addition is admitting the synthetic
+     * origin, which is reachable solely via [SecureWebViewController.loadLocalHtml].
+     */
+    fun loadLocalFormHtml(html: String, displayName: String) {
+        if (html.isBlank()) {
+            _state.value = _state.value.copy(error = "The selected form is empty")
+            narrate("The selected form is empty.")
+            return
+        }
+        val ctrl = controller
+        if (ctrl == null) {
+            _state.value = _state.value.copy(error = "Secure Browser isn't ready yet")
+            narrate("The secure browser isn't ready yet.")
+            return
+        }
+        _state.value = _state.value.copy(
+            phase = "Local form",
+            status = "Loading local form: $displayName",
+            currentUrl = SecureWebViewController.LOCAL_FORM_ORIGIN,
+            error = ""
+        )
+        narrate("Loaded local form: $displayName. Say or type what you'd like filled in.")
+        ctrl.loadLocalHtml(html, displayName)
+    }
+
     fun executeTask(task: String) {
         if (_state.value.taskRunning) return
         if (!_state.value.runtimeReady) {

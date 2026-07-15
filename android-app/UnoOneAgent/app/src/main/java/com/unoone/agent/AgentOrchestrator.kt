@@ -270,6 +270,22 @@ class AgentOrchestrator(
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
     private val processingLock = AtomicBoolean(false)
 
+    // ---- C3: cooperative cancel via run-generation tokens ------------------------------
+    // Each processCommand run increments currentRunId and captures its own generation. Cancel
+    // stamps cancelledRunId with the latest run id; checkpoints compare the two so a cancel only
+    // ever stops the run it was aimed at — a NEW command (incremented id) is never affected, and a
+    // stale cancel from a previous run can't block a fresh one. Avoids the shared-flag race.
+    private val currentRunId = AtomicLong(0)
+    private val cancelledRunId = AtomicLong(0)
+
+    // ---- C1: Blind Aid brain lease hooks (set by UnoOneApplication) --------------------
+    // Blind Aid is a pure CameraX + ML Kit path that never uses the Gemma brain, so on activation
+    // we unload the 2.5 GB brain to free ~800 MB RAM (the reported "system shuts down" OOM kill).
+    // The Application owns the Secure Browser lease + ExclusiveBrainLeaseState, so it sets this
+    // guard to "safe to unload" and a reload callback that honours those leases on deactivation.
+    var brainReleaseGuard: () -> Boolean = { true }
+    var brainReloadCallback: (() -> Unit)? = null
+
     private val _isBlindAidActive = MutableStateFlow(false)
     val isBlindAidActive: StateFlow<Boolean> = _isBlindAidActive.asStateFlow()
 
@@ -287,6 +303,9 @@ class AgentOrchestrator(
     // Pending command for re-execution after permission grant (thread-safe)
     private val pendingCommand = AtomicReference<String?>(null)
     private val pendingInputType = AtomicReference<InputType?>(null)
+    // C4: the system permission the pending command was waiting on, so clearPendingAndReExecute can
+    // re-check it on resume and NOT blindly re-run (which bounced back to system settings in a loop).
+    private val pendingRequiredPermission = AtomicReference<PermissionRequirement?>(null)
 
     // Conversation context for the LLM planner: the last few commands and the result of the most
     // recent tool execution. Passed into the context snapshot so follow-ups ("do it again",
@@ -399,6 +418,17 @@ class AgentOrchestrator(
     fun setBlindAidActive(active: Boolean) {
         _isBlindAidActive.value = active
         if (active) {
+            // C1: free the 2.5 GB Gemma brain BEFORE binding the camera. Blind Aid is a pure
+            // CameraX + ML Kit path — it never uses the brain — and on a ~5 GB-available device
+            // keeping the brain resident while the camera + object detector load trips the kernel
+            // lowmemorykiller and kills the app (the reported "system shuts down" crash). Unload
+            // now, reload on deactivate. Don't touch the brain if a Secure Browser / exclusive
+            // lease owns it, or if a command is mid-flight (the lock guards an in-flight inference).
+            if (isLlmLoaded() && !processingLock.get() && brainReleaseGuard()) {
+                runCatching { unloadLlmModel() }
+                    .onSuccess { Logger.i("Orchestrator: unloaded Gemma brain for Blind Aid (RAM freed for camera)") }
+                    .onFailure { Logger.e("Orchestrator: brain unload for Blind Aid failed", it) }
+            }
             // Accessibility disclaimer: Blind Aid is assistive guidance, not a certified navigation
             // or medical-safety device. Spoken once on activation so the user is never unaware.
             voiceModule.speak(
@@ -411,6 +441,9 @@ class AgentOrchestrator(
         } else {
             voiceModule.speak("Blind Aid deactivated.")
                 .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: Blind aid speak failed: $msg") }
+            // C1: restore the brain for chat/agent commands. The Application's reloader honours the
+            // exclusive-lease guards so it won't fight a Secure Browser session.
+            brainReloadCallback?.invoke()
         }
     }
 
@@ -436,6 +469,11 @@ class AgentOrchestrator(
         if (!processingLock.compareAndSet(false, true)) return
         _isProcessing.value = true
         _timelineSteps.value = emptyList()
+
+        // C3: start a fresh run generation. A cancel stamps cancelledRunId with the latest run id;
+        // checkpoints below compare the two so this run bails only if cancelled, and a stale cancel
+        // from a previous run can't block this one.
+        val myRun = currentRunId.incrementAndGet()
 
         // Eyes-free (WS2): remember this command's input type for step narration, and interrupt any
         // TTS still playing from the previous command so a new spoken command isn't talked over.
@@ -463,6 +501,9 @@ class AgentOrchestrator(
 
         try {
             addStep(AgentStatus.UNDERSTANDING, "Understanding Command", sanitizedText)
+
+            // C3: bail early if this run was cancelled while waiting for the lock.
+            if (isCancelled(myRun)) { releaseProcessingLock(); return }
 
             // Record this command in the conversation ring buffer (capped at 3) so the next
             // command's LLM snapshot can see it. contextCommands holds the PRIOR commands only.
@@ -492,6 +533,7 @@ class AgentOrchestrator(
                             // after the user grants the missing system access.
                             pendingCommand.set(sanitizedText)
                             pendingInputType.set(inputType)
+                            pendingRequiredPermission.set(outcome.missing.firstOrNull())
                             releaseProcessingLock()
                             return
                         }
@@ -553,6 +595,7 @@ class AgentOrchestrator(
             val intent = IntentClassifier.classify(sanitizedText, ruleMatch)
             Logger.i("Orchestrator: intent=$intent ruleMatch=${ruleMatch?.tool} text=\"${sanitizedText.take(60)}\"")
             if (intent == IntentType.CHAT && commandParser.isModelLoaded()) {
+                if (isCancelled(myRun)) { releaseProcessingLock(); return }
                 val chatStart = System.currentTimeMillis()
                 addStep(AgentStatus.UNDERSTANDING, "Thinking", sanitizedText)
                 val chatResult = commandParser.chat(sanitizedText)
@@ -591,6 +634,7 @@ class AgentOrchestrator(
             val streamingBuffer = StringBuilder()
             var streamingStepAdded = false
             val planningStart = System.currentTimeMillis()
+            if (isCancelled(myRun)) { releaseProcessingLock(); return }
             val parseOutcome = try {
                 if (STREAMING_INFERENCE_ENABLED) {
                     commandParser.parseStreamingWithProvenance(sanitizedText, contextCommands, lastToolResult) { delta ->
@@ -633,11 +677,13 @@ class AgentOrchestrator(
             // Steps 3–5: Permission check → risk classification → block/confirm → execute.
             // All four phases now share [runValidatedToolCall] with the skill path so safety can
             // never be bypassed by either entry point.
+            if (isCancelled(myRun)) { releaseProcessingLock(); return }
             val outcome = runValidatedToolCall(toolCall, sanitizedText)
             when (outcome) {
                 is StepOutcome.NeedsSystemAccess -> {
                     pendingCommand.set(text)
                     pendingInputType.set(inputType)
+                    pendingRequiredPermission.set(outcome.missing.firstOrNull())
                     onSystemPermissionRequired?.invoke(outcome.missing)
                     onSystemPermissionRequiredMulticast.invokeAll { it(outcome.missing) }
                     releaseProcessingLock()
@@ -684,6 +730,7 @@ class AgentOrchestrator(
                     // One-shot side-effect tools (open_app, create_note, …) skip the loop: the model
                     // has nothing to react to, so continuing would only add latency.
                     if (parseOutcome is ParseOutcome.Llm && ReActLoopController.shouldEngage(toolCall.tool)) {
+                        if (isCancelled(myRun)) { releaseProcessingLock(); return }
                         addStep(AgentStatus.VERIFYING, "Agent Reasoning", "Reviewing result; planning next step…")
                         val finalSpoken = continueAgentLoop(
                             firstCall = toolCall,
@@ -735,7 +782,25 @@ class AgentOrchestrator(
     fun clearPendingAndReExecute() {
         val cmd = pendingCommand.getAndSet(null)
         val type = pendingInputType.getAndSet(null)
+        val req = pendingRequiredPermission.getAndSet(null)
         if (cmd != null && type != null) {
+            // C4: don't bounce back to system settings in a loop. If the system permission is STILL
+            // not granted, re-running would just deep-link to settings again and re-stash the pending
+            // command (the reported "keeps on saying reading screen, can't remove it" trap). Instead
+            // speak a one-time clear instruction and stop. The user grants access and re-issues the
+            // command, or taps Cancel.
+            if (req != null && !PermissionManager.isRequirementSatisfied(context, req)) {
+                Logger.i("Orchestrator: pending system permission '$req' still missing on resume — not re-running")
+                scope.launch {
+                    runCatching {
+                        voiceModule.speak(
+                            "That needs an access you haven't enabled yet. " +
+                                "Turn it on in Settings once, then ask me again — or say stop."
+                        )
+                    }
+                }
+                return
+            }
             scope.launch { processCommand(cmd, type) }
         }
     }
@@ -768,6 +833,7 @@ class AgentOrchestrator(
                     saveLog(log.copy(selectedTool = "compound", status = "blocked"))
                     pendingCommand.set(sanitizedText)
                     pendingInputType.set(inputType)
+                    pendingRequiredPermission.set(outcome.missing.firstOrNull())
                     return
                 }
                 is StepOutcome.NeedsRuntimeAccess -> {
@@ -891,6 +957,7 @@ class AgentOrchestrator(
                             saveLog(log.copy(selectedTool = toolsUsed.joinToString("→"), status = "blocked"))
                             pendingCommand.set(sanitizedText)
                             pendingInputType.set(inputType)
+                            pendingRequiredPermission.set(outcome.missing.firstOrNull())
                             return lastObservation
                         }
                         is StepOutcome.NeedsRuntimeAccess -> {
@@ -1169,6 +1236,9 @@ class AgentOrchestrator(
     }
 
     private fun addStep(status: AgentStatus, label: String, detail: String = "") {
+        // C3: don't re-populate the timeline after a cancel cleared it. The latest run is cancelled
+        // when cancelledRunId >= currentRunId; a fresh run increments currentRunId past it.
+        if (cancelledRunId.get() >= currentRunId.get()) return
         try {
             _timelineSteps.value = _timelineSteps.value + TimelineStep(status, label, detail)
         } catch (e: Exception) {
@@ -1231,6 +1301,33 @@ class AgentOrchestrator(
     private fun releaseProcessingLock() {
         _isProcessing.value = false
         processingLock.set(false)
+    }
+
+    /** C3: true when [myRun] has been cancelled by [cancelCurrentCommand]. */
+    private fun isCancelled(myRun: Long): Boolean = cancelledRunId.get() >= myRun
+
+    /**
+     * C3: Cancel the in-flight command (if any) and clear the pending system-permission command.
+     * Un-bricks the UI immediately — the blind user is never trapped in a "Reading screen" / stuck
+     * processing state. Sets [cancelledRunId] to the latest run so the running [processCommand]
+     * bails at its next checkpoint; releases the lock + clears the timeline + speaks "Stopped."
+     * Safe to call when nothing is running (no-op besides clearing a stale pending command).
+     */
+    fun cancelCurrentCommand() {
+        val wasActive = _isProcessing.value || pendingCommand.get() != null
+        pendingCommand.set(null)
+        pendingInputType.set(null)
+        pendingRequiredPermission.set(null)
+        cancelledRunId.set(currentRunId.get())
+        _timelineSteps.value = emptyList()
+        _isProcessing.value = false
+        processingLock.set(false)
+        if (wasActive) {
+            scope.launch {
+                runCatching { voiceModule.speak("Stopped.") }
+                    .onFailure { Logger.w("Orchestrator: cancel speak failed: ${it.message}") }
+            }
+        }
     }
 
     private suspend fun saveLog(log: ActionLogEntity) {

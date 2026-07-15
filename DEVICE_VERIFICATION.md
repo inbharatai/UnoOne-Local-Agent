@@ -355,6 +355,100 @@ Secure Browser voice task + read-aloud + spoken confirm: ☐ human
 TalkBack live-region announcements: ☐ human
 ```
 
+## 11. Eyes-free bulletproof fixes (`fix/unoone-eyesfree-bulletproof`)
+
+This section covers the C1-C9 fixes for the four real, reproducible failures reported on the
+Xiaomi 14 after the router/eyes-free merge (main@628d2c5): OOM "system shuts down" during Blind
+Aid, slow Blind-Aid/listen activation, the Read-Screen settings-bounce trap, and the
+front-end/agent-work + document/form-loading asks. Headless-provable logic is verified by
+JVM/Robolectric tests; everything that depends on the live Gemma inference, microphone,
+speaker, camera, WebView, MediaProjection or TalkBack is a device-time gate and stays ☐ until
+there is on-device evidence. No item is flipped to ✅ from compilation or JVM tests alone.
+
+### 11.1 What changed (C1-C9)
+
+- **C1**: Blind Aid activation unloads the 2.5 GB Gemma brain (frees ~800 MB) before the camera
+  binds; reloads on deactivate. Guards respect the Secure Browser / exclusive lease and the
+  processing lock.
+- **C2**: `BlindAidCameraPreview` binds CameraX asynchronously (`cameraProviderFuture.addListener`
+  on the main executor, not a blocking `.get()` on the main thread); ML Kit `ObjectDetection` is
+  lazy; a "Warming up the camera" overlay + immediate spoken "Blind Aid activated" give instant
+  feedback.
+- **C3**: Always-enabled Stop/Cancel control + `AgentOrchestrator.cancelCurrentCommand()` with
+  run-generation tokens (`currentRunId`/`cancelledRunId`) so a cancel only stops the run it was
+  aimed at; `addStep` no-ops after a cancel so the timeline isn't repopulated. The blind user is
+  never trapped in a stuck "Reading screen"/processing state.
+- **C4**: Read Screen now drives an in-app MediaProjection consent (`ScreenshotPermissionActivity`
+  → `ScreenshotCapture` → `OcrControl`) and speaks the result — no bounce to MIUI Accessibility
+  settings. `clearPendingAndReExecute` re-checks the required system permission on resume and does
+  NOT blindly re-run (kills the infinite settings-bounce loop).
+- **C5**: One-tap hands-free session — speak → voice reply → re-listen automatically. `VoiceService`
+  `foregroundSessionActive` makes the in-app session the single mic owner (the KWS loop releases its
+  `AudioRecorder` while the session is active), fixing the dual-`AudioRecord` "listen slow/erratic".
+- **C6**: Voice commands route to the direct handlers (start/stop blind aid, read screen, open
+  secure browser, stop listening) via the existing three-lane router; spoken confirms, not skipped.
+- **C7**: Collapsible "Agent Flow Timeline" that shows the full agent work (auto-scroll to latest,
+  live-region "Now: …" summary, expand/collapse) — agent work no longer gets covered/clipped.
+- **C8**: Real document loaders (no heavy deps): PDF via `PdfRenderer`+ML Kit OCR, image via ML Kit
+  OCR, `.xlsx` via JDK SAX over OOXML, HTML via a regex tag-stripper, CSV/text via UTF-8 — all
+  JVM-tested. Legacy `.xls` is honestly reported unsupported, not faked. Output capped to the
+  brain's context window with a spoken `truncated` notice.
+- **C9**: PageAgent fills **offline** forms: a user-picked `.html` form is loaded into the sandboxed
+  WebView at a synthetic `https://unoone.local-form` origin (reachable ONLY via
+  `loadDataWithBaseURL`; `BrowserDomainPolicy` blocks navigation to it). The PageAgent runtime is
+  injected as for a remote page and every action still round-trips through AUTHORIZE_ACTION →
+  `BrowserSafetyPolicy` (origin-agnostic) — no payment/credential/OTP/captcha/legal/final-submission
+  gate is weakened.
+
+### 11.2 Verification record
+
+```text
+Run date: 2026-07-15
+Branch: fix/unoone-eyesfree-bulletproof
+Branch base: main@628d2c5
+Device: Xiaomi 14 23127PN0CG (houji), serial 7f8cafef, Android 15/API 35
+Automated gate: lint ✅ (no new issues, 32 baseline), :app + :core JVM unit tests ✅,
+  instrumented OK (42) ✅, assembleDebug ✅, assembleDebugAndroidTest ✅
+Install (adb push + pm install -r): Success ✅
+Permissions granted: RECORD_AUDIO, POST_NOTIFICATIONS, CAMERA ✅
+Launch (am start MainActivity): resumed, no crash, pid alive ✅
+Gemma 4 E2B load: CPU backend, "conversation ready", model load 1259ms ✅
+Front-panel UI render (uiautomator content-desc/text XML, no screenshots):
+  "Stop and cancel" (C3) ✅, "Listen" (C5) ✅, "Blind Aid" (C1/C2) ✅,
+  "Read Screen. Speaks what is currently on your screen." (C4) ✅,
+  "Secure Browser. Opens the voice-driven private browser." (C9) ✅,
+  "Load Document (PDF / Excel / image / text)" (C8) ✅,
+  "Agent Flow Timeline, expanded" + "Collapse timeline" (C7) ✅
+Instrumented suite note: one full-suite run showed 2 flaky failures in
+  AgentSafetyPipelineHeadlessTest (deny-confirm / block-input) under the memory pressure of the
+  resident 2.5 GB Gemma brain loaded by the localbrain tests; NOT reproducible in isolation (3/3),
+  with the alphabetical prefix (24/24), or on a clean full-suite re-run (OK 42). Not a C1-C9
+  regression (runValidatedToolCall + skill Blocked/Cancelled branches + SafetyGuard "bank"→BLOCK
+  are byte-identical a788915..HEAD). Follow-up: harden awaitConfirmation's suspendCancellable-
+  Coroutine + withTimeoutOrNull against full-suite load, or isolate the safety headless tests
+  from the resident brain.
+
+Human-gated (stay ☐ until the owner verifies at the device):
+  Always-listening session: tap Listen → "I'm listening" → speak → voice reply → auto re-listen ☐
+  Blind Aid: no lowmemorykiller kill during camera (logcat) + brain unload/reload ☐
+  Blind Aid activation no longer multi-second frozen ☐
+  Read Screen: in-app MediaProjection consent → speaks screen contents; no settings bounce ☐
+  Stop / "stop listening" ends session, mic released ☐
+  Live document OCR (PDF/image) + XLSX/HTML parse + spoken summary ☐
+  Offline form: load .html → PageAgent fills it with spoken CONFIRM/TAKEOVER gates intact ☐
+  TalkBack live-region announcements for the new timeline + Stop control ☐
+```
+
+### 11.3 Honesty constraints for this section
+
+- `BrowserSafetyPolicy` and every per-action confirm/takeover gate are unchanged; C9 only admits
+  a synthetic local-form origin reachable solely via explicit `loadDataWithBaseURL`. No gate was
+  weakened; hands-free still means *spoken* confirms, never skipped.
+- No fake URLs, origins, dummy narration, or placeholder parsers. Legacy `.xls` is reported
+  unsupported rather than faked.
+- Live-mic STT, audible TTS, live camera/OCR, MediaProjection Read Screen, live form-fill and
+  TalkBack announcements are NOT faked and stay ☐ until a human verifies them at the device.
+
 ## Evidence requirements
 
 For every completed row, commit or link:

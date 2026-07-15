@@ -66,6 +66,15 @@ class UnoOneApplication : Application() {
         orchestrator.setVoiceModule(sharedVoiceModule)
         secureBrowserModelLease = SecureBrowserModelLease(this, orchestrator)
 
+        // C1: Blind Aid unloads the 2.5 GB Gemma brain to free ~800 MB RAM for the camera (the
+        // reported "system shuts down" lowmemorykiller OOM). The Application owns the Secure Browser
+        // lease + ExclusiveBrainLeaseState, so it supplies the "safe to unload" guard and the reload
+        // callback that honours those leases when Blind Aid is deactivated.
+        orchestrator.brainReleaseGuard = {
+            !ExclusiveBrainLeaseState.isActive() && !secureBrowserModelLease.isActive()
+        }
+        orchestrator.brainReloadCallback = { reloadLlmIfUnloaded() }
+
         AuditLogger.initialize(db.actionLogDao())
 
         val modelManager = ModelManager(this, db.modelMetadataDao())

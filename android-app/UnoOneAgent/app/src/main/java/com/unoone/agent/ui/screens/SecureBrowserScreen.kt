@@ -1,7 +1,11 @@
 package com.unoone.agent.ui.screens
 
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -33,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +49,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.unoone.agent.ui.viewmodel.BrowserPromptKind
 import com.unoone.agent.ui.viewmodel.SecureBrowserViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** UnoOne-controlled WebView running Alibaba PageAgent with local Gemma 4 planning. */
 @Composable
@@ -57,6 +66,30 @@ fun SecureBrowserScreen(
     var task by remember { mutableStateOf("") }
     var promptText by remember(prompt?.id) { mutableStateOf("") }
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    // C9: pick a local/offline HTML form (SAF) and load it into the sandboxed WebView at the synthetic
+    // local-form origin so PageAgent can fill it offline. Reading the bytes runs on Dispatchers.IO so
+    // the launcher callback never blocks the main thread; the load itself is dispatched back to it.
+    val localFormLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        coroutineScope.launch {
+            val (html, name) = withContext(Dispatchers.IO) {
+                runCatching {
+                    val displayName = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: "local form"
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw java.io.IOException("Could not open the selected form")
+                    String(bytes, Charsets.UTF_8) to displayName
+                }.getOrElse { e -> "" to (e.message ?: "read error") }
+            }
+            withContext(Dispatchers.Main) {
+                viewModel.loadLocalFormHtml(html, name)
+            }
+        }
+    }
 
     fun handleBack() {
         if (!viewModel.goBack()) {
@@ -165,6 +198,16 @@ fun SecureBrowserScreen(
                 ) {
                     Icon(Icons.AutoMirrored.Filled.Article, contentDescription = null)
                     Text("Read Page", modifier = Modifier.padding(start = 6.dp))
+                }
+                // C9: open an offline .html form from device storage (SAF) and load it into the
+                // sandboxed WebView so PageAgent can fill it offline. PageAgent safety gates apply
+                // unchanged (payment/credential/OTP/captcha/legal/final-submission → confirm/takeover).
+                OutlinedButton(
+                    onClick = { localFormLauncher.launch(arrayOf("text/html")) },
+                    enabled = state.sessionActive && !state.taskRunning
+                ) {
+                    Icon(Icons.Default.Description, contentDescription = null)
+                    Text("Load Form", modifier = Modifier.padding(start = 6.dp))
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -32,12 +32,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.SmartToy
@@ -111,7 +115,11 @@ fun AgentScreen(
     val amplitude by viewModel.amplitude.collectAsState()
     val pendingConfirmation by viewModel.pendingConfirmation.collectAsState()
     val isListening by viewModel.isListening.collectAsState()
+    val isHandsFree by viewModel.isHandsFree.collectAsState()
     val offlineMode by viewModel.offlineMode.collectAsState()
+    // C8: loaded document + loading flag.
+    val loadedDocument by viewModel.loadedDocument.collectAsState()
+    val isLoadingDocument by viewModel.isLoadingDocument.collectAsState()
     val context = LocalContext.current
 
     // Keep the offline-mode chip live: VoiceModule exposes @Volatile state (not a Flow), so poll
@@ -142,6 +150,22 @@ fun AgentScreen(
             viewModel.setBlindAidActive(true)
         }
     }
+
+    // C8: Storage Access Framework picker — load a PDF / image / Excel / HTML / text / CSV file for
+    // the on-device brain to read and work on. OpenDocument grants a temporary read grant on the
+    // returned content:// uri; we resolve the mime from the ContentResolver and hand both to the
+    // ViewModel's DocumentLoader (real parsers, no dummies).
+    val documentPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull()
+            viewModel.loadDocument(context, uri, mime)
+        }
+    }
+
+    // C8: the question/instruction the user wants the brain to answer about the loaded document.
+    var documentQuestion by rememberSaveable { mutableStateOf("") }
 
     // Confirmation dialog
     pendingConfirmation?.let { (message, level) ->
@@ -217,6 +241,29 @@ fun AgentScreen(
                     )
                 }
             }
+
+            // C3: ALWAYS-ENABLED Stop/Cancel. The single guarantee a blind user is never trapped in a
+            // stuck "Reading screen" / processing state — one tap cancels the in-flight command,
+            // clears the pending permission command, releases the lock, and speaks "Stopped." It is
+            // never disabled by isProcessing (the whole point), and carries a full TalkBack label.
+            Surface(
+                onClick = { viewModel.cancelCommand() },
+                enabled = true,
+                shape = CircleShape,
+                color = FailedRed.copy(alpha = if (isProcessing) 0.85f else 0.15f),
+                contentColor = if (isProcessing) Color.White else FailedRed,
+                modifier = Modifier
+                    .size(44.dp)
+                    .semantics { contentDescription = "Stop and cancel" }
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
         }
 
         // Eyes-free (WS5): large, TalkBack-labeled capability surface. The four primary actions a
@@ -226,14 +273,19 @@ fun AgentScreen(
         CapabilitySurface(
             isProcessing = isProcessing,
             isListening = isListening,
+            isHandsFree = isHandsFree,
             isBlindAidActive = isBlindAidActive,
             onListen = {
-                if (isListening) {
-                    viewModel.stopListening()
+                // C3/C5: the big LISTEN button is the always-listening hands-free session toggle.
+                // During an in-flight command it instead CANCELS (never bricked — a blind user can
+                // always interrupt). One tap starts the session: speak → voice reply → re-listen
+                // automatically, no repeated tapping. A second tap (or "stop listening") ends it.
+                if (isProcessing) {
+                    viewModel.cancelCommand()
                 } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
                     == PackageManager.PERMISSION_GRANTED
                 ) {
-                    viewModel.startListening(context)
+                    viewModel.toggleHandsFreeSession(context)
                 } else {
                     micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 }
@@ -250,10 +302,10 @@ fun AgentScreen(
                 }
             },
             onReadScreen = {
-                // VOICE input so the orchestrator speaks the screen contents back (eyes-free).
-                // Routes to the read_screen tool; if Accessibility isn't enabled, the B1
-                // onSystemPermissionRequired deep-link surfaces the settings and resumes on return.
-                viewModel.onVoiceCommand("read screen")
+                // C4: MediaProjection + on-device OCR path — in-app one-tap consent, no bounce to MIUI
+                // Accessibility settings, and the result is SPOKEN (eyes-free). The Accessibility-based
+                // read_screen tool stays for cross-app reading when Accessibility is enabled.
+                viewModel.readScreenViaMediaProjection(context)
             },
             onSecureBrowser = onNavigateToSecureBrowser
         )
@@ -313,29 +365,35 @@ fun AgentScreen(
         ) {
             FloatingActionButton(
                 onClick = {
-                    if (isListening) {
-                        viewModel.stopListening()
-                    } else {
-                        // Check if permission is already granted before launching system dialog
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
-                            == PackageManager.PERMISSION_GRANTED
-                        ) {
-                            viewModel.startListening(context)
-                        } else {
-                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    when {
+                        // C3: during an in-flight command the mic FAB cancels (never bricked).
+                        isProcessing -> viewModel.cancelCommand()
+                        // C5: ends the hands-free session if active.
+                        isHandsFree -> viewModel.stopHandsFreeSession()
+                        isListening -> viewModel.stopListening()
+                        else -> {
+                            // One-shot push-to-talk for sighted/quick use (the hands-free session is
+                            // the primary path via the big LISTEN button). Check permission first.
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+                                == PackageManager.PERMISSION_GRANTED
+                            ) {
+                                viewModel.startListening(context)
+                            } else {
+                                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
                         }
                     }
                 },
                 shape = CircleShape,
-                containerColor = if (isListening) ListeningRed else MaterialTheme.colorScheme.primary,
+                containerColor = if (isListening || isHandsFree) ListeningRed else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(80.dp)
             ) {
-                if (isProcessing && !isListening) {
+                if (isProcessing && !isListening && !isHandsFree) {
                     CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp))
                 } else {
                     Icon(
-                        imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
-                        contentDescription = if (isListening) "Stop" else "Speak",
+                        imageVector = if (isListening || isHandsFree || isProcessing) Icons.Default.Stop else Icons.Default.Mic,
+                        contentDescription = if (isListening || isHandsFree || isProcessing) "Stop" else "Speak",
                         modifier = Modifier.size(36.dp),
                         tint = Color.White
                     )
@@ -393,26 +451,180 @@ fun AgentScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // C8: load a document (PDF / image / Excel / HTML / text / CSV) for the brain to read + work
+        // on. Tapping opens the system file picker; the extracted text is fed as context to the brain.
+        Button(
+            onClick = {
+                documentPickerLauncher.launch(
+                    arrayOf(
+                        "application/pdf",
+                        "image/*",
+                        "text/plain",
+                        "text/html",
+                        "text/csv",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "application/vnd.ms-excel"
+                    )
+                )
+            },
+            enabled = !isProcessing && !isLoadingDocument,
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = "Load a document for the AI to read. Opens the file picker." }
+        ) {
+            Icon(
+                imageVector = Icons.Default.Description,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.size(8.dp))
+            Text(if (isLoadingDocument) "Reading document…" else "Load Document (PDF / Excel / image / text)")
+        }
+
+        // C8: loaded-document card — shows what was loaded and lets the user ask the brain about it.
+        loadedDocument?.let { doc ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                shape = RoundedCornerShape(12.dp),
+                elevation = CardDefaults.cardElevation(4.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = doc.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = {
+                            viewModel.clearDocument()
+                            documentQuestion = ""
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Remove loaded document"
+                            )
+                        }
+                    }
+                    val kindWord = when (doc.kind) {
+                        com.unoone.agent.core.document.DocKind.PDF -> "PDF, ${doc.pagesOrSheets} page(s)"
+                        com.unoone.agent.core.document.DocKind.IMAGE -> "image (OCR)"
+                        com.unoone.agent.core.document.DocKind.XLSX -> "Excel spreadsheet"
+                        com.unoone.agent.core.document.DocKind.HTML -> "web page"
+                        com.unoone.agent.core.document.DocKind.CSV -> "CSV"
+                        else -> "text"
+                    }
+                    Text(
+                        text = "$kindWord · ${doc.text.length} characters" +
+                            if (doc.truncated) " · first part only" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = documentQuestion,
+                            onValueChange = { documentQuestion = it },
+                            label = { Text("Ask about this document") },
+                            placeholder = { Text("Summarize this document") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            enabled = !isProcessing
+                        )
+                        Button(
+                            onClick = {
+                                viewModel.askAboutDocument(documentQuestion)
+                                documentQuestion = ""
+                            },
+                            enabled = !isProcessing
+                        ) {
+                            Text("Ask")
+                        }
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Agent Flow Timeline
-        Text(
-            text = "Agent Flow Timeline",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold
-        )
+        // C7: Agent timeline — COLLAPSIBLE and given all remaining vertical space (weight(1f)) so the
+        // running agent's work shows FULLY and is never covered/clipped by the controls above. The
+        // header toggles collapse; the newest step is auto-scrolled into view and summarized in the
+        // header so the current activity is visible even when collapsed (agent work no longer hidden
+        // under the fold). Eyes-free live-region still announces each progression via TimelineStepCard.
+        var timelineExpanded by rememberSaveable { mutableStateOf(true) }
+        val timelineListState = rememberLazyListState()
+        val latestStep = timeline.lastOrNull()
+        // Auto-scroll to the newest step as it arrives so it is always in view.
+        LaunchedEffect(timeline.size) {
+            if (timeline.isNotEmpty()) {
+                runCatching { timelineListState.animateScrollToItem(timeline.lastIndex) }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics {
+                    contentDescription = "Agent Flow Timeline, " +
+                        if (timelineExpanded) "expanded" else "collapsed" +
+                        (latestStep?.let { ". Latest: ${it.label}." } ?: "")
+                },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Agent Flow Timeline",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                // C7: latest-activity summary — always visible (even when collapsed) so the agent's
+                // current work surfaces instead of being hidden below the controls.
+                latestStep?.let { step ->
+                    val summary = if (step.detail.isNotBlank()) "${step.label} — ${step.detail}" else step.label
+                    Text(
+                        text = "Now: $summary",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        // Eyes-free: live region so TalkBack speaks the latest step as it lands.
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                    )
+                }
+            }
+            IconButton(onClick = { timelineExpanded = !timelineExpanded }) {
+                Icon(
+                    imageVector = if (timelineExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (timelineExpanded) "Collapse timeline" else "Expand timeline"
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(8.dp))
 
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(bottom = 16.dp)
-        ) {
-            itemsIndexed(timeline) { index, step ->
-                // Eyes-free (WS6): the newest timeline step is a TalkBack live region, so a blind
-                // user hears each progression ("Listening", "Processing", "Done") as it happens
-                // without scrubbing the list. Older steps remain plain cards for review.
-                TimelineStepCard(step, isLatest = index == timeline.lastIndex)
+        if (timelineExpanded) {
+            LazyColumn(
+                state = timelineListState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 16.dp)
+            ) {
+                itemsIndexed(timeline) { index, step ->
+                    // Eyes-free (WS6): the newest timeline step is a TalkBack live region, so a blind
+                    // user hears each progression ("Listening", "Processing", "Done") as it happens
+                    // without scrubbing the list. Older steps remain plain cards for review.
+                    TimelineStepCard(step, isLatest = index == timeline.lastIndex)
+                }
             }
         }
     }
@@ -427,9 +639,12 @@ fun BlindAidCameraPreview(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+    // C2: "warming up" state shown until the camera provider is ready and bound off the main thread.
+    var cameraBound by remember { mutableStateOf(false) }
 
     // BlindAidManager is eagerly created via remember — it only runs when this composable
-    // is visible (inside AnimatedVisibility), so the detector/toneGenerator cost is acceptable.
+    // is visible (inside AnimatedVisibility). The ML Kit detector itself is lazy (created on the
+    // first analyzed frame) so construction never blocks activation.
     val blindAidManager = remember {
         com.unoone.agent.phonecontrol.BlindAidManager(context) { feedback ->
             voiceModule.speak(feedback)
@@ -455,40 +670,66 @@ fun BlindAidCameraPreview(
                     scaleType = PreviewView.ScaleType.FILL_CENTER
                 }
 
-                // One-time camera binding in factory — avoids rebind on every recomposition
-                val cameraProvider = cameraProviderFuture.get()
-
-                val preview = Preview.Builder().build().also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-
-                val imageAnalysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build().also { analysis ->
-                        analysis.setAnalyzer(
-                            ContextCompat.getMainExecutor(context),
-                            blindAidManager.getAnalyzer()
+                // C2: bind the camera ASYNCHRONOUSLY off the main thread. The prior
+                // cameraProviderFuture.get() blocked the AndroidView factory on the main thread,
+                // janking/freezing Blind Aid activation for seconds (worse under memory pressure).
+                // Build the PreviewView immediately so a surface exists, then bind when the future
+                // completes on the main executor.
+                cameraProviderFuture.addListener({
+                    try {
+                        val cameraProvider = cameraProviderFuture.get()
+                        val preview = Preview.Builder().build().also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
+                        }
+                        val imageAnalysis = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .build().also { analysis ->
+                                analysis.setAnalyzer(
+                                    ContextCompat.getMainExecutor(context),
+                                    blindAidManager.getAnalyzer()
+                                )
+                            }
+                        cameraProvider.unbindAll()
+                        cameraProvider.bindToLifecycle(
+                            lifecycleOwner,
+                            CameraSelector.DEFAULT_BACK_CAMERA,
+                            preview,
+                            imageAnalysis
                         )
+                        cameraBound = true
+                    } catch (e: Exception) {
+                        com.unoone.agent.core.util.Logger.e("BlindAidCameraPreview: Camera binding failed", e)
                     }
-
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                try {
-                    cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        cameraSelector,
-                        preview,
-                        imageAnalysis
-                    )
-                } catch (e: Exception) {
-                    com.unoone.agent.core.util.Logger.e("BlindAidCameraPreview: Camera binding failed", e)
-                }
+                }, ContextCompat.getMainExecutor(context))
 
                 previewView
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        // C2: brief "warming up" overlay until the camera is bound (non-frozen, immediate feedback).
+        if (!cameraBound) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(40.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Warming up the camera…",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.semantics {
+                            liveRegion = LiveRegionMode.Polite
+                            contentDescription = "Blind Aid warming up the camera"
+                        }
+                    )
+                }
+            }
+        }
 
         // Live bounding-box overlay — draws ML Kit detections over the preview. Boxes are
         // normalized to the upright image; FILL_CENTER maps them into this view (center-crop).
@@ -570,6 +811,7 @@ private fun QuickActionButton(label: String, icon: androidx.compose.ui.graphics.
 private fun CapabilitySurface(
     isProcessing: Boolean,
     isListening: Boolean,
+    isHandsFree: Boolean,
     isBlindAidActive: Boolean,
     onListen: () -> Unit,
     onBlindAid: () -> Unit,
@@ -586,11 +828,21 @@ private fun CapabilitySurface(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // C3/C5: LISTEN is ALWAYS enabled. During an in-flight command it acts as Cancel
+            // (interrupt); during a hands-free session it shows "Stop listening". Never gated by
+            // isProcessing — a blind user can always interrupt/stop from the primary action.
             CapabilityButton(
                 capability = Capability.LISTEN,
-                enabled = !isProcessing,
+                enabled = true,
                 modifier = Modifier.weight(1f),
-                onClick = onListen
+                onClick = onListen,
+                labelOverride = if (isHandsFree) "Stop listening" else if (isProcessing) "Stop" else null,
+                iconOverride = if (isHandsFree || isProcessing) Icons.Default.Stop else null,
+                talkBackOverride = when {
+                    isProcessing -> "Stop. Cancels the current command."
+                    isHandsFree -> "Stop listening. Ends the hands-free session."
+                    else -> null
+                }
             )
             CapabilityButton(
                 capability = Capability.BLIND_AID,
@@ -624,8 +876,16 @@ private fun CapabilityButton(
     capability: Capability,
     enabled: Boolean,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    // C3/C5: optional overrides so the LISTEN button can show "Stop"/"Stop listening" with a Stop
+    // icon and a matching TalkBack label when it doubles as the Cancel/hands-free-stop control.
+    labelOverride: String? = null,
+    iconOverride: ImageVector? = null,
+    talkBackOverride: String? = null
 ) {
+    val label = labelOverride ?: capability.label
+    val icon = iconOverride ?: capabilityIcon(capability)
+    val talkBack = talkBackOverride ?: capability.talkBackLabel
     Surface(
         onClick = onClick,
         enabled = enabled,
@@ -634,7 +894,7 @@ private fun CapabilityButton(
         contentColor = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
         modifier = modifier
             .height(96.dp)
-            .semantics { contentDescription = capability.talkBackLabel }
+            .semantics { contentDescription = talkBack }
     ) {
         Column(
             modifier = Modifier
@@ -644,13 +904,13 @@ private fun CapabilityButton(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Icon(
-                imageVector = capabilityIcon(capability),
+                imageVector = icon,
                 contentDescription = null, // the surface's contentDescription carries the full label
                 modifier = Modifier.size(32.dp)
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = capability.label,
+                text = label,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold
             )
