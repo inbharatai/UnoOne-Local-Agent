@@ -71,6 +71,7 @@ object PromptBuilder {
         appendLine("- draft_email(to, subject, body)")
         appendLine("- send_whatsapp(number, message)")
         appendLine("- check_calendar()")
+        appendLine("- open_calendar()")
         appendLine("- open_calendar_insert(title, start_time?, end_time?)")
         appendLine("- open_dialer(number?)")
         appendLine("- share_text(text)")

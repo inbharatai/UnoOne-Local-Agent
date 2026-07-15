@@ -2,6 +2,8 @@ package com.unoone.agent.core.agent
 
 import com.unoone.agent.core.model.RiskLevel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -80,5 +82,52 @@ class SafetyJudgePolicyTest {
             RiskLevel.BLOCK,
             SafetyJudgePolicy.escalate(RiskLevel.BLOCK, SafetyVerdict.SAFE)
         )
+    }
+
+    // === shouldRun() — when the judge is invoked at all ===
+
+    @Test
+    fun shouldRunSkipsDirectToolsEvenWhenEverythingElseIsEnabled() {
+        // Regression for the "speak_response → CONFIRM" popup: harmless DIRECT tools must not
+        // incur a second LLM judge inference (and its "stricter verdict" escalation bias).
+        assertFalse(
+            "DIRECT tools must skip the judge",
+            SafetyJudgePolicy.shouldRun(
+                judgeEnabled = true,
+                judgeFlagEnabled = true,
+                modelLoaded = true,
+                riskLevel = RiskLevel.DIRECT
+            )
+        )
+    }
+
+    @Test
+    fun shouldRunsForConfirmAndStrongConfirmAndBlockWhenEnabled() {
+        for (level in listOf(RiskLevel.CONFIRM, RiskLevel.STRONG_CONFIRM, RiskLevel.BLOCK)) {
+            assertTrue(
+                "$level must run the judge when enabled + model loaded",
+                SafetyJudgePolicy.shouldRun(
+                    judgeEnabled = true,
+                    judgeFlagEnabled = true,
+                    modelLoaded = true,
+                    riskLevel = level
+                )
+            )
+        }
+    }
+
+    @Test
+    fun shouldRunFalseWhenSecurityLevelBelowStandard() {
+        assertFalse(SafetyJudgePolicy.shouldRun(false, true, true, RiskLevel.CONFIRM))
+    }
+
+    @Test
+    fun shouldRunFalseWhenJudgeFlagOff() {
+        assertFalse(SafetyJudgePolicy.shouldRun(true, false, true, RiskLevel.CONFIRM))
+    }
+
+    @Test
+    fun shouldRunFalseWhenBrainNotLoaded() {
+        assertFalse(SafetyJudgePolicy.shouldRun(true, true, false, RiskLevel.CONFIRM))
     }
 }

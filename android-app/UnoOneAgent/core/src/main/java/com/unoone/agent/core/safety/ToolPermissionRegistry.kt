@@ -43,6 +43,7 @@ object ToolPermissionRegistry {
         "open_camera" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.CAMERA)),
 
         // Calendar.
+        "open_calendar" to listOf(PermissionRequirement.None), // launcher intent; no permission
         "check_calendar" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.READ_CALENDAR)),
         "open_calendar_insert" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.WRITE_CALENDAR)),
 

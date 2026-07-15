@@ -86,6 +86,7 @@ object CanonicalToolRegistry {
         ToolParamSchema("message", ToolParamType.STRING, required = true)
     ))
     val check_calendar = ToolSchema("check_calendar", emptyList())
+    val open_calendar = ToolSchema("open_calendar", emptyList())
     val open_calendar_insert = ToolSchema("open_calendar_insert", listOf(
         ToolParamSchema("title", ToolParamType.STRING, required = true),
         ToolParamSchema("start_time", ToolParamType.STRING, required = false),
@@ -108,11 +109,11 @@ object CanonicalToolRegistry {
         ToolParamSchema("aspect", ToolParamType.STRING, required = false)
     ))
 
-    /** All 26 canonical tools, in declaration order. */
+    /** All 27 canonical tools, in declaration order. */
     val tools: List<ToolSchema> = listOf(
         create_note, search_notes, summarize_text, speak_response, voice_recording, web_search,
         open_chrome, open_app, open_url, open_camera, system_control, read_screen, ocr_screen,
-        create_skill, draft_email, send_whatsapp, check_calendar, open_calendar_insert,
+        create_skill, draft_email, send_whatsapp, check_calendar, open_calendar, open_calendar_insert,
         open_dialer, share_text, delete_notes, delete_all_notes, export_data, detect_objects,
         deactivate_blind_aid, describe_scene
     )

@@ -911,7 +911,16 @@ class AgentOrchestrator(
         // event" via a false-positive UNSAFE — RELAXED/OFF turn that off). The keyword tier then
         // stands unchanged, so this never creates a safety hole. Gated by a flag so the per-step
         // latency cost of an extra inference can be turned off if needed.
-        if (judgeEnabled && SAFETY_JUDGE_ENABLED && commandParser.isModelLoaded()) {
+        //
+        // DIRECT tools are also skipped: the judge's value is catching paraphrased harm the keyword
+        // tier UNDER-rates, and DIRECT is by definition the inert/launch tier (speak_response,
+        // open_chrome, open_app, open_calendar, check_calendar, create_note, search_notes,
+        // summarize_text, deactivate_blind_aid). Running a second inference + "stricter verdict"
+        // bias on these is what produced the "speak_response → CONFIRM" confirmation popup for plain
+        // answers. The keyword tier (SafetyGuard.classify + classifyFromInput) still classifies
+        // them, so no safety hole is created; the judge still runs for every CONFIRM/STRONG_CONFIRM/
+        // BLOCK tier where escalation matters.
+        if (SafetyJudgePolicy.shouldRun(judgeEnabled, SAFETY_JUDGE_ENABLED, commandParser.isModelLoaded(), riskLevel)) {
             val verdict = commandParser.judgeSafety(toolCall.tool, toolCall.args.toString(), sanitizedText)
             if (verdict is Result.Success) {
                 val judged = SafetyJudgePolicy.escalate(riskLevel, verdict.data)

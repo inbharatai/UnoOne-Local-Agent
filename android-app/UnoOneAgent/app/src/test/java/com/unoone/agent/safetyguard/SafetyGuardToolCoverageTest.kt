@@ -35,6 +35,7 @@ class SafetyGuardToolCoverageTest {
             "draft_email" to RiskLevel.STRONG_CONFIRM,
             "send_whatsapp" to RiskLevel.STRONG_CONFIRM,
             "check_calendar" to RiskLevel.DIRECT,
+            "open_calendar" to RiskLevel.DIRECT,
             "open_calendar_insert" to RiskLevel.CONFIRM,
             "open_dialer" to RiskLevel.CONFIRM,
             "share_text" to RiskLevel.CONFIRM,

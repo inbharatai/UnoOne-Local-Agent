@@ -15,6 +15,7 @@ class SafetyGuard {
         "open_app" to RiskLevel.DIRECT,
         "deactivate_blind_aid" to RiskLevel.DIRECT,
         "check_calendar" to RiskLevel.DIRECT,
+        "open_calendar" to RiskLevel.DIRECT,
 
         // Risk 1 — Single confirmation
         "open_url" to RiskLevel.CONFIRM,

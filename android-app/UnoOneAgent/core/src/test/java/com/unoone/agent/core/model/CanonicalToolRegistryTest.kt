@@ -16,9 +16,9 @@ import org.junit.Test
 class CanonicalToolRegistryTest {
 
     @Test
-    fun hasExactly26Tools() {
-        assertEquals(26, CanonicalToolRegistry.tools.size)
-        assertEquals(26, CanonicalToolRegistry.names.size)
+    fun hasExactly27Tools() {
+        assertEquals(27, CanonicalToolRegistry.tools.size)
+        assertEquals(27, CanonicalToolRegistry.names.size)
     }
 
     @Test
@@ -77,7 +77,7 @@ class CanonicalToolRegistryTest {
     @Test
     fun noArgToolsHaveNoRequiredParams() {
         for (name in listOf("open_chrome", "open_camera", "read_screen", "ocr_screen",
-            "check_calendar", "delete_all_notes", "export_data", "detect_objects",
+            "check_calendar", "open_calendar", "delete_all_notes", "export_data", "detect_objects",
             "deactivate_blind_aid")) {
             val s = CanonicalToolRegistry.schemaFor(name)!!
             assertTrue("$name should have no required params", s.requiredParams.isEmpty())

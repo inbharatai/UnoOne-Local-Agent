@@ -79,6 +79,16 @@ object RuleBasedParser {
                 )
             }
 
+            // Open the calendar app (launch, not check/insert). Must run BEFORE the generic
+            // "calendar"-keyword branch below: that branch returns null for plain "open calendar"
+            // (no check/show/add verb), and a `when` expression does not fall through, so the
+            // open_app catch-all never sees it. Resolves to a non-OEM launcher intent.
+            lowered in setOf(
+                "open calendar", "open the calendar", "open my calendar", "open calendar app",
+                "launch calendar", "launch the calendar", "launch calendar app",
+                "show calendar app", "show the calendar app"
+            ) -> ToolCall("open_calendar", JsonObject(emptyMap()))
+
             // Calendar Intelligence
             lowered.contains("calendar") || lowered.contains("schedule") || lowered.contains("events") -> {
                 if (lowered.contains("check") || lowered.contains("what") || lowered.contains("show") || lowered.contains("read")) {

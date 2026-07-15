@@ -139,6 +139,9 @@ class ActionExecutor(
                     phoneControl.openCalendarInsert(title, start, end)
                         .map { "Calendar insert opened for '$title'." }
                 }
+                "open_calendar" -> {
+                    phoneControl.openCalendar().map { "Calendar opened." }
+                }
                 "open_app" -> {
                     val appName = toolCall.args["app_name"]?.jsonPrimitive?.content ?: ""
                     val pkg = toolCall.args["package_name"]?.jsonPrimitive?.content

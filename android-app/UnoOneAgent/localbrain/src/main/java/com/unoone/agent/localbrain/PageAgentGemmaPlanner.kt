@@ -8,6 +8,7 @@ import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
+import com.unoone.agent.core.agent.ResponseTextJoiner
 import com.unoone.agent.core.model.BrainModelSpec
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
@@ -236,7 +237,10 @@ class PageAgentGemmaPlanner {
     }
 
     private fun extractText(message: Message): String? =
-        message.contents?.contents?.firstNotNullOfOrNull { (it as? Content.Text)?.text }
+        // Concatenate ALL text fragments, not just the first (see GemmaPlanner.extractText).
+        ResponseTextJoiner.join(
+            message.contents?.contents?.map { (it as? Content.Text)?.text } ?: emptyList()
+        )
 
     companion object {
         const val INFERENCE_TIMEOUT_MS = 45_000L

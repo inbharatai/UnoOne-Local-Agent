@@ -252,6 +252,29 @@ class RuleBasedParserTest {
     }
 
     @Test
+    fun testOpenCalendarLaunches() {
+        // Regression: plain "open calendar" used to hit the calendar-keyword branch, find no
+        // check/add verb, return null, and never reach the open_app catch-all. Now it routes to
+        // the dedicated open_calendar launcher.
+        for (phrase in listOf(
+            "open calendar", "open the calendar", "open my calendar", "open calendar app",
+            "launch calendar", "launch the calendar", "launch calendar app",
+            "show calendar app", "show the calendar app"
+        )) {
+            val toolCall = RuleBasedParser.parse(phrase)
+            assertNotNull("$phrase should parse", toolCall)
+            assertEquals("$phrase -> open_calendar", "open_calendar", toolCall!!.tool)
+        }
+    }
+
+    @Test
+    fun testOpenCalendarInsertStillRoutesToInsert() {
+        val toolCall = RuleBasedParser.parse("add meeting to calendar")
+        assertNotNull(toolCall)
+        assertEquals("open_calendar_insert", toolCall!!.tool)
+    }
+
+    @Test
     fun testReadScreen() {
         val toolCall = RuleBasedParser.parse("read screen")
         assertNotNull(toolCall)

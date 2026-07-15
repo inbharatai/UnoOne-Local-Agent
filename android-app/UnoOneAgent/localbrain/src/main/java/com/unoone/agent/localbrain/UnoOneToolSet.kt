@@ -98,6 +98,9 @@ class UnoOneToolSet : ToolSet {
     @Tool(description = "Check today's calendar events")
     fun check_calendar(): String = "Calendar checked."
 
+    @Tool(description = "Open the device's default calendar app")
+    fun open_calendar(): String = "Calendar opened."
+
     @Tool(description = "Open the calendar event creator")
     fun open_calendar_insert(
         @ToolParam(description = "Event title") title: String,

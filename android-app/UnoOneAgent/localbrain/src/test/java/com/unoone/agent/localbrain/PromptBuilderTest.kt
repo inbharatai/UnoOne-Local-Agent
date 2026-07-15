@@ -13,7 +13,7 @@ class PromptBuilderTest {
             "create_note", "search_notes", "summarize_text", "speak_response",
             "open_chrome", "open_app", "open_url", "open_camera",
             "system_control", "read_screen", "ocr_screen", "create_skill",
-            "draft_email", "send_whatsapp", "check_calendar", "open_calendar_insert",
+            "draft_email", "send_whatsapp", "check_calendar", "open_calendar", "open_calendar_insert",
             "open_dialer", "share_text", "delete_notes", "delete_all_notes",
             "export_data", "detect_objects", "deactivate_blind_aid"
         )

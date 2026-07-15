@@ -15,6 +15,7 @@ import com.unoone.agent.core.model.CanonicalToolRegistry
 import com.unoone.agent.core.model.ModelFamily
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
+import com.unoone.agent.core.agent.ResponseTextJoiner
 import com.unoone.agent.core.agent.SafetyVerdict
 import com.unoone.agent.core.model.ToolParamType
 import com.unoone.agent.core.util.Logger
@@ -585,11 +586,13 @@ class GemmaPlanner {
         activeBackend = ""
     }
 
-    private fun extractText(message: Message): String? {
-        return message.contents?.contents?.firstNotNullOfOrNull { content ->
-            (content as? Content.Text)?.text
-        }
-    }
+    private fun extractText(message: Message): String? =
+        // Concatenate ALL text fragments, not just the first — LiteRT-LM may split a response
+        // across multiple Content.Text parts; keeping only the first collapsed multi-part answers
+        // to a single fragment (the `?`/truncated final-card bug). Null when no non-blank text.
+        ResponseTextJoiner.join(
+            message.contents?.contents?.map { (it as? Content.Text)?.text } ?: emptyList()
+        )
 
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @Suppress("UNCHECKED_CAST")

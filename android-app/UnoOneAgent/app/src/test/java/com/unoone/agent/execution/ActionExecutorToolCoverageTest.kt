@@ -147,6 +147,7 @@ class ActionExecutorToolCoverageTest {
         "draft_email" to obj { put("to", "a@b.com"); put("subject", "s"); put("body", "b") },
         "send_whatsapp" to obj { put("number", "+919999999999"); put("message", "hi") },
         "check_calendar" to JsonObject(emptyMap()),
+        "open_calendar" to JsonObject(emptyMap()),
         "open_calendar_insert" to obj { put("title", "Meeting") },
         "open_dialer" to obj { put("number", "911") },
         "share_text" to obj { put("text", "hi") },
