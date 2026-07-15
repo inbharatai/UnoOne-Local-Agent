@@ -16,9 +16,9 @@ import org.junit.Test
 class CanonicalToolRegistryTest {
 
     @Test
-    fun hasExactly27Tools() {
-        assertEquals(27, CanonicalToolRegistry.tools.size)
-        assertEquals(27, CanonicalToolRegistry.names.size)
+    fun hasExactly28Tools() {
+        assertEquals(28, CanonicalToolRegistry.tools.size)
+        assertEquals(28, CanonicalToolRegistry.names.size)
     }
 
     @Test
@@ -45,6 +45,17 @@ class CanonicalToolRegistryTest {
     fun schemaForReturnsNullForUnknown() {
         assertNull(CanonicalToolRegistry.schemaFor("not_a_tool"))
         assertNull(CanonicalToolRegistry.schemaFor(""))
+    }
+
+    @Test
+    fun secureBrowserTaskRequiresOriginAndTask() {
+        assertTrue(CanonicalToolRegistry.isKnown("secure_browser_task"))
+        val s = CanonicalToolRegistry.schemaFor("secure_browser_task")!!
+        assertEquals(ToolParamType.STRING, s.param("origin")!!.type)
+        assertTrue(s.param("origin")!!.required)
+        assertEquals(ToolParamType.STRING, s.param("task")!!.type)
+        assertTrue(s.param("task")!!.required)
+        assertEquals(2, s.requiredParams.size)
     }
 
     @Test

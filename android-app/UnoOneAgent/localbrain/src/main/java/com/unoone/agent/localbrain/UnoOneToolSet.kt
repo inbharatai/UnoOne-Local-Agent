@@ -139,4 +139,10 @@ class UnoOneToolSet : ToolSet {
     fun describe_scene(
         @ToolParam(description = "Optional what to focus on, e.g. 'buttons', 'the total', 'any OTP'") aspect: String? = null
     ): String = "Scene described."
+
+    @Tool(description = "Open the UnoOne Secure Browser at an approved origin and run a PageAgent task. origin may be a friendly name like 'unigurus', 'uniassist', 'testsprep', or 'inbharat', or a full HTTPS URL. Only approved origins are accepted. The user confirms before the browser session opens; passwords, OTPs, payments and legal declarations always stay manual.")
+    fun secure_browser_task(
+        @ToolParam(description = "Approved origin: friendly name ('unigurus'), bare host ('unigurus.com'), or full HTTPS URL") origin: String,
+        @ToolParam(description = "What UnoOne should do on the page, e.g. 'fill the profile form and stop before final submission'") task: String
+    ): String = "Opening Secure Browser for $origin."
 }

@@ -46,7 +46,8 @@ class SafetyGuardToolCoverageTest {
             "deactivate_blind_aid" to RiskLevel.DIRECT,
             "voice_recording" to RiskLevel.CONFIRM,   // mic capture → single confirmation
             "web_search" to RiskLevel.CONFIRM,         // online lookup → single confirmation
-            "describe_scene" to RiskLevel.STRONG_CONFIRM  // captures + analyzes the screen
+            "describe_scene" to RiskLevel.STRONG_CONFIRM,  // captures + analyzes the screen
+            "secure_browser_task" to RiskLevel.CONFIRM  // drives the Secure Browser on an approved origin
         )
 
         for ((tool, expectedLevel) in expected) {

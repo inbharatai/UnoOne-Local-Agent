@@ -117,7 +117,8 @@ class MainActivity : ComponentActivity() {
         val secureBrowserViewModel = SecureBrowserViewModel(
             this,
             app.secureBrowserModelLease,
-            database.actionLogDao()
+            database.actionLogDao(),
+            voiceModule
         )
 
         setContent {
@@ -243,6 +244,21 @@ fun UnoOneApp(
     secureBrowserViewModel: SecureBrowserViewModel
 ) {
     val navController = rememberNavController()
+
+    // Eyes-free (WS4): bridge the `secure_browser_task` tool (fired by the orchestrator with an
+    // already-approved origin) to the Secure Browser screen — navigate there and stash the pending
+    // (origin, task) so the PageAgent run starts once the Gemma lease + runtime are ready. The live
+    // executeTask + spoken page read are device-time gates; this wiring only requests the UI handoff.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        agentViewModel.setSecureBrowserTaskHandler { origin, task ->
+            secureBrowserViewModel.setPendingTask(origin, task)
+            navController.navigate(com.unoone.agent.ui.navigation.Screen.SecureBrowser.route)
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { agentViewModel.setSecureBrowserTaskHandler(null) }
+    }
+
     UnoOneNavHost(
         navController = navController,
         agentViewModel = agentViewModel,

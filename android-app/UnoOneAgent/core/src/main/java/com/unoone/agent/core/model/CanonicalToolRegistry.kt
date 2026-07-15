@@ -108,14 +108,26 @@ object CanonicalToolRegistry {
     val describe_scene = ToolSchema("describe_scene", listOf(
         ToolParamSchema("aspect", ToolParamType.STRING, required = false)
     ))
+    /**
+     * Drive the UnoOne Secure Browser (Alibaba PageAgent on a hardened WebView) to an approved
+     * origin and run a task. The `origin` may be a full HTTPS URL, a bare host, or a friendly name
+     * ("unigurus", "uniassist", "testsprep", "inbharat"); it is resolved and approved-origin-gated
+     * before the browser session opens, so the model cannot drive an arbitrary site. The in-browser
+     * action policy (BrowserSafetyPolicy) and per-action confirm/takeover gates still apply inside
+     * the session. Risk tier CONFIRM: it drives a browser, so the user confirms opening the session.
+     */
+    val secure_browser_task = ToolSchema("secure_browser_task", listOf(
+        ToolParamSchema("origin", ToolParamType.STRING, required = true),
+        ToolParamSchema("task", ToolParamType.STRING, required = true)
+    ))
 
-    /** All 27 canonical tools, in declaration order. */
+    /** All 28 canonical tools, in declaration order. */
     val tools: List<ToolSchema> = listOf(
         create_note, search_notes, summarize_text, speak_response, voice_recording, web_search,
         open_chrome, open_app, open_url, open_camera, system_control, read_screen, ocr_screen,
         create_skill, draft_email, send_whatsapp, check_calendar, open_calendar, open_calendar_insert,
         open_dialer, share_text, delete_notes, delete_all_notes, export_data, detect_objects,
-        deactivate_blind_aid, describe_scene
+        deactivate_blind_aid, describe_scene, secure_browser_task
     )
 
     /** The set of tool names a model is allowed to propose. Anything else is rejected by the brain. */

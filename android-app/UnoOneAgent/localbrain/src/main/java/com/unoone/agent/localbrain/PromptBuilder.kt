@@ -82,6 +82,7 @@ object PromptBuilder {
         appendLine("- detect_objects()")
         appendLine("- deactivate_blind_aid()")
         appendLine("- describe_scene(aspect?)")
+        appendLine("- secure_browser_task(origin, task)  # origin: 'unigurus'|'uniassist'|'testsprep'|'inbharat' or an approved HTTPS URL. Drives the voice-controlled Secure Browser; passwords/OTP/payments/legal stay manual.")
     }
 
     /** Compatibility overload used by existing callers and tests. */

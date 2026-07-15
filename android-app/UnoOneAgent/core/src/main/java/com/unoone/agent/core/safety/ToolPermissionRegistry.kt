@@ -66,6 +66,11 @@ object ToolPermissionRegistry {
         // (ConnectivityManager check) lives in ActionExecutor.
         "web_search" to listOf(PermissionRequirement.None),
 
+        // Secure Browser task — opens the hardened WebView session. No runtime permission is needed
+        // at the tool level: navigation is origin-gated by ApprovedOriginPolicy and the in-browser
+        // action policy handles its own confirm/takeover. Risk tier CONFIRM lives in SafetyGuard.
+        "secure_browser_task" to listOf(PermissionRequirement.None),
+
         // Blind aid — CameraX preview + on-device ML Kit object detection + haptic/tone/TTS guidance.
         // Pure camera path (BlindAidManager uses no Accessibility service), so it needs ONLY the
         // CAMERA runtime permission — not the Accessibility gate it previously carried. That vestigial

@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -97,6 +98,38 @@ class SecureWebViewController(
     fun stopTask() {
         if (!runtimeInjected) return
         webView.evaluateJavascript("window.UnoOnePageAgentRuntime?.stop?.()", null)
+    }
+
+    /**
+     * Reads the current page's title + visible body text for the eyes-free "read this page aloud"
+     * capability (WS4). Best-effort: returns an empty string if the page, the body, or JS is
+     * unavailable. This NEVER invokes the PageAgent bridge or any automation — it only reads what
+     * is already rendered, exactly as a sighted user would see it. The result is truncated to keep
+     * the spoken readback bounded.
+     */
+    fun readPageText(callback: (String) -> Unit) {
+        val script = """
+            (function(){
+              try {
+                var title = (document.title || '').trim();
+                var text = document.body ? (document.body.innerText || '').trim() : '';
+                return JSON.stringify({title: title, text: text});
+              } catch (e) { return ''; }
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(script) { raw ->
+            val out = runCatching {
+                if (raw == null || raw == "null" || raw == "\"\"") ""
+                else {
+                    val page = json.decodeFromString(PageText.serializer(), raw)
+                    buildString {
+                        if (page.title.isNotBlank()) { append(page.title); append(". ") }
+                        append(page.text)
+                    }.take(4_000)
+                }
+            }.getOrElse { "" }
+            callback(out)
+        }
     }
 
     fun stop() {
@@ -288,3 +321,7 @@ class SecureWebViewController(
         const val RUNTIME_ASSET = "page-agent/unoone-page-agent.js"
     }
 }
+
+/** Title + visible body text extracted from the current page for the spoken "read this page" path. */
+@Serializable
+private data class PageText(val title: String = "", val text: String = "")

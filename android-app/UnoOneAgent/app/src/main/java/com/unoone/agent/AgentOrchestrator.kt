@@ -199,6 +199,28 @@ class AgentOrchestrator(
                 commandParser.describeSceneWithVision(imageBytes, aspect)
             }
         }
+        actionExecutor._openSecureBrowserTask = { origin, task -> openSecureBrowserTask(origin, task) }
+    }
+
+    /**
+     * Eyes-free (WS4): UI-owned handler invoked by the `secure_browser_task` tool. Set by
+     * MainActivity (which owns the SecureBrowserViewModel + nav controller) via AgentViewModel. The
+     * handler navigates to the Secure Browser screen and stashes the pending (origin, task) so the
+     * PageAgent run starts once the Gemma lease is acquired and the runtime is ready. When null the
+     * tool returns a handled "not available" error instead of a fake success. The live executeTask +
+     * spoken page read are device-time gates (see DEVICE_VERIFICATION.md).
+     */
+    @Volatile
+    var onSecureBrowserTask: ((origin: String, task: String) -> Unit)? = null
+
+    private fun openSecureBrowserTask(origin: String, task: String): Result<String> {
+        val handler = onSecureBrowserTask
+            ?: return Result.Error(
+                "Secure Browser is not available right now. Open it from the main page first."
+            )
+        handler(origin, task)
+        return if (task.isBlank()) Result.Success("Opening Secure Browser for $origin.")
+        else Result.Success("Opening Secure Browser for $origin. I'll start: $task")
     }
 
     /** Speaks text via the shared VoiceModule, used by the speak_response tool. */

@@ -24,11 +24,33 @@ object RuleBasedParser {
         "email", "mail",
         "whatsapp",
         "calendar", "schedule", "events",
-        "find and click", "find and tap", "find then click", "find then tap"
+        "find and click", "find and tap", "find then click", "find then tap",
+        // Secure Browser approved-origin friendly names — kept domain-specific so
+        // "open unigurus and fill the form" is NOT split on "and" (the whole phrase becomes the
+        // PageAgent task). See [com.unoone.agent.securebrowser.ApprovedOriginPolicy].
+        "unigurus", "uni guru", "uniassist", "uni assist", "uni-assist",
+        "testsprep", "tests prep", "inbharat", "in bharat", "secure browser"
     )
 
     // Negation verbs that suppress note creation when paired with "note"
     private val noteNegationVerbs = listOf("delete", "remove", "cancel", "close", "clear", "erase")
+
+    // Friendly spoken names → canonical approved HTTPS origin, mirroring the authoritative
+    // ApprovedOriginPolicy in :securebrowser. RuleBasedParser only PROPOSES secure_browser_task;
+    // ActionExecutor re-validates via ApprovedOriginPolicy.originFor at execution time, so a stale
+    // or missing entry here is rejected (never silently honored). Kept here (not imported from
+    // :securebrowser) so :localbrain does not depend on the Android WebView layer.
+    private val SECURE_ORIGIN_FRIENDLY: List<Pair<String, String>> = listOf(
+        "unigurus" to "https://unigurus.com",
+        "uni guru" to "https://unigurus.com",
+        "uniassist" to "https://uniassist.ai",
+        "uni assist" to "https://uniassist.ai",
+        "uni-assist" to "https://uniassist.ai",
+        "testsprep" to "https://testsprep.in",
+        "tests prep" to "https://testsprep.in",
+        "inbharat" to "https://inbharat.ai",
+        "in bharat" to "https://inbharat.ai"
+    )
 
     fun parse(command: String): ToolCall? {
         val lowered = command.lowercase().trim()
@@ -129,6 +151,39 @@ object RuleBasedParser {
             }
 
             // === SIMPLE RULES (no internal "and" usage) ===
+
+            // Secure Browser — drive the hardened WebView to an approved origin (eyes-free WS4).
+            // Kept FIRST among the simple rules so a trailing task clause ("open uniassist and fill
+            // the profile form") is not shadowed by the `fill` / gesture branches below. The friendly
+            // names are domain-specific (see domainSpecificKeywords) so "and" is not split off; the
+            // whole phrase becomes the PageAgent task. A bare "open unigurus" yields an empty task
+            // (navigate-only). "secure browser" with no origin defaults to unigurus, the primary
+            // property (matches SecureBrowserUiState.DEFAULT_URL).
+            //
+            // Match requires an open/launch verb OR an explicit "secure browser" phrase, so a
+            // friendly name appearing inside an unrelated intent (e.g. "create a note about inbharat")
+            // does NOT get hijacked into the browser. RuleBasedParser only PROPOSES this tool;
+            // ActionExecutor re-validates the origin via ApprovedOriginPolicy, so a stale entry below
+            // is rejected at execution, not trusted.
+            ((lowered.startsWith("open ") || lowered.startsWith("launch ") ||
+                lowered.startsWith("start ") || lowered.startsWith("use ")) &&
+                SECURE_ORIGIN_FRIENDLY.any { lowered.contains(it.first) }) ||
+                lowered.contains("secure browser") -> {
+                val origin = SECURE_ORIGIN_FRIENDLY.firstOrNull { lowered.contains(it.first) }?.second
+                    ?: "https://unigurus.com"
+                val task = lowered
+                    .replace(Regex("\\bsecure browser\\b", RegexOption.IGNORE_CASE), " ")
+                    .let { s -> SECURE_ORIGIN_FRIENDLY.fold(s) { acc, (name, _) -> acc.replace(name, " ") } }
+                    .trim()
+                    .let { Regex("^(open|launch|start|use|the)\\s*", RegexOption.IGNORE_CASE).replace(it, "") }
+                    .replace(Regex("\\band\\b", RegexOption.IGNORE_CASE), " ")
+                    .replace(Regex("\\s{2,}"), " ")
+                    .trim()
+                ToolCall("secure_browser_task", JsonObject(mapOf(
+                    "origin" to JsonPrimitive(origin),
+                    "task" to JsonPrimitive(task)
+                )))
+            }
 
             // Blind Aid Deactivation
             // 4D: "barriers" alone triggers deactivation only, not detection

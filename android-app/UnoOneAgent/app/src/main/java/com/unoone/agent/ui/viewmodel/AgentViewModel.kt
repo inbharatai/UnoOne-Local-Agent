@@ -166,6 +166,16 @@ class AgentViewModel(
         }
     }
 
+    /**
+     * Eyes-free (WS4): wire the `secure_browser_task` tool to the UI. The handler navigates to the
+     * Secure Browser screen and stashes the (origin, task) so the PageAgent run starts once the
+     * Gemma lease is acquired and the runtime is ready. Set once from [com.unoone.agent.UnoOneApp]
+     * which owns the nav controller + SecureBrowserViewModel. Pass null to detach (e.g. on dispose).
+     */
+    fun setSecureBrowserTaskHandler(handler: ((origin: String, task: String) -> Unit)?) {
+        orchestrator.onSecureBrowserTask = handler
+    }
+
     fun onQuickAction(label: String) {
         viewModelScope.launch {
             val command = when (label) {

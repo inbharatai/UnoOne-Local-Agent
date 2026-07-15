@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unoone.agent.browser.SecureBrowserModelLease
 import com.unoone.agent.core.model.Result
+import com.unoone.agent.core.model.onError
 import com.unoone.agent.securebrowser.BrowserActionClass
 import com.unoone.agent.securebrowser.BrowserAuditEvent
 import com.unoone.agent.securebrowser.BrowserDomainPolicy
@@ -14,8 +15,10 @@ import com.unoone.agent.securebrowser.BrowserUserInteraction
 import com.unoone.agent.securebrowser.PageAgentRequestType
 import com.unoone.agent.securebrowser.SecureBrowserNativeHandler
 import com.unoone.agent.securebrowser.SecureWebViewController
+import com.unoone.agent.core.util.Logger
 import com.unoone.agent.storage.dao.ActionLogDao
 import com.unoone.agent.storage.entity.ActionLogEntity
+import com.unoone.agent.voice.VoiceModule
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -67,7 +70,8 @@ private data class PromptAnswer(val approved: Boolean, val text: String)
 class SecureBrowserViewModel(
     context: Context,
     private val modelLease: SecureBrowserModelLease,
-    private val actionLogDao: ActionLogDao
+    private val actionLogDao: ActionLogDao,
+    private val voiceModule: VoiceModule? = null
 ) : ViewModel(), BrowserUserInteraction {
 
     private val appContext = context.applicationContext
@@ -80,11 +84,24 @@ class SecureBrowserViewModel(
     private var pendingPrompt: CompletableDeferred<PromptAnswer>? = null
     private var attached = false
 
+    // Eyes-free (WS4): a (origin, task) stashed by the `secure_browser_task` tool before the
+    // Secure Browser screen is composed. When the runtime becomes ready we auto-navigate to the
+    // origin (if different) and run the task. A blank task means navigate-only.
+    @Volatile private var pendingOrigin: String? = null
+    @Volatile private var pendingTask: String? = null
+    // Last spoken narration, to avoid repeating the identical status string verbatim.
+    @Volatile private var lastNarration: String = ""
+
     private val _state = MutableStateFlow(SecureBrowserUiState())
     val state: StateFlow<SecureBrowserUiState> = _state.asStateFlow()
 
     private val _prompt = MutableStateFlow<BrowserPrompt?>(null)
     val prompt: StateFlow<BrowserPrompt?> = _prompt.asStateFlow()
+
+    // Eyes-free (WS4): voice-driven task input on the browser screen. A blind user taps the mic,
+    // speaks a task, and PageAgent runs it — no typing. Mirrors AgentViewModel's listen pattern.
+    private val _isListening = MutableStateFlow(false)
+    val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
 
     fun attachWebView(webView: WebView) {
         if (attached) return
@@ -138,6 +155,7 @@ class SecureBrowserViewModel(
                                     modelBackend = modelLease.activeBackend(),
                                     error = ""
                                 )
+                                runPendingTaskIfAny()
                             },
                             onRuntimeError = { message ->
                                 _state.value = _state.value.copy(
@@ -182,6 +200,8 @@ class SecureBrowserViewModel(
                 lastResult = result.take(2_000),
                 error = if (success) "" else result.take(1_000)
             )
+            // Eyes-free narration of the terminal task result.
+            narrate(if (success) "Done. $result" else "Browser task failed. $result")
         }
     }
 
@@ -264,13 +284,114 @@ class SecureBrowserViewModel(
     private suspend fun onNativeEvent(type: PageAgentRequestType, payload: String) {
         when (type) {
             PageAgentRequestType.ACTIVITY_EVENT -> {
-                _state.value = _state.value.copy(status = activitySummary(payload))
+                val summary = activitySummary(payload)
+                _state.value = _state.value.copy(status = summary)
+                narrate(summary)
             }
             PageAgentRequestType.TASK_RESULT -> {
                 _state.value = _state.value.copy(status = "PageAgent returned a task result")
             }
             PageAgentRequestType.AUDIT_EVENT -> persistAudit(payload)
             else -> Unit
+        }
+    }
+
+    /**
+     * Eyes-free (WS4): stash a (origin, task) handed off by the `secure_browser_task` tool, before
+     * the Secure Browser screen is composed. The pending origin is loaded when the WebView attaches
+     * and the task auto-runs once the PageAgent runtime is ready ([runPendingTaskIfAny]). A blank
+     * task means "navigate to the origin only". Safe to call multiple times (last wins); safe to call
+     * before [attachWebView] (the pending pair survives until the runtime is ready).
+     */
+    fun setPendingTask(origin: String, task: String) {
+        pendingOrigin = origin
+        pendingTask = task
+        _state.value = _state.value.copy(currentUrl = origin, status = "Opening $origin…", error = "")
+        // If the controller already exists (screen already attached), navigate + run immediately.
+        val ctrl = controller
+        if (ctrl != null && _state.value.runtimeReady) {
+            if (_state.value.currentUrl != origin) ctrl.load(origin)
+            runPendingTaskIfAny()
+        }
+    }
+
+    private fun runPendingTaskIfAny() {
+        val task = pendingTask ?: return
+        val origin = pendingOrigin
+        pendingTask = null
+        pendingOrigin = null
+        val ctrl = controller ?: return
+        if (origin != null && _state.value.currentUrl != origin) ctrl.load(origin)
+        if (task.isBlank()) {
+            narrate("Opened $origin.")
+            return
+        }
+        narrate("Starting: $task")
+        executeTask(task)
+    }
+
+    /**
+     * Eyes-free (WS4): speak the current page's title + visible body text. Returns the text that
+     * was (or would be) spoken via [onPageText] for the screen to display. The read is read-only
+     * (it never drives the page); an empty result is spoken as a clear "no readable text" message.
+     */
+    fun readPageAloud() {
+        val ctrl = controller
+        if (ctrl == null || !_state.value.runtimeReady) {
+            narrate("The secure browser isn't ready yet.")
+            return
+        }
+        ctrl.readPageText { text ->
+            if (text.isBlank()) narrate("This page has no readable text yet.")
+            else narrate(text)
+        }
+    }
+
+    /** Speak a narration string through the shared VoiceModule (eyes-free). No-op without a voice module. */
+    private fun narrate(text: String) {
+        val vm = voiceModule ?: return
+        val toSpeak = text.trim()
+        if (toSpeak.isBlank() || toSpeak == lastNarration) return
+        lastNarration = toSpeak
+        cleanupScope.launch {
+            vm.speak(toSpeak).onError { msg, _ -> Logger.w("SecureBrowser: narration failed: $msg") }
+        }
+    }
+
+    /**
+     * Eyes-free (WS4): start recording a spoken browser task. The RECORD_AUDIO runtime permission
+     * is requested at app startup (this is a direct user-initiated mic tap, like the main Listen
+     * button, not a safety-pipeline-gated tool). Stop with [stopVoiceTask] to transcribe + run.
+     */
+    fun startVoiceTask(context: Context) {
+        val vm = voiceModule ?: return
+        if (_isListening.value || _state.value.taskRunning) return
+        viewModelScope.launch {
+            when (val r = vm.startRecording(context, viewModelScope)) {
+                is Result.Success -> _isListening.value = true
+                is Result.Error -> Logger.w("SecureBrowser: startRecording failed: ${r.message}")
+            }
+        }
+    }
+
+    /** Stop the spoken-task recording, transcribe it offline, and run it as a PageAgent task. */
+    fun stopVoiceTask() {
+        val vm = voiceModule ?: return
+        if (!_isListening.value) return
+        _isListening.value = false
+        viewModelScope.launch {
+            when (val r = vm.stopAndTranscribe()) {
+                is Result.Success -> {
+                    val transcript = r.data.trim()
+                    if (transcript.isNotBlank()) {
+                        narrate("Running: $transcript")
+                        executeTask(transcript)
+                    } else {
+                        narrate("I didn't hear a task.")
+                    }
+                }
+                is Result.Error -> narrate("I didn't catch that.")
+            }
         }
     }
 
@@ -339,15 +460,12 @@ class SecureBrowserViewModel(
     }
 
     companion object {
-        val APPROVED_ORIGINS: Set<String> = setOf(
-            "https://unigurus.com",
-            "https://www.unigurus.com",
-            "https://uniassist.ai",
-            "https://www.uniassist.ai",
-            "https://testsprep.in",
-            "https://www.testsprep.in",
-            "https://inbharat.ai",
-            "https://www.inbharat.ai"
-        )
+        /**
+         * Approved HTTPS origins the Secure Browser may automate. Single source of truth lives in
+         * [com.unoone.agent.securebrowser.ApprovedOriginPolicy] so the WebView navigation policy and
+         * the `secure_browser_task` tool gate agree exactly. Kept as a `val` alias for callers that
+         * already read `SecureBrowserViewModel.APPROVED_ORIGINS`.
+         */
+        val APPROVED_ORIGINS: Set<String> = com.unoone.agent.securebrowser.ApprovedOriginPolicy.APPROVED_ORIGINS
     }
 }

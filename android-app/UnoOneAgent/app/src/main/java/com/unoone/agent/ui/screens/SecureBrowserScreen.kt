@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
@@ -50,6 +52,7 @@ fun SecureBrowserScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val prompt by viewModel.prompt.collectAsState()
+    val isListening by viewModel.isListening.collectAsState()
     var url by remember { mutableStateOf(state.currentUrl) }
     var task by remember { mutableStateOf("") }
     var promptText by remember(prompt?.id) { mutableStateOf("") }
@@ -141,6 +144,29 @@ fun SecureBrowserScreen(
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                // Eyes-free (WS4): speak the task instead of typing it. Tap to start, tap again to
+                // stop + transcribe + run. RECORD_AUDIO is requested at app startup.
+                IconButton(
+                    onClick = {
+                        if (isListening) viewModel.stopVoiceTask() else viewModel.startVoiceTask(context)
+                    },
+                    enabled = state.runtimeReady && !state.taskRunning
+                ) {
+                    Icon(
+                        Icons.Default.Mic,
+                        contentDescription = if (isListening) "Stop speaking your task" else "Speak your task"
+                    )
+                }
+                OutlinedButton(
+                    onClick = viewModel::readPageAloud,
+                    enabled = state.runtimeReady && !state.taskRunning,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Article, contentDescription = null)
+                    Text("Read Page", modifier = Modifier.padding(start = 6.dp))
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { viewModel.executeTask(task) },
