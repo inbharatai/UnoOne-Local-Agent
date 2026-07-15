@@ -63,3 +63,18 @@ These require a human at the device and are deliberately left unchecked:
 ## Cleanup
 
 Runaway mic recording from blind `input` tapping was ended by `am force-stop com.unoone.agent`.
+
+## Per-function confirmation (2026-07-15, owner request)
+
+| Function | Automated confirmation | Live/human gate |
+|---|---|---|
+| Language model — Gemma 4 E2B | On-device file size = 2,588,147,712 bytes (exact manifest match); loaded on CPU backend, "conversation ready"; `GemmaPlannerAccuracyTest` (3 instrumented) + prior Phase 5 18/18 tool-match | ☐ Live CHAT-lane answer quality (English full answer on Done card) |
+| STT — Sherpa streaming transducer (en) | Engine initialized offline (4 threads); mic capture live (`AudioRecordImpl` 16 kHz mono) | ☐ Live-mic transcription accuracy |
+| TTS — Sherpa offline (en-IN espeak) + Google TTS | Engine initialized offline; Google TTS bound | ☐ Audible TTS quality per language |
+| Language packs (7 Indic) | All present on device: en-IN, hi-IN, bn-IN, ta-IN, te-IN, kn-IN, ml-IN | ☐ Audible TTS/STT in each Indic language |
+| PageAgent (Secure Browser runtime) | Asset packaged, non-empty 193,488 bytes, SHA `d434912a15eb…ade71e` (matches prior verified hash); `tsc --noEmit` typecheck clean; `vitest run tests` 2/2 pass | ☐ Live WebView inject + voice task + read-aloud |
+| Cross-contract (28 tools) | `CanonicalToolRegistryTest` hasExactly28Tools + `SafetyGuardToolCoverageTest` + `ActionExecutorToolCoverageTest` + `ToolRegistryAgreementTest` green | — |
+| Command router | `IntentClassifierTest` + extended `RuleBasedParserTest` (open_calendar, secure_browser_task friendly-name resolution, no-hijack) green | ☐ Live FAST_ACTION calendar opens + CHAT one-inference-no-confirm |
+
+All JVM unit tests (every module) + 42 instrumented tests + PageAgent typecheck/vitest green. The only
+items not auto-verified are those that require a human voice, ears, or eyes — left ☐, not faked.
