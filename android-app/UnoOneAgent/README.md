@@ -17,8 +17,8 @@ Android implementation for UnoOne V2.
 - Alibaba PageAgent Secure Browser using local Gemma planning.
 - Command-path three-lane router (FAST_ACTION / CHAT / AGENT_ACTION) plus eyes-free assist
   (Listen wake mode, step narration, Blind Aid scene narration, voice-driven Secure Browser,
-  TalkBack live regions) on `fix/unoone-router-eyesfree`. Automated gate green; live
-  hands-free/voice/visual UX remains device-gated (see root `DEVICE_VERIFICATION.md` §10).
+  TalkBack live regions), merged to `main`. Automated gate green; live hands-free/voice/visual
+  UX remains device-gated (see root `DEVICE_VERIFICATION.md` §10).
 - Alpha branch; physical-device qualification remains pending.
 
 ## Modules
