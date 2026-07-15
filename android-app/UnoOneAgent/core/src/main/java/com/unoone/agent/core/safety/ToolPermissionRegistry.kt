@@ -66,10 +66,13 @@ object ToolPermissionRegistry {
         // (ConnectivityManager check) lives in ActionExecutor.
         "web_search" to listOf(PermissionRequirement.None),
 
-        // Blind aid — camera + accessibility (uses camera preview + accessibility for context).
+        // Blind aid — CameraX preview + on-device ML Kit object detection + haptic/tone/TTS guidance.
+        // Pure camera path (BlindAidManager uses no Accessibility service), so it needs ONLY the
+        // CAMERA runtime permission — not the Accessibility gate it previously carried. That vestigial
+        // Accessibility requirement is what blocked Blind Aid with a misleading "needs system access"
+        // prompt even after the camera was granted. STRONG_CONFIRM risk (in SafetyGuard) still gates it.
         "detect_objects" to listOf(
-            PermissionRequirement.RuntimePerm(Manifest.permission.CAMERA),
-            PermissionRequirement.Accessibility
+            PermissionRequirement.RuntimePerm(Manifest.permission.CAMERA)
         ),
 
         "deactivate_blind_aid" to listOf(PermissionRequirement.None),

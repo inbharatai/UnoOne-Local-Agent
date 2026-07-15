@@ -121,6 +121,18 @@ fun AgentScreen(viewModel: AgentViewModel) {
         }
     }
 
+    // Blind Aid is a direct UI toggle (not the "activate blind aid" text command through the agent
+    // pipeline). BlindAidManager is a pure camera path, so it needs only CAMERA — request it here,
+    // then activate on grant. Avoids the misleading "needs system access" prompt the vestigial
+    // Accessibility gate produced (the gate itself is removed in ToolPermissionRegistry).
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            viewModel.setBlindAidActive(true)
+        }
+    }
+
     // Confirmation dialog
     pendingConfirmation?.let { (message, level) ->
         ConfirmationDialog(
@@ -325,7 +337,17 @@ fun AgentScreen(viewModel: AgentViewModel) {
                 viewModel.onQuickAction("Calendar")
             }
             QuickActionButton("Blind Aid", Icons.Default.Language, enabled = !isProcessing) {
-                viewModel.onTextCommand("activate blind aid")
+                // Direct toggle (WS1): request CAMERA, then activate. BlindAidManager is a pure
+                // camera path — no Accessibility gate — so CAMERA is the only thing standing between
+                // the button and the live preview. The text/voice "activate blind aid" command still
+                // routes through the full safety pipeline via processCommand.
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                    == PackageManager.PERMISSION_GRANTED
+                ) {
+                    viewModel.setBlindAidActive(true)
+                } else {
+                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                }
             }
         }
 

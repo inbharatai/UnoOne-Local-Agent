@@ -39,10 +39,17 @@ class ToolPermissionRegistryTest {
     }
 
     @Test
-    fun detectObjectsNeedsCameraAndAccessibility() {
+    fun detectObjectsNeedsCameraOnly() {
+        // BlindAidManager is a pure CameraX + ML Kit ODT + haptic/tone/TTS path — it uses no
+        // Accessibility service, so detect_objects must require ONLY the CAMERA runtime permission.
+        // The prior vestigial Accessibility gate blocked Blind Aid with a misleading "needs system
+        // access" prompt even after the camera was granted.
         val reqs = ToolPermissionRegistry.requirementsFor("detect_objects")
         assertTrue(reqs.any { it is PermissionRequirement.RuntimePerm && it.permission == Manifest.permission.CAMERA })
-        assertTrue(reqs.any { it is PermissionRequirement.Accessibility })
+        assertTrue(
+            "detect_objects must NOT require Accessibility (got: $reqs)",
+            reqs.none { it is PermissionRequirement.Accessibility }
+        )
     }
 
     @Test

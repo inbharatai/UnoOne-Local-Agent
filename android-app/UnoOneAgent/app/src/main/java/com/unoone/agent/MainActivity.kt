@@ -79,6 +79,31 @@ class MainActivity : ComponentActivity() {
             requestPermissionLauncher.launch(missing.toTypedArray())
         }
 
+        // System permissions (Accessibility / MediaProjection / Overlay) cannot be granted via the
+        // runtime-permission dialog — they each need their own settings/consent screen. Surface the
+        // first still-missing one as a one-tap deep-link, stash the command in the orchestrator
+        // (it sets pendingCommand itself before invoking this callback), and resume it on return.
+        agentOrchestrator.onSystemPermissionRequired = { missing ->
+            val intent = missing.firstNotNullOfOrNull { req ->
+                PermissionManager.getRequirementIntent(this, req)
+            }
+            if (intent != null) {
+                try {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                    Toast.makeText(
+                        this,
+                        "Grant the system access, then return — your command resumes.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } catch (_: Exception) {
+                    Toast.makeText(this, "Unable to open system settings.", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                Toast.makeText(this, "System access is required for that action.", Toast.LENGTH_LONG).show()
+            }
+        }
+
         val agentViewModel = AgentViewModel(agentOrchestrator, voiceModule)
         val notesViewModel = NotesViewModel(database.noteDao())
         val logsViewModel = LogsViewModel(database.actionLogDao())
@@ -196,6 +221,10 @@ class MainActivity : ComponentActivity() {
             startService(Intent(this, FloatingAgentService::class.java))
         }
         (application as? UnoOneApplication)?.reloadLlmIfUnloaded()
+        // Resume a command that was paused on a missing system permission once the user returns
+        // from the settings/consent screen. No-op when nothing is pending; the orchestrator re-checks
+        // access and re-surfaces only whatever is still missing.
+        agentOrchestrator.clearPendingAndReExecute()
     }
 }
 

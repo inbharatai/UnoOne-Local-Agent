@@ -95,6 +95,17 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
             Toast.makeText(this, "Permissions required. Opening UnoOne...", Toast.LENGTH_SHORT).show()
         }
 
+        // System permissions (Accessibility / MediaProjection / Overlay) need a settings/consent
+        // screen — hand off to MainActivity, which deep-links to the right one and resumes the
+        // stashed command on return. Mirrors the runtime-perm redirect above.
+        orchestrator.onSystemPermissionRequired = { _ ->
+            val intent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            Toast.makeText(this, "System access required. Opening UnoOne...", Toast.LENGTH_SHORT).show()
+        }
+
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         showFloatingBubble()
     }

@@ -17,8 +17,9 @@ import org.junit.Test
  * - `open_camera` — launches the system camera (MediaStore.ACTION_IMAGE_CAPTURE), risk CONFIRM,
  *   gated on the CAMERA runtime permission.
  * - `detect_objects` (Blind Aid) — CameraX preview + on-device object detection with haptic +
- *   spoken guidance, risk STRONG_CONFIRM, gated on CAMERA runtime permission AND the Accessibility
- *   service (for screen context). `deactivate_blind_aid` stops it (risk DIRECT, no permission).
+ *   spoken guidance, risk STRONG_CONFIRM, gated on the CAMERA runtime permission only (BlindAidManager
+ *   is a pure camera path and uses no Accessibility service). `deactivate_blind_aid` stops it
+ *   (risk DIRECT, no permission).
  *
  * This test proves the capability is REGISTERED, PERMISSION-GATED, and SAFETY-CLASSIFIED on the
  * device — the accurate, no-dummy headless proof. It does NOT capture a real photo or run live
@@ -54,15 +55,15 @@ class CameraAccessHeadlessTest {
     }
 
     @Test
-    fun blindAidIsGatedOnCameraPlusAccessibilityAndStrongConfirm() {
+    fun blindAidIsGatedOnCameraOnlyAndStrongConfirm() {
         val reqs = ToolPermissionRegistry.requirementsFor("detect_objects")
         assertTrue(
             "detect_objects must require the CAMERA runtime permission (got: $reqs)",
             reqs.any { it is PermissionRequirement.RuntimePerm && it.permission == Manifest.permission.CAMERA }
         )
         assertTrue(
-            "detect_objects must also require the Accessibility service (got: $reqs)",
-            reqs.any { it is PermissionRequirement.Accessibility }
+            "detect_objects must NOT require the Accessibility service — BlindAidManager is a pure camera path (got: $reqs)",
+            reqs.none { it is PermissionRequirement.Accessibility }
         )
         assertEquals(
             "detect_objects (Blind Aid) must be STRONG_CONFIRM risk",
