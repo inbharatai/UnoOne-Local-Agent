@@ -61,6 +61,16 @@ class GemmaPlanner {
      * conversation (best-effort: planning still works without it).
      */
     private var judgeConversation: Conversation? = null
+    /**
+     * A third conversation, used only by [chat] — the CHAT lane. Like [judgeConversation] it is
+     * created from the same engine (shared weights, own KV-cache) but carries a tool-less,
+     * conversational system instruction ([PromptBuilder.buildChatSystemInstruction]). It never
+     * pollutes the planning conversation's ReAct context, and a conversational answer never reaches
+     * the safety/confirm gates (a tool-less answer has nothing to gate). Null when the brain is not
+     * loaded or the device could not create a third conversation (best-effort: the chat lane then
+     * falls back to the agent pipeline).
+     */
+    private var chatConversation: Conversation? = null
     @Volatile
     private var isLoaded = false
 
@@ -163,6 +173,22 @@ class GemmaPlanner {
                     )
                 } catch (e: Exception) {
                     Logger.w("GemmaPlanner: safety-judge conversation unavailable (${e.message}); judge disabled")
+                    null
+                }
+                // Best-effort third conversation for the CHAT lane — same engine, tool-less
+                // conversational system prompt. If the device cannot create a third conversation,
+                // chat falls back to the agent pipeline (planning a speak_response). Mirrors the
+                // judge-conversation discipline above.
+                chatConversation = try {
+                    newEngine.createConversation(
+                        ConversationConfig(
+                            systemInstruction = Contents.of(PromptBuilder.buildChatSystemInstruction()),
+                            tools = emptyList(),
+                            automaticToolCalling = false
+                        )
+                    )
+                } catch (e: Exception) {
+                    Logger.w("GemmaPlanner: chat conversation unavailable (${e.message}); chat falls back to agent path")
                     null
                 }
                 activeBackend = backend
@@ -464,6 +490,43 @@ class GemmaPlanner {
         }
     }
 
+    /**
+     * One-shot conversational answer on the dedicated tool-less [chatConversation] — the CHAT lane.
+     * Mirrors [judgeSafety]'s conversation discipline (same inference [Mutex] + [INFERENCE_TIMEOUT_MS]
+     * bound + close-on-timeout). Returns the model's free-text reply with **all** text fragments
+     * joined (via [ResponseTextJoiner], so multi-fragment answers are not truncated to the first).
+     *
+     * The orchestrator only calls this for question-shaped, action-free input
+     * ([com.unoone.agent.core.agent.IntentClassifier] CHAT), so a chat answer never reaches the
+     * safety/confirm gates (a tool-less answer has nothing to gate) or the ReAct loop, and never
+     * builds a screen/OCR context snapshot. If the brain is not loaded, the chat conversation is
+     * unavailable, inference times out, or the answer is blank, the caller falls back to the agent
+     * pipeline (fail-safe). Device-time verified (litertlm bytecode > JDK 17 test JVM).
+     */
+    suspend fun chat(command: String): Result<String> {
+        val conv = chatConversation ?: return Result.Error("Chat conversation not available")
+        return try {
+            val prompt = PromptBuilder.buildChatUserMessage(command)
+            val responseMessage = try {
+                inferenceMutex.withLock {
+                    withTimeout(INFERENCE_TIMEOUT_MS) {
+                        withContext(Dispatchers.IO) { conv.sendMessage(prompt) }
+                    }
+                }
+            } catch (e: TimeoutCancellationException) {
+                Logger.w("GemmaPlanner: chat timed out after ${INFERENCE_TIMEOUT_MS}ms; closing brain")
+                runCatching { close() }
+                return Result.Error("Gemma chat timed out")
+            }
+            val text = extractText(responseMessage) ?: ""
+            if (text.isBlank()) Result.Error("Gemma chat produced no answer")
+            else Result.Success(text)
+        } catch (e: Exception) {
+            Logger.e("GemmaPlanner: chat failed", e)
+            Result.Error("Gemma chat failed: ${e.message}", e)
+        }
+    }
+
     /** Builds the action description sent to the judge conversation. [inputText] is truncated. */
     private fun buildSafetyJudgePrompt(toolName: String, argsJson: String, inputText: String): String =
         buildString {
@@ -574,12 +637,18 @@ class GemmaPlanner {
             Logger.w("GemmaPlanner: error closing judge conversation: ${e.message}")
         }
         try {
+            chatConversation?.close()
+        } catch (e: Exception) {
+            Logger.w("GemmaPlanner: error closing chat conversation: ${e.message}")
+        }
+        try {
             engine?.close()
         } catch (e: Exception) {
             Logger.w("GemmaPlanner: error closing engine: ${e.message}")
         }
         conversation = null
         judgeConversation = null
+        chatConversation = null
         engine = null
         isLoaded = false
         loadedSpec = null

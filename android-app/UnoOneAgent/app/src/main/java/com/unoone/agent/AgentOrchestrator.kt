@@ -14,6 +14,8 @@ import com.unoone.agent.core.model.compoundSteps
 import com.unoone.agent.core.agent.LoopDecision
 import com.unoone.agent.core.agent.ReActLoopController
 import com.unoone.agent.core.agent.SafetyJudgePolicy
+import com.unoone.agent.core.agent.IntentClassifier
+import com.unoone.agent.core.agent.IntentType
 import com.unoone.agent.core.agent.StopReason
 import com.unoone.agent.core.agent.ToolHealthTracker
 import com.unoone.agent.core.agent.BrainHealthPolicy
@@ -458,6 +460,46 @@ class AgentOrchestrator(
                 saveLog(log.copy(selectedTool = "skill:${skill.name}", status = "success", modelLatencyMs = System.currentTimeMillis() - startTime))
                 releaseProcessingLock()
                 return
+            }
+
+            // Step 1b: Intent routing — classify the command into a lane BEFORE planning.
+            //
+            // Simple conversational questions (CHAT) are answered in ONE inference on a dedicated
+            // tool-less conversation: no agent planning, no safety/confirm gate (a tool-less answer
+            // has nothing to gate), no ReAct loop, no screen/OCR context snapshot. Everything else —
+            // a rule match (FAST_ACTION), an action order, or an ambiguous input (AGENT_ACTION /
+            // UNKNOWN) — flows into the proven planning → safety → execute → ReAct path below.
+            // UNKNOWN defaults into that path on purpose: a specific multi-step order the classifier
+            // does not recognize is still caught by the agent pipeline (owner-endorsed: chats skip
+            // the agent flow; specific orders do not).
+            val ruleMatch = commandParser.parse(sanitizedText)
+            val intent = IntentClassifier.classify(sanitizedText, ruleMatch)
+            Logger.i("Orchestrator: intent=$intent ruleMatch=${ruleMatch?.tool} text=\"${sanitizedText.take(60)}\"")
+            if (intent == IntentType.CHAT && commandParser.isModelLoaded()) {
+                val chatStart = System.currentTimeMillis()
+                addStep(AgentStatus.UNDERSTANDING, "Thinking", sanitizedText)
+                val chatResult = commandParser.chat(sanitizedText)
+                val answer = (chatResult as? Result.Success)?.data
+                if (!answer.isNullOrBlank()) {
+                    if (inputType == InputType.VOICE) {
+                        addStep(AgentStatus.SPEAKING, "Response", answer)
+                        voiceModule.speak(answer)
+                            .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: chat speak failed: $msg") }
+                    } else {
+                        addStep(AgentStatus.DONE, "Done", answer)
+                    }
+                    lastToolResult = answer
+                    saveLog(log.copy(
+                        selectedTool = "chat",
+                        status = "success",
+                        modelLatencyMs = System.currentTimeMillis() - chatStart
+                    ))
+                    releaseProcessingLock()
+                    return
+                }
+                // Chat produced no answer (brain not loaded, conversation unavailable, timed out, or
+                // blank) — fall through to the agent pipeline so the user still gets a response.
+                Logger.w("Orchestrator: CHAT lane produced no answer; falling back to agent pipeline")
             }
 
             // Step 2: Planning / Intent Extraction — delegate to CommandParser.

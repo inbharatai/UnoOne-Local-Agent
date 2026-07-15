@@ -85,6 +85,13 @@ class CommandParser(
     suspend fun judgeSafety(toolName: String, argsJson: String, inputText: String): Result<SafetyVerdict> =
         localBrain.judgeSafety(toolName, argsJson, inputText)
 
+    /**
+     * CHAT lane: one conversational inference on a dedicated tool-less conversation. The caller
+     * ([com.unoone.agent.AgentOrchestrator]) only invokes this for question-shaped, action-free
+     * input; on any Error/blank answer it falls back to the agent pipeline. Device-time verified.
+     */
+    suspend fun chat(text: String): Result<String> = localBrain.chat(text)
+
     suspend fun describeSceneWithVision(imageBytes: ByteArray, aspect: String): Result<String> =
         localBrain.describeSceneWithVision(imageBytes, aspect)
 

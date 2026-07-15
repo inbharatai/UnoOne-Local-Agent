@@ -88,6 +88,14 @@ class LocalBrain {
     }
 
     /**
+     * Conversational answer on the dedicated tool-less chat conversation — the CHAT lane. One
+     * inference, no tools, no safety gate, no screen snapshot. The caller only invokes this for
+     * question-shaped, action-free input ([com.unoone.agent.core.agent.IntentClassifier] CHAT);
+     * on any Error/blank answer the caller falls back to the agent pipeline. Device-time verified.
+     */
+    suspend fun chat(command: String): Result<String> = planner.chat(command)
+
+    /**
      * Multimodal vision description of a screenshot. INACTIVE with the shipped text-only models
      * (no vision weights) — the caller gates this behind a vision-capable model check and falls back
      * to [com.unoone.agent.core.agent.SceneDescriptionBuilder] on any Error. Device-time-only.
