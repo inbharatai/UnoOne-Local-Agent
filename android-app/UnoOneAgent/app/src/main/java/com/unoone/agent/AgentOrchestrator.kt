@@ -496,6 +496,7 @@ class AgentOrchestrator(
                 addStep(AgentStatus.UNDERSTANDING, "Thinking", sanitizedText)
                 val chatResult = commandParser.chat(sanitizedText)
                 val answer = (chatResult as? Result.Success)?.data
+                com.unoone.agent.observability.Diagnostics.recordStage("chat_inference", System.currentTimeMillis() - chatStart)
                 if (!answer.isNullOrBlank()) {
                     if (inputType == InputType.VOICE) {
                         addStep(AgentStatus.SPEAKING, "Response", answer)
@@ -529,6 +530,7 @@ class AgentOrchestrator(
             // commands stream nothing — identical to before.
             val streamingBuffer = StringBuilder()
             var streamingStepAdded = false
+            val planningStart = System.currentTimeMillis()
             val parseOutcome = try {
                 if (STREAMING_INFERENCE_ENABLED) {
                     commandParser.parseStreamingWithProvenance(sanitizedText, contextCommands, lastToolResult) { delta ->
@@ -550,6 +552,7 @@ class AgentOrchestrator(
                 Logger.w("Orchestrator: streaming plan unavailable, falling back to sync plan (${e.message})")
                 commandParser.parseAsyncWithProvenance(sanitizedText, contextCommands, lastToolResult)
             }
+            com.unoone.agent.observability.Diagnostics.recordStage("planning", System.currentTimeMillis() - planningStart)
             val toolCall = parseOutcome.toolCallOrNull()
             if (toolCall == null) {
                 addStep(AgentStatus.FAILED, "Accuracy Alert", "Intent not clear. Please rephrase.")
@@ -662,6 +665,10 @@ class AgentOrchestrator(
             // Single release point. releaseProcessingLock() already sets processingLock=false;
             // the extra set(false) was dead code that could clobber a concurrent command's lock
             // in the (suspension-free) window between an early return's release and this finally.
+            // Command-to-completion latency for every lane (chat / rule / agent / error), recorded
+            // here so no return path is missed. ActionLogEntity.modelLatencyMs is kept per-path for
+            // log continuity; this is the diagnostics-aggregate total.
+            com.unoone.agent.observability.Diagnostics.recordStage("command_total", System.currentTimeMillis() - startTime)
             releaseProcessingLock()
         }
     }
@@ -979,7 +986,9 @@ class AgentOrchestrator(
         // them, so no safety hole is created; the judge still runs for every CONFIRM/STRONG_CONFIRM/
         // BLOCK tier where escalation matters.
         if (SafetyJudgePolicy.shouldRun(judgeEnabled, SAFETY_JUDGE_ENABLED, commandParser.isModelLoaded(), riskLevel)) {
+            val judgeStart = System.currentTimeMillis()
             val verdict = commandParser.judgeSafety(toolCall.tool, toolCall.args.toString(), sanitizedText)
+            com.unoone.agent.observability.Diagnostics.recordStage("safety_judge", System.currentTimeMillis() - judgeStart)
             if (verdict is Result.Success) {
                 val judged = SafetyJudgePolicy.escalate(riskLevel, verdict.data)
                 if (judged != riskLevel) {
