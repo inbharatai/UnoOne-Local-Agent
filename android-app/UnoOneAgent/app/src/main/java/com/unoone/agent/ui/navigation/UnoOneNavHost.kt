@@ -103,7 +103,12 @@ fun UnoOneNavHost(
             startDestination = Screen.Agent.route,
             modifier = modifier.padding(innerPadding)
         ) {
-            composable(Screen.Agent.route) { AgentScreen(viewModel = agentViewModel) }
+            composable(Screen.Agent.route) {
+                AgentScreen(
+                    viewModel = agentViewModel,
+                    onNavigateToSecureBrowser = { navController.navigate(Screen.SecureBrowser.route) }
+                )
+            }
             composable(Screen.Notes.route) { NotesScreen(viewModel = notesViewModel) }
             composable(Screen.Skills.route) { SkillsScreen(viewModel = skillsViewModel) }
             composable(Screen.Logs.route) { LogsScreen(viewModel = logsViewModel) }

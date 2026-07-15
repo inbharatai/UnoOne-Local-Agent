@@ -154,6 +154,18 @@ class AgentViewModel(
         }
     }
 
+    /**
+     * Eyes-free (WS5): inject a command as a VOICE input so the orchestrator speaks the result
+     * (milestone narration + the final answer). Used by the main-page "Read Screen" capability so a
+     * blind user hears what's on screen instead of only seeing it in the timeline. The full safety
+     * pipeline (permissions, risk, confirmation) still applies — this only sets the input type.
+     */
+    fun onVoiceCommand(text: String) {
+        viewModelScope.launch {
+            orchestrator.processCommand(text, InputType.VOICE)
+        }
+    }
+
     fun onQuickAction(label: String) {
         viewModelScope.launch {
             val command = when (label) {
