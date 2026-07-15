@@ -80,6 +80,13 @@ class VoiceService : Service() {
          */
         var onWakeWord: (() -> Unit)? = null
 
+        /**
+         * C5: when true, the in-app hands-free session owns the mic — the background KWS loop must
+         * release its recorder and skip spotting so the two AudioRecord instances don't contend
+         * (the prior "listen is slow/erratic" cause). Set by AgentViewModel when a session starts.
+         */
+        var foregroundSessionActive: Boolean = false
+
         fun start(context: Context) {
             val intent = Intent(context, VoiceService::class.java)
             context.startForegroundService(intent)
@@ -230,6 +237,14 @@ class VoiceService : Service() {
 
         while (serviceScope.isActive) {
             try {
+                // C5: single mic owner — when the in-app hands-free session is active, release our
+                // recorder and skip spotting so it doesn't contend for the mic. Resume when it ends.
+                if (foregroundSessionActive) {
+                    if (recorder.isRecording()) recorder.stop()
+                    delay(500)
+                    continue
+                }
+
                 if (!recorder.hasPermission(this@VoiceService)) {
                     delay(1000)
                     continue

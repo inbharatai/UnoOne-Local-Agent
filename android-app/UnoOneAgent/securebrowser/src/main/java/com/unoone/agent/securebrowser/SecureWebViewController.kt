@@ -40,7 +40,13 @@ class SecureWebViewController(
     private val onBlockedNavigation: (String) -> Unit = {},
     private val onRuntimeReady: () -> Unit = {},
     private val onRuntimeError: (String) -> Unit = {},
-    val session: BrowserSession = BrowserSession(allowedOrigins = domainPolicy.origins())
+    val session: BrowserSession = BrowserSession(
+        // C9: always admit the synthetic local-form origin in the bridge filter. This does NOT admit
+        // remote navigation to it (BrowserDomainPolicy.evaluate still blocks non-approved https hosts,
+        // and loadDataWithBaseURL is the only way a page lands at this origin). It only lets the
+        // origin-scoped web-message listener accept PageAgent bridge calls FROM a locally-loaded form.
+        allowedOrigins = domainPolicy.origins() + LOCAL_FORM_ORIGIN
+    )
 ) {
 
     private val appContext = context.applicationContext
@@ -48,6 +54,14 @@ class SecureWebViewController(
     private val runtimeBundle: String? by lazy { readRuntimeBundle() }
 
     @Volatile private var runtimeInjected = false
+
+    /**
+     * C9: the synthetic origin of a locally-loaded offline form, or null when browsing a remote
+     * approved origin. Set by [loadLocalHtml]; admitted by [isAdmittedOrigin] and the onPageFinished
+     * injection path. Reachable ONLY via [loadLocalHtml] (BrowserDomainPolicy blocks navigation to
+     * it), so admitting it does not widen the remote attack surface.
+     */
+    @Volatile private var localFormOrigin: String? = null
 
     init {
         configureWebView()
@@ -66,6 +80,30 @@ class SecureWebViewController(
             is NavigationDecision.Block -> onBlockedNavigation(decision.reason)
         }
         return decision
+    }
+
+    /**
+     * C9: load a local/offline HTML form (e.g. a user-picked .html file) into the sandboxed WebView
+     * at the synthetic [LOCAL_FORM_ORIGIN]. The PageAgent runtime is then injected exactly as for a
+     * remote approved page, and every action the agent plans still round-trips through AUTHORIZE_ACTION
+     * → BrowserSafetyPolicy — so payment/credential/OTP/captcha/legal/final-submission gates apply
+     * unchanged (the policy is origin-agnostic). No safety gate is weakened: the only addition is
+     * admitting the synthetic origin, which is reachable solely via this explicit local load.
+     *
+     * The WebView is locked down in [configureWebView] (file/content access off, file/universal access
+     * from URLs off, mixed content never allowed) so the local HTML cannot reach device storage or
+     * load http resources; it is sandboxed to its synthetic origin.
+     */
+    fun loadLocalHtml(html: String, displayName: String) {
+        if (html.isBlank()) {
+            onRuntimeError("The local form is empty")
+            return
+        }
+        localFormOrigin = LOCAL_FORM_ORIGIN
+        runtimeInjected = false
+        // baseUrl sets the page's origin; historyUrl null keeps the synthetic origin. The page's
+        // location.origin becomes LOCAL_FORM_ORIGIN, which the bridge filter + isAdmittedOrigin accept.
+        webView.loadDataWithBaseURL(LOCAL_FORM_ORIGIN + "/", html, "text/html", "utf-8", null)
     }
 
     /** Executes one PageAgent task after the bundle has initialized on the current approved page. */
@@ -183,6 +221,18 @@ class SecureWebViewController(
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 val target = url ?: return
+                // C9: a locally-loaded offline form lands at the synthetic local-form origin (set by
+                // loadLocalHtml). domainPolicy.evaluate would block it (it is not an approved remote
+                // origin), so handle it here: inject the PageAgent runtime so the agent can work the
+                // form. All action gates still apply via AUTHORIZE_ACTION → BrowserSafetyPolicy.
+                val local = localFormOrigin
+                if (local != null && target.startsWith(local)) {
+                    if (session.active) {
+                        session.activeOrigin = local
+                        injectRuntime(local)
+                    }
+                    return
+                }
                 val decision = domainPolicy.evaluate(target)
                 if (decision is NavigationDecision.Allow && session.active) {
                     session.activeOrigin = decision.origin
@@ -254,13 +304,22 @@ class SecureWebViewController(
         if (request.protocolVersion != PageAgentBridgeRequest.PROTOCOL_VERSION) return "Unsupported protocol version"
         if (request.sessionId != session.id) return "Session id mismatch"
         if (request.sessionNonce != session.nonce) return "Session nonce mismatch"
-        if (!domainPolicy.isAllowedOrigin(sourceOrigin)) return "Source origin is not approved"
-        if (!domainPolicy.isAllowedOrigin(request.origin)) return "Declared origin is not approved"
+        // C9: admit the synthetic local-form origin (reachable only via loadLocalHtml) in addition to
+        // approved remote origins. The action safety gates are enforced downstream in BrowserSafetyPolicy.
+        if (!isAdmittedOrigin(sourceOrigin)) return "Source origin is not approved"
+        if (!isAdmittedOrigin(request.origin)) return "Declared origin is not approved"
         if (normalizeOrigin(sourceOrigin) != normalizeOrigin(request.origin)) return "Declared origin does not match source"
         if (session.activeOrigin != null && normalizeOrigin(session.activeOrigin!!) != normalizeOrigin(sourceOrigin)) {
             return "Active page origin changed"
         }
         return null
+    }
+
+    /** Approved remote origins plus, when set, the synthetic local-form origin. */
+    private fun isAdmittedOrigin(origin: String): Boolean {
+        if (domainPolicy.isAllowedOrigin(origin)) return true
+        val local = localFormOrigin ?: return false
+        return normalizeOrigin(origin) == normalizeOrigin(local)
     }
 
     private fun injectRuntime(origin: String) {
@@ -319,6 +378,8 @@ class SecureWebViewController(
     companion object {
         const val BRIDGE_NAME = "UnoOnePageAgent"
         const val RUNTIME_ASSET = "page-agent/unoone-page-agent.js"
+        /** C9: synthetic https origin a local/offline HTML form is loaded at (via loadDataWithBaseURL). */
+        const val LOCAL_FORM_ORIGIN = "https://unoone.local-form"
     }
 }
 
