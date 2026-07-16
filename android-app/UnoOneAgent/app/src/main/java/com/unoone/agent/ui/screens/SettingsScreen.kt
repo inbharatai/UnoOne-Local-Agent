@@ -126,7 +126,7 @@ fun SettingsScreen(
             val levelLabel = when (securityLevel) {
                 SecurityLevel.STANDARD -> "Standard — full safety"
                 SecurityLevel.RELAXED -> "Relaxed — judge off, auto-confirm"
-                SecurityLevel.OFF -> "Off — demo / developer (everything runs)"
+                SecurityLevel.OFF -> "Off — prototype (agent + browser)"
             }
             DropdownPicker(
                 label = "Agent security",
@@ -134,7 +134,7 @@ fun SettingsScreen(
                 options = listOf(
                     SecurityLevel.STANDARD to "Standard — full safety",
                     SecurityLevel.RELAXED to "Relaxed — judge off, auto-confirm",
-                    SecurityLevel.OFF to "Off — demo / developer (everything runs)"
+                    SecurityLevel.OFF to "Off — prototype (agent + browser)"
                 ),
                 onSelect = { level -> viewModel.setSecurityLevel(level) }
             )
@@ -145,7 +145,7 @@ fun SettingsScreen(
                     SecurityLevel.RELAXED ->
                         "Safety judge off and confirmations auto-approved, so benign commands like \"add a calendar event\" are not over-blocked. Payments / credentials / install stay blocked."
                     SecurityLevel.OFF ->
-                        "Demo mode: every module runs with no judge, no confirm tap and no block. Safe only because blocked tool names have no executor — no real payment / SMS / credential action fires. Switch back to Standard for real use."
+                        "Prototype mode: agent and PageAgent browser confirmations, takeover gates and blocks are bypassed. Browser pages may submit forms, files, credentials and payment actions. Exact-origin WebView isolation remains enforced. Switch back to Standard for real use."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
@@ -153,7 +153,7 @@ fun SettingsScreen(
             )
             if (securityLevel == SecurityLevel.OFF) {
                 Text(
-                    "⚠ Security is OFF. For demos only.",
+                    "⚠ Agent + browser safety is OFF. Prototype use only.",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(top = 4.dp)

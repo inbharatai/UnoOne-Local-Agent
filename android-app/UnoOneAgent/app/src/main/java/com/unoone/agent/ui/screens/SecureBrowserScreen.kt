@@ -5,6 +5,7 @@ import android.provider.OpenableColumns
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -67,6 +68,18 @@ fun SecureBrowserScreen(
     var promptText by remember(prompt?.id) { mutableStateOf("") }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
+    // WebView file inputs require an Activity-owned result launcher. The controller requests it
+    // only after PageAgent's native authorization step, and the selected content URI is returned to
+    // the originating <input type="file"> callback.
+    val webFileChooserLauncher = rememberLauncherForActivityResult(StartActivityForResult()) { result ->
+        viewModel.completeFileChooser(result.resultCode, result.data)
+    }
+
+    DisposableEffect(webFileChooserLauncher) {
+        viewModel.setFileChooserLauncher { intent -> webFileChooserLauncher.launch(intent) }
+        onDispose { viewModel.setFileChooserLauncher(null) }
+    }
 
     // C9: pick a local/offline HTML form (SAF) and load it into the sandboxed WebView at the synthetic
     // local-form origin so PageAgent can fill it offline. Reading the bytes runs on Dispatchers.IO so
@@ -135,8 +148,13 @@ fun SecureBrowserScreen(
                     Text(state.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
                 Text(
-                    "Passwords, OTPs, CAPTCHA, payments and legal declarations always require manual control or are blocked.",
+                    if (state.prototypeSafetyOff) {
+                        "⚠ PROTOTYPE MODE: browser action safety is OFF. PageAgent may submit forms, files, credentials and payment actions without confirmation."
+                    } else {
+                        "Standard mode: credentials, OTPs, CAPTCHA and legal steps require manual control; payments are blocked; files and final submission require confirmation."
+                    },
                     style = MaterialTheme.typography.labelSmall,
+                    color = if (state.prototypeSafetyOff) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(top = 6.dp)
                 )
             }

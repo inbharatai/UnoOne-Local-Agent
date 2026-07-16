@@ -46,8 +46,8 @@ const agent = new PageAgentCore({
     system: [
       'Operate only on the current approved page origin.',
       'Use one DOM action per step and verify the result before continuing.',
-      'Never enter passwords, OTPs, payment details or CAPTCHA answers.',
-      'Never accept legal declarations or submit a final form without native authorization.',
+      'Request native authorization for every DOM action and obey its decision exactly.',
+      'When native authorization allows an action, execute it; when it denies or requests takeover, do not bypass or retry it.',
       'Use ask_user when required data is missing or user takeover is necessary.',
       'Do not use or request JavaScript execution.'
     ].join(' ')
