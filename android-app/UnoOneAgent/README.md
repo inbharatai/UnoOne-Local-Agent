@@ -13,27 +13,15 @@ Android implementation for UnoOne V2.
 - Offline Sherpa-ONNX speech baseline.
 - Downloadable language-pack manager.
 - Accessibility-based phone control.
-- CameraX/ML Kit Blind Aid.
-- Alibaba PageAgent Secure Browser using local Gemma planning.
+- CameraX/MediaPipe Blind Aid using the bundled EfficientDet-Lite2 COCO detector.
+- Page Agent Secure Browser using local Gemma planning.
 - Landing-screen Agent activity panel with a persistent latest-step summary, bounded expansion, and direct Skills access.
 - Safety-routed built-in/custom skills plus disabled, review-first suggestions learned only from repeated successful low-risk routines.
 - Offline Document Agent for verified save-as-copy filling of PDF AcroForms and DOCX content-control/placeholder templates. It is available from the landing screen or the built-in PDF/DOCX voice skills; ordinary DOCX files are also supported by Load Document.
-- Command-path three-lane router (FAST_ACTION / CHAT / AGENT_ACTION) plus eyes-free assist
-  (Listen wake mode, step narration, Blind Aid scene narration, voice-driven Secure Browser,
-  TalkBack live regions), merged to `main`. Automated gate green; live hands-free/voice/visual
-  UX remains device-gated (see root `DEVICE_VERIFICATION.md` §10).
-- Eyes-free bulletproof fixes C1-C9, merged to `main` @ `c335d76` (owner sign-off 2026-07-15,
-  --no-ff): unload the 2.5 GB Gemma brain during Blind Aid (kills the OOM "system shuts down"),
-  async CameraX bind + lazy ML Kit (fast, non-frozen Blind Aid activation), always-enabled
-  Stop/Cancel with run-generation cancel tokens (un-bricks the "Reading screen" trap), in-app
-  MediaProjection Read Screen (no MIUI-settings bounce), one-tap always-listening hands-free
-  session with a single mic owner (no dual-`AudioRecord` listen lag), collapsible full agent-work
-  timeline, real document loaders (PDF/DOCX/Excel/image/HTML/text via PdfRenderer+ML Kit OCR and JDK
-  SAX, JVM-tested; legacy `.xls` honestly unsupported), and PageAgent offline form-fill at a
-  synthetic local-form origin with all `BrowserSafetyPolicy` gates intact. Automated gate green
-  (lint, JVM unit, instrumented OK 46, assemble); live voice/camera/OCR/form-fill/TalkBack UX
-  stays device-gated (see `DEVICE_VERIFICATION.md` §11).
-- Alpha branch; physical-device qualification remains pending.
+- FAST_ACTION, CHAT and AGENT_ACTION command routing, with deterministic parsing before model inference.
+- Eyes-free operation through hands-free listening, spoken execution steps, Blind Aid scene narration, voice-driven Page Agent commands and TalkBack live regions.
+- Read Screen through MediaProjection and bundled ML Kit Latin OCR; PDF, image, XLSX, DOCX, HTML, CSV and text loading; legacy `.xls` is unsupported.
+- A primary Xiaomi 14 running Android 15 has passed 48 connected-device tests. This is an alpha, not production qualification; the second-device matrix, controlled speech/vision benchmarks, signed release and production distribution remain pending.
 
 ## Modules
 
@@ -97,7 +85,7 @@ There is no active `gemma-local` or Gemma 3n compatibility folder in V2.
 | Context | 32,768 tokens |
 | Minimum RAM product gate | 6 GB |
 | Recommended RAM product gate | 8 GB |
-| Device qualification | pending |
+| Prototype device result | loaded successfully on Xiaomi 14; production qualification pending |
 
 The manifest may use the verified upstream file for engineering acquisition. Production must distribute the same bytes from UnoOne-controlled storage through a signed catalogue.
 
@@ -105,10 +93,10 @@ The manifest may use the verified upstream file for engineering acquisition. Pro
 
 - JDK 17.
 - Android SDK 35.
-- Node.js 24 for the PageAgent bundle.
+- Node.js 24 for the Page Agent bundle.
 - Android device or emulator for installation; physical device required for Gemma, Sherpa, Accessibility and Blind Aid qualification.
 
-## Build PageAgent asset first
+## Build the Page Agent asset first
 
 ```bash
 cd ../../../web-runtime/page-agent-unoone
@@ -149,7 +137,7 @@ The Secure Browser uses an exclusive Gemma lease:
 
 1. reserve the process-wide Gemma owner;
 2. unload the phone-agent conversation when required;
-3. load the PageAgent planner using the same model artifact;
+3. load the Page Agent planner using the same model artifact;
 4. block phone self-heal from allocating a second engine;
 5. restore the phone brain after the browser session closes.
 
@@ -157,7 +145,7 @@ Standard uses exact approved HTTPS origins; explicit Prototype/Off admits arbitr
 The first screen is an offline Page Agent home rather than a blank remote page. It explains URL entry,
 offline HTML form loading, typed/voice tasks, Read Page and hands-free command examples.
 The bridge still validates the main frame, session id, nonce and exact source/declared/active origin,
-and PageAgent cannot execute arbitrary JavaScript.
+and Page Agent cannot execute arbitrary JavaScript.
 In the default **Standard** security level, payments are blocked and credentials, OTPs, CAPTCHA and
 legal acceptance require manual takeover. The explicit **Off — prototype (agent + browser)** setting
 removes those per-action browser blocks for local prototyping and displays a persistent warning.
@@ -166,9 +154,7 @@ sessions remain blocked in every mode.
 
 ## Language packs
 
-Language selection must occur through **Settings → Offline Languages**.
-
-The old direct selector is intentionally removed. Activation is allowed only when every required model dependency is healthy. Planned packs remain non-downloadable.
+The active voice language can be changed from the landing-screen selector or **Settings → Voice language**. **Settings → Offline Languages** manages pack installation and health. Activation is allowed only when every required model dependency is healthy; planned packs remain non-downloadable.
 
 Current baseline packs:
 
@@ -193,7 +179,7 @@ Required physical-device evidence includes:
 - Gemma load and backend;
 - first-token and total planning latency;
 - peak RAM and temperature;
-- repeated phone-agent and PageAgent tasks;
+- repeated phone-agent and Page Agent tasks;
 - English and Indic STT/TTS;
 - Accessibility gestures and text capture;
 - Blind Aid camera, haptic and spoken feedback;
@@ -205,7 +191,7 @@ Required physical-device evidence includes:
 The Android release must not proceed until:
 
 - latest Android CI is green;
-- PageAgent Playwright tests are green;
+- Page Agent Playwright tests are green;
 - device matrix is populated;
 - model and speech artefacts have exact checksums and licences;
 - release APK is signed with the production key;
