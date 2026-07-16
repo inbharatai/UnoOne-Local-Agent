@@ -422,7 +422,7 @@ class AgentOrchestrator(
         else com.unoone.agent.core.model.Result.Error("No tool call proposed for: $command")
     }
 
-    fun setBlindAidActive(active: Boolean) {
+    fun setBlindAidActive(active: Boolean, bringToForeground: Boolean = false) {
         if (active) {
             if (!blindAidActivationInFlight.compareAndSet(false, true)) return
             brainLoadCancelCallback?.invoke()
@@ -441,7 +441,7 @@ class AgentOrchestrator(
                             .onFailure { Logger.e("Orchestrator: brain unload for Blind Aid failed", it) }
                     }
                     _isBlindAidActive.value = true
-                    bringAppToForegroundIfNeeded()
+                    if (bringToForeground) bringAppToForegroundIfNeeded()
                     // Accessibility disclaimer: Blind Aid is assistive guidance, not a certified
                     // navigation or medical-safety device. Spoken once on activation.
                     voiceModule.speakAwait(
@@ -487,7 +487,7 @@ class AgentOrchestrator(
                     .onFailure { Logger.e("Orchestrator: voice Blind Aid brain unload failed", it) }
             }
         }
-        setBlindAidActive(active)
+        setBlindAidActive(active, bringToForeground = active)
     }
 
     /**
@@ -498,7 +498,11 @@ class AgentOrchestrator(
     private fun bringAppToForegroundIfNeeded() {
         try {
             val intent = Intent(context, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
             }
             context.startActivity(intent)
             Logger.i("Orchestrator: Launched MainActivity for blind-aid camera binding")

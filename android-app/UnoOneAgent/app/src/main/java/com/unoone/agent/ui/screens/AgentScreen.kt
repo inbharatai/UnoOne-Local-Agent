@@ -842,6 +842,13 @@ fun BlindAidCameraPreview(
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     val narrationScope = rememberCoroutineScope()
+    val previewSessionActive = remember { java.util.concurrent.atomic.AtomicBoolean(true) }
+    val previewViewRef = remember {
+        java.util.concurrent.atomic.AtomicReference<PreviewView?>(null)
+    }
+    val boundUseCasesRef = remember {
+        java.util.concurrent.atomic.AtomicReference<List<androidx.camera.core.UseCase>>(emptyList())
+    }
     val narrationJob = remember {
         java.util.concurrent.atomic.AtomicReference<kotlinx.coroutines.Job?>(null)
     }
@@ -865,13 +872,19 @@ fun BlindAidCameraPreview(
 
     DisposableEffect(lifecycleOwner) {
         onDispose {
+            previewSessionActive.set(false)
             narrationJob.getAndSet(null)?.cancel()
             // Coroutine cancellation stops the await, but AudioTrack must also be flushed so no
             // cached Blind Aid utterance survives after the camera panel closes.
             voiceModule.stopSpeaking()
-            // Directly unbind camera — cameraProviderFuture is already complete by this point
+            previewViewRef.getAndSet(null)?.previewStreamState?.removeObservers(lifecycleOwner)
+            // Unbind only this preview session. unbindAll() is process-wide and allowed a stale
+            // Activity/composition to tear down a newer Blind Aid camera on Xiaomi.
             try {
-                cameraProviderFuture.get().unbindAll()
+                val useCases = boundUseCasesRef.getAndSet(emptyList())
+                if (useCases.isNotEmpty() && cameraProviderFuture.isDone) {
+                    cameraProviderFuture.get().unbind(*useCases.toTypedArray())
+                }
             } catch (e: Exception) {
                 com.unoone.agent.core.util.Logger.e("BlindAidCameraPreview: Camera unbind failed", e)
             }
@@ -888,6 +901,13 @@ fun BlindAidCameraPreview(
                     // SurfaceView mode can consume overlay/accessibility touches on Xiaomi builds.
                     implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                 }
+                previewViewRef.set(previewView)
+                val streamObserver = androidx.lifecycle.Observer<PreviewView.StreamState> { state ->
+                    if (previewSessionActive.get()) {
+                        cameraBound = state == PreviewView.StreamState.STREAMING
+                    }
+                }
+                previewView.previewStreamState.observe(lifecycleOwner, streamObserver)
 
                 // C2: bind the camera ASYNCHRONOUSLY off the main thread. The prior
                 // cameraProviderFuture.get() blocked the AndroidView factory on the main thread,
@@ -895,6 +915,7 @@ fun BlindAidCameraPreview(
                 // Build the PreviewView immediately so a surface exists, then bind when the future
                 // completes on the main executor.
                 cameraProviderFuture.addListener({
+                    if (!previewSessionActive.get()) return@addListener
                     try {
                         val cameraProvider = cameraProviderFuture.get()
                         val preview = Preview.Builder().build().also {
@@ -909,15 +930,15 @@ fun BlindAidCameraPreview(
                                     blindAidManager.getAnalyzer()
                                 )
                             }
-                        cameraProvider.unbindAll()
                         cameraProvider.bindToLifecycle(
                             lifecycleOwner,
                             CameraSelector.DEFAULT_BACK_CAMERA,
                             preview,
                             imageAnalysis
                         )
-                        cameraBound = true
+                        boundUseCasesRef.set(listOf(preview, imageAnalysis))
                     } catch (e: Exception) {
+                        cameraBound = false
                         com.unoone.agent.core.util.Logger.e("BlindAidCameraPreview: Camera binding failed", e)
                     }
                 }, ContextCompat.getMainExecutor(context))
