@@ -43,6 +43,9 @@ class UnoOneApplication : Application() {
     /** Remembered for restoring the main Gemma 4 brain after memory-pressure unload. */
     @Volatile private var lastLlmPath: String? = null
 
+    /** Prevents startup/onResume/memory-recovery callers from queueing duplicate 2.5 GB loads. */
+    private val modelLoadGate = ModelLoadGate()
+
     override fun onCreate() {
         super.onCreate()
         Logger.i("UnoOne V2 starting — Gemma 4 E2B local mode")
@@ -51,7 +54,9 @@ class UnoOneApplication : Application() {
         val db = DatabaseProvider.getDatabase(this)
 
         sharedVoiceModule = VoiceModule(this)
-        appScope.launch {
+        // Sherpa model construction performs file I/O and native initialization. Keep it off the
+        // main thread so a cold offline launch cannot freeze Compose while voice models warm up.
+        appScope.launch(Dispatchers.IO) {
             val modelBaseDir = (getExternalFilesDir(null)?.absolutePath ?: filesDir.absolutePath) + "/models"
             sharedVoiceModule.reinitForLanguage(modelBaseDir)
         }
@@ -83,17 +88,7 @@ class UnoOneApplication : Application() {
         val llmPath = modelManager.getLlmModelPath(brainSpec)
         if (llmPath != null) {
             lastLlmPath = llmPath
-            appScope.launch {
-                val result = orchestrator.loadLlmModel(llmPath, brainSpec)
-                if (result is Result.Success) {
-                    Logger.i("UnoOneApplication: ${brainSpec.displayName} loaded from $llmPath")
-                } else {
-                    Logger.w(
-                        "UnoOneApplication: ${brainSpec.displayName} failed to load: " +
-                            (result as? Result.Error)?.message
-                    )
-                }
-            }
+            scheduleLlmLoad(llmPath, brainSpec, "initial")
         }
 
         appScope.launch {
@@ -159,16 +154,46 @@ class UnoOneApplication : Application() {
         val path = lastLlmPath ?: return
         if (orchestrator.isLlmLoaded()) return
         val spec = BrainModelRegistry.GEMMA_4_E2B
-        Logger.i("UnoOneApplication: reloading ${spec.displayName} after memory pressure")
-        appScope.launch {
-            val result = orchestrator.loadLlmModel(path, spec)
-            if (result is Result.Success) {
-                Logger.i("UnoOneApplication: ${spec.displayName} reloaded from $path")
-            } else {
-                Logger.w(
-                    "UnoOneApplication: ${spec.displayName} reload failed: " +
-                        (result as? Result.Error)?.message
-                )
+        scheduleLlmLoad(path, spec, "recovery")
+    }
+
+    /**
+     * Starts one native model load at a time. The gate is acquired synchronously before launching
+     * the coroutine so an immediate Activity.onResume cannot observe a false-ready state and enqueue
+     * another load behind it. LiteRT initialization remains on IO and never occupies the UI thread.
+     */
+    private fun scheduleLlmLoad(
+        path: String,
+        spec: com.unoone.agent.core.model.BrainModelSpec,
+        reason: String
+    ) {
+        if (!modelLoadGate.tryAcquire()) {
+            Logger.i("UnoOneApplication: skipped duplicate $reason ${spec.displayName} load; one is already in flight")
+            return
+        }
+        Logger.i("UnoOneApplication: starting $reason ${spec.displayName} load")
+        appScope.launch(Dispatchers.IO) {
+            try {
+                // A browser/Blind-Aid transition may have completed between scheduling and execution.
+                if (ExclusiveBrainLeaseState.isActive() || secureBrowserModelLease.isActive()) {
+                    Logger.i("UnoOneApplication: cancelled $reason brain load; exclusive mode is active")
+                    return@launch
+                }
+                if (orchestrator.isLlmLoaded()) {
+                    Logger.i("UnoOneApplication: skipped $reason brain load; model became ready")
+                    return@launch
+                }
+                val result = orchestrator.loadLlmModel(path, spec)
+                if (result is Result.Success) {
+                    Logger.i("UnoOneApplication: ${spec.displayName} loaded from $path ($reason)")
+                } else {
+                    Logger.w(
+                        "UnoOneApplication: ${spec.displayName} $reason load failed: " +
+                            (result as? Result.Error)?.message
+                    )
+                }
+            } finally {
+                modelLoadGate.release()
             }
         }
     }
