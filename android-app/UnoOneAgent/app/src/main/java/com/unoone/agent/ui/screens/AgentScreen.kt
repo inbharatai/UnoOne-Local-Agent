@@ -54,6 +54,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -73,6 +74,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -134,6 +136,10 @@ fun AgentScreen(
     // C8: loaded document + loading flag.
     val loadedDocument by viewModel.loadedDocument.collectAsState()
     val isLoadingDocument by viewModel.isLoadingDocument.collectAsState()
+    val editableDocument by viewModel.editableDocument.collectAsState()
+    val isFillingDocument by viewModel.isFillingDocument.collectAsState()
+    val documentFillMessage by viewModel.documentFillMessage.collectAsState()
+    val documentFillPickerRequest by viewModel.documentFillPickerRequest.collectAsState()
     val context = LocalContext.current
 
     // Keep the offline-mode chip live: VoiceModule exposes @Volatile state (not a Flow), so poll
@@ -176,6 +182,35 @@ fun AgentScreen(
             val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull()
             viewModel.loadDocument(context, uri, mime)
         }
+    }
+
+    // Offline Document Agent input/output pickers. OpenDocument is read-only; CreateDocument
+    // always asks for a new destination, so the original PDF/DOCX is never overwritten.
+    val documentFillPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull()
+            viewModel.inspectDocumentForFilling(uri, mime)
+        }
+    }
+    var pendingDocumentValues by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    val pdfOutputLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(com.unoone.agent.phonecontrol.document.DocumentFillEngine.PDF_MIME)
+    ) { uri -> if (uri != null) viewModel.fillDocumentCopy(uri, pendingDocumentValues) }
+    val docxOutputLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(com.unoone.agent.phonecontrol.document.DocumentFillEngine.DOCX_MIME)
+    ) { uri -> if (uri != null) viewModel.fillDocumentCopy(uri, pendingDocumentValues) }
+
+    LaunchedEffect(documentFillPickerRequest) {
+        val format = documentFillPickerRequest ?: return@LaunchedEffect
+        val types = if (format == "docx") {
+            arrayOf(com.unoone.agent.phonecontrol.document.DocumentFillEngine.DOCX_MIME)
+        } else {
+            arrayOf(com.unoone.agent.phonecontrol.document.DocumentFillEngine.PDF_MIME)
+        }
+        viewModel.consumeDocumentFillPickerRequest()
+        documentFillPickerLauncher.launch(types)
     }
 
     // C8: the question/instruction the user wants the brain to answer about the loaded document.
@@ -505,6 +540,7 @@ fun AgentScreen(
                         "text/html",
                         "text/csv",
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         "application/vnd.ms-excel"
                     )
                 )
@@ -520,7 +556,106 @@ fun AgentScreen(
                 modifier = Modifier.size(20.dp)
             )
             Spacer(modifier = Modifier.size(8.dp))
-            Text(if (isLoadingDocument) "Reading document…" else "Load Document (PDF / Excel / image / text)")
+            Text(if (isLoadingDocument) "Reading document…" else "Load Document (PDF / DOCX / Excel / image / text)")
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = {
+                documentFillPickerLauncher.launch(
+                    arrayOf(
+                        com.unoone.agent.phonecontrol.document.DocumentFillEngine.PDF_MIME,
+                        com.unoone.agent.phonecontrol.document.DocumentFillEngine.DOCX_MIME
+                    )
+                )
+            },
+            enabled = !isFillingDocument && !isProcessing,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Default.Description, contentDescription = null)
+            Spacer(modifier = Modifier.size(8.dp))
+            Text(if (isFillingDocument) "Working on document…" else "Fill PDF / DOCX Offline")
+        }
+
+        editableDocument?.let { template ->
+            val fillValues = remember(template) {
+                mutableStateMapOf<String, String>().apply {
+                    template.fields.forEach { field -> put(field.id, field.currentValue) }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Offline Document Agent", fontWeight = FontWeight.Bold)
+                            Text(template.displayName, style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "${template.fields.size} field(s) · saves a verified new copy",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                        IconButton(onClick = viewModel::clearEditableDocument) {
+                            Icon(Icons.Default.Close, contentDescription = "Close Document Agent")
+                        }
+                    }
+                    template.fields.forEach { field ->
+                        when (field.type) {
+                            com.unoone.agent.phonecontrol.document.DocumentFieldType.BOOLEAN -> {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(
+                                        checked = fillValues[field.id].orEmpty().lowercase() in
+                                            setOf("true", "yes", "1", "on", "checked"),
+                                        onCheckedChange = { fillValues[field.id] = it.toString() },
+                                        enabled = !isFillingDocument
+                                    )
+                                    Text(field.label)
+                                }
+                            }
+                            else -> OutlinedTextField(
+                                value = fillValues[field.id].orEmpty(),
+                                onValueChange = { fillValues[field.id] = it },
+                                label = { Text(field.label) },
+                                supportingText = if (field.options.isNotEmpty()) {
+                                    { Text("Options: ${field.options.joinToString().take(180)}") }
+                                } else null,
+                                enabled = !isFillingDocument,
+                                singleLine = field.type != com.unoone.agent.phonecontrol.document.DocumentFieldType.TEXT,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            pendingDocumentValues = fillValues.toMap()
+                            val name = template.displayName
+                            val dot = name.lastIndexOf('.')
+                            val completed = if (dot > 0) {
+                                "${name.substring(0, dot)}-completed${name.substring(dot)}"
+                            } else "$name-completed"
+                            if (template.kind == com.unoone.agent.phonecontrol.document.DocumentFillKind.FILLABLE_PDF) {
+                                pdfOutputLauncher.launch(completed)
+                            } else {
+                                docxOutputLauncher.launch(completed)
+                            }
+                        },
+                        enabled = !isFillingDocument && fillValues.values.any { it.isNotBlank() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Save Verified Copy")
+                    }
+                    if (documentFillMessage.isNotBlank()) {
+                        Text(
+                            documentFillMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                        )
+                    }
+                }
+            }
         }
 
         // C8: loaded-document card — shows what was loaded and lets the user ask the brain about it.
@@ -555,6 +690,7 @@ fun AgentScreen(
                         com.unoone.agent.core.document.DocKind.PDF -> "PDF, ${doc.pagesOrSheets} page(s)"
                         com.unoone.agent.core.document.DocKind.IMAGE -> "image (OCR)"
                         com.unoone.agent.core.document.DocKind.XLSX -> "Excel spreadsheet"
+                        com.unoone.agent.core.document.DocKind.DOCX -> "Word document"
                         com.unoone.agent.core.document.DocKind.HTML -> "web page"
                         com.unoone.agent.core.document.DocKind.CSV -> "CSV"
                         else -> "text"

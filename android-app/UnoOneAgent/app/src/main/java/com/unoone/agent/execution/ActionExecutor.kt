@@ -157,6 +157,17 @@ class ActionExecutor(
                     if (url.isBlank()) Result.Error("open_url requires a url")
                     else phoneControl.openUrl(url).map { "Opened $url." }
                 }
+                "prepare_document_fill" -> {
+                    val format = toolCall.args["format"]?.jsonPrimitive?.content?.lowercase() ?: "pdf"
+                    if (format !in setOf("pdf", "docx")) {
+                        Result.Error("Document format must be pdf or docx")
+                    } else {
+                        val opener = _prepareDocumentFill
+                            ?: return Result.Error("Document Agent is not available right now")
+                        opener(format)
+                        Result.Success("Opening the offline ${format.uppercase()} document picker.")
+                    }
+                }
                 "open_dialer" -> {
                     val number = toolCall.args["number"]?.jsonPrimitive?.content
                     phoneControl.openDialer(number).map { "Dialer opened." }
@@ -295,6 +306,8 @@ class ActionExecutor(
      * device-time gate; the callback only fires the UI request and reports an acknowledgement.
      */
     var _openSecureBrowserTask: ((origin: String, task: String) -> Result<String>)? = null
+    /** Opens the UI-owned Document Agent picker; the user still chooses input and output files. */
+    var _prepareDocumentFill: ((format: String) -> Unit)? = null
 
     /**
      * True when the device has an active internet connection. Used by [web_search] so the

@@ -29,4 +29,12 @@ class SkillPoliciesTest {
         assertNull(SkillLearningPolicy.suggestionFor("message 9999999999 hello", "send_whatsapp"))
         assertNull(SkillLearningPolicy.suggestionFor("draft private email", "draft_email"))
     }
+
+    @Test
+    fun builtInsIncludeExecutableOfflinePdfAndDocxWorkflows() {
+        assertTrue(BuiltInSkillCatalog.names.contains("Fill an Offline PDF Form"))
+        assertTrue(BuiltInSkillCatalog.names.contains("Fill an Offline DOCX Template"))
+        assertEquals("fill pdf form", BuiltInSkillCatalog.definitions.first { it.name.contains("PDF") }.steps.single())
+        assertEquals("fill docx template", BuiltInSkillCatalog.definitions.first { it.name.contains("DOCX") }.steps.single())
+    }
 }

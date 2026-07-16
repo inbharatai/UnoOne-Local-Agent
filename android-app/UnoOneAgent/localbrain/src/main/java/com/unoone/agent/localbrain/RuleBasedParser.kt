@@ -166,6 +166,14 @@ object RuleBasedParser {
 
             // === SIMPLE RULES (no internal "and" usage) ===
 
+            // Offline Document Agent. This tool opens the system picker only; filling and saving
+            // a new copy stay explicit in the Document Agent UI.
+            lowered.contains("fill") &&
+                (lowered.contains("pdf") || lowered.contains("docx") || lowered.contains("word template")) -> {
+                val format = if (lowered.contains("pdf")) "pdf" else "docx"
+                ToolCall("prepare_document_fill", JsonObject(mapOf("format" to JsonPrimitive(format))))
+            }
+
             // Secure Browser — drive the hardened WebView to an approved origin (eyes-free WS4).
             // Kept FIRST among the simple rules so a trailing task clause ("open uniassist and fill
             // the profile form") is not shadowed by the `fill` / gesture branches below. The friendly

@@ -34,6 +34,16 @@ dependencies {
     // the current 0.10.x line; use the current Tasks release instead.
     implementation("com.google.mediapipe:tasks-vision:0.10.35")
 
+    // Android-compatible PDFBox fork for fully offline AcroForm inspection and save-as-copy.
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0") {
+        // PDF signing/encryption is outside DocumentFillEngine's contract. Keeping the optional
+        // Bouncy Castle stack would also package its trust-all TLS helper, which Android lint
+        // correctly rejects. AcroForm inspection/filling does not require these modules.
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15to18")
+        exclude(group = "org.bouncycastle", module = "bcpkix-jdk15to18")
+        exclude(group = "org.bouncycastle", module = "bcutil-jdk15to18")
+    }
+
     // CameraX for real-time continuous blind aid analysis
     val cameraVersion = "1.3.3"
     implementation("androidx.camera:camera-core:$cameraVersion")

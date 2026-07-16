@@ -24,6 +24,16 @@ object BuiltInSkillCatalog {
             triggers = listOf("start blind aid guidance", "help me navigate with blind aid"),
             steps = listOf("start blind aid"),
             riskLevel = 2
+        ),
+        SkillDefinition(
+            name = "Fill an Offline PDF Form",
+            triggers = listOf("fill a pdf form", "complete a pdf form offline"),
+            steps = listOf("fill pdf form")
+        ),
+        SkillDefinition(
+            name = "Fill an Offline DOCX Template",
+            triggers = listOf("fill a docx template", "complete a word template offline"),
+            steps = listOf("fill docx template")
         )
     )
 

@@ -145,4 +145,9 @@ class UnoOneToolSet : ToolSet {
         @ToolParam(description = "Approved origin: friendly name ('unigurus'), bare host ('unigurus.com'), or full HTTPS URL") origin: String,
         @ToolParam(description = "What UnoOne should do on the page, e.g. 'fill the profile form and stop before final submission'") task: String
     ): String = "Opening Secure Browser for $origin."
+
+    @Tool(description = "Open the fully offline Document Agent to fill a PDF AcroForm or DOCX template and save a new copy")
+    fun prepare_document_fill(
+        @ToolParam(description = "Document format: pdf or docx") format: String
+    ): String = "Opening offline document fill for $format."
 }

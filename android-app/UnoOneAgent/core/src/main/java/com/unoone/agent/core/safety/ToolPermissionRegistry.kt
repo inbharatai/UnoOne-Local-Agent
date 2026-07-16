@@ -71,6 +71,7 @@ object ToolPermissionRegistry {
         // at the tool level: navigation is origin-gated by ApprovedOriginPolicy and the in-browser
         // action policy handles its own confirm/takeover. Risk tier CONFIRM lives in SafetyGuard.
         "secure_browser_task" to listOf(PermissionRequirement.None),
+        "prepare_document_fill" to listOf(PermissionRequirement.None),
 
         // Blind aid — CameraX preview + on-device ML Kit object detection + haptic/tone/TTS guidance.
         // Pure camera path (BlindAidManager uses no Accessibility service), so it needs ONLY the

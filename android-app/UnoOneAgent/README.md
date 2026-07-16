@@ -17,6 +17,7 @@ Android implementation for UnoOne V2.
 - Alibaba PageAgent Secure Browser using local Gemma planning.
 - Landing-screen Agent activity panel with a persistent latest-step summary, bounded expansion, and direct Skills access.
 - Safety-routed built-in/custom skills plus disabled, review-first suggestions learned only from repeated successful low-risk routines.
+- Offline Document Agent for verified save-as-copy filling of PDF AcroForms and DOCX content-control/placeholder templates. It is available from the landing screen or the built-in PDF/DOCX voice skills; ordinary DOCX files are also supported by Load Document.
 - Command-path three-lane router (FAST_ACTION / CHAT / AGENT_ACTION) plus eyes-free assist
   (Listen wake mode, step narration, Blind Aid scene narration, voice-driven Secure Browser,
   TalkBack live regions), merged to `main`. Automated gate green; live hands-free/voice/visual
@@ -27,7 +28,7 @@ Android implementation for UnoOne V2.
   Stop/Cancel with run-generation cancel tokens (un-bricks the "Reading screen" trap), in-app
   MediaProjection Read Screen (no MIUI-settings bounce), one-tap always-listening hands-free
   session with a single mic owner (no dual-`AudioRecord` listen lag), collapsible full agent-work
-  timeline, real document loaders (PDF/Excel/image/HTML/text via PdfRenderer+ML Kit OCR and JDK
+  timeline, real document loaders (PDF/DOCX/Excel/image/HTML/text via PdfRenderer+ML Kit OCR and JDK
   SAX, JVM-tested; legacy `.xls` honestly unsupported), and PageAgent offline form-fill at a
   synthetic local-form origin with all `BrowserSafetyPolicy` gates intact. Automated gate green
   (lint, JVM unit, instrumented OK 46, assemble); live voice/camera/OCR/form-fill/TalkBack UX

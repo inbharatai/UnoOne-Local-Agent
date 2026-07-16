@@ -81,6 +81,25 @@ class ActionExecutorToolCoverageTest {
     }
 
     @Test
+    fun prepareDocumentFillOpensOnlySupportedOfflinePickers() {
+        var opened: String? = null
+        executor._prepareDocumentFill = { opened = it }
+
+        val success = runBlocking {
+            executor.executeTool(ToolCall("prepare_document_fill", obj { put("format", "DOCX") }))
+        }
+        assertTrue(success is Result.Success)
+        assertEquals("docx", opened)
+
+        opened = null
+        val rejected = runBlocking {
+            executor.executeTool(ToolCall("prepare_document_fill", obj { put("format", "doc") }))
+        }
+        assertTrue(rejected is Result.Error)
+        assertEquals(null, opened)
+    }
+
+    @Test
     fun noteToolsPersistSearchAndDeleteEndToEnd() {
         runBlocking {
             val created = executor.executeTool(ToolCall("create_note", buildJsonObject {
@@ -166,7 +185,8 @@ class ActionExecutorToolCoverageTest {
         // secure_browser_task: the origin resolves (approved), but no _openSecureBrowserTask runner
         // is wired in this unit test → a handled "Secure Browser is not available" Result.Error
         // (NOT a router fallback). A non-approved origin would return the "not approved" error.
-        "secure_browser_task" to obj { put("origin", "unigurus"); put("task", "fill the form") }
+        "secure_browser_task" to obj { put("origin", "unigurus"); put("task", "fill the form") },
+        "prepare_document_fill" to obj { put("format", "pdf") }
     )
 
     private fun obj(build: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit): JsonObject =

@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import com.unoone.agent.core.document.DocKind
+import com.unoone.agent.core.document.DocxTemplateProcessor
 import com.unoone.agent.core.document.ExtractedDoc
 import com.unoone.agent.core.document.HtmlTextExtractor
 import com.unoone.agent.core.document.PlainTextExtractor
@@ -59,6 +60,11 @@ class DocumentLoader(private val context: Context) {
                     resolver.openInputStream(uri)?.use { Triple(XlsxTextExtractor.extract(it), 0, false) }
                         ?: throw java.io.IOException("Could not open the spreadsheet")
                 }
+                DocKind.DOCX -> {
+                    resolver.openInputStream(uri)?.use { stream ->
+                        Triple(DocxTemplateProcessor.extractText(stream.readBytes()), 0, false)
+                    } ?: throw java.io.IOException("Could not open the DOCX file")
+                }
                 DocKind.HTML -> {
                     resolver.openInputStream(uri)?.use { stream ->
                         Triple(HtmlTextExtractor.extract(stream.readBytes().toString(Charsets.UTF_8)), 0, false)
@@ -69,7 +75,7 @@ class DocumentLoader(private val context: Context) {
                         ?: throw java.io.IOException("Could not open the text file")
                 }
                 DocKind.UNSUPPORTED -> throw UnsupportedOperationException(
-                    "Unsupported file type. Use PDF, image, Excel (.xlsx), HTML, CSV, or plain text."
+                    "Unsupported file type. Use PDF, DOCX, image, Excel (.xlsx), HTML, CSV, or plain text."
                 )
             }
             Result.Success(ExtractedDoc(name = name, text = text, kind = kind, pagesOrSheets = pages, truncated = truncated))
@@ -132,6 +138,7 @@ class DocumentLoader(private val context: Context) {
             mimeType?.startsWith("image/") == true ||
                 ext in setOf("png", "jpg", "jpeg", "webp", "bmp", "gif", "tiff") -> DocKind.IMAGE
             mimeType == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || ext == "xlsx" -> DocKind.XLSX
+            mimeType == DocumentFillEngine.DOCX_MIME || ext == "docx" -> DocKind.DOCX
             mimeType == "text/html" || ext == "html" || ext == "htm" -> DocKind.HTML
             mimeType == "text/csv" || ext == "csv" -> DocKind.CSV
             mimeType?.startsWith("text/") == true || ext in setOf("txt", "md", "log", "json", "xml") -> DocKind.TEXT
