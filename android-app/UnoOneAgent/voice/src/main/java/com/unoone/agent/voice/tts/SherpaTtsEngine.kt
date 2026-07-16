@@ -7,7 +7,13 @@ import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Production offline TTS using Sherpa-ONNX VITS models: `model.onnx` + `tokens.txt`.
@@ -26,10 +32,17 @@ import java.io.File
 class SherpaTtsEngine(private val context: Context, private val modelDir: String) {
 
     private val player = TtsPlayer()
+    // Native generation is blocking and ignores coroutine cancellation. Serialize requests and
+    // invalidate every pre-stop request so cached Blind Aid speech cannot play after the camera is
+    // closed. New speech (including "Blind Aid deactivated") uses the new epoch normally.
+    private val synthesisMutex = Mutex()
+    private val speechEpoch = AtomicLong(0L)
     @Volatile
     private var tts: OfflineTts? = null
     @Volatile
     private var initialized = false
+    @Volatile
+    private var lastPlaybackDurationMs = 0L
 
     @Synchronized
     fun initialize(): Result<Unit> {
@@ -78,11 +91,17 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
 
     @Synchronized
     fun speak(text: String): Result<Unit> {
+        return speakAtEpoch(text, speechEpoch.get())
+    }
+
+    @Synchronized
+    private fun speakAtEpoch(text: String, requestEpoch: Long): Result<Unit> {
         val engine = tts
         if (!initialized || engine == null) {
             return Result.Error("SherpaTtsEngine not initialized")
         }
         if (text.isBlank()) return Result.Success(Unit)
+        if (requestEpoch != speechEpoch.get()) return Result.Success(Unit)
 
         return try {
             // generate(text, speakerId=0, speed=1.0f)
@@ -90,7 +109,14 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
             if (audio.samples.isEmpty()) {
                 return Result.Error("TTS produced no audio")
             }
+            // stop() may have run while the native, non-cancellable generate() call was active.
+            if (requestEpoch != speechEpoch.get()) return Result.Success(Unit)
             player.playPcm(audio.samples, audio.sampleRate)
+            if (requestEpoch != speechEpoch.get()) {
+                player.stop()
+                return Result.Success(Unit)
+            }
+            lastPlaybackDurationMs = audio.samples.size.toLong() * 1_000L / audio.sampleRate
             Logger.i("SherpaTtsEngine: Generated ${audio.samples.size} samples @ ${audio.sampleRate}Hz")
             Result.Success(Unit)
         } catch (e: Throwable) {
@@ -99,9 +125,24 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
         }
     }
 
+    /** Synthesizes off the UI thread and returns after the generated PCM finishes playing. */
+    suspend fun speakAwait(text: String, timeoutMs: Long = 30_000L): Result<Unit> {
+        val requestEpoch = speechEpoch.get()
+        return synthesisMutex.withLock {
+            // Waiting for this mutex is cancellable, unlike waiting on @Synchronized native work.
+            if (requestEpoch != speechEpoch.get()) return@withLock Result.Success(Unit)
+            val result = withContext(Dispatchers.IO) { speakAtEpoch(text, requestEpoch) }
+            if (result is Result.Success && requestEpoch == speechEpoch.get()) {
+                delay((lastPlaybackDurationMs + 100L).coerceAtMost(timeoutMs))
+            }
+            result
+        }
+    }
+
     fun isInitialized(): Boolean = initialized
 
     fun stop() {
+        speechEpoch.incrementAndGet()
         player.stop()
     }
 

@@ -35,10 +35,16 @@ class AgentSafetyPipelineHeadlessTest {
 
     private lateinit var db: UnoOneDatabase
     private lateinit var orchestrator: AgentOrchestrator
+    private lateinit var context: android.content.Context
+    private lateinit var previousSecurityLevel: SecurityLevel
 
     @Before
     fun setUp() {
-        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        context = ApplicationProvider.getApplicationContext()
+        // These cases verify the production safety contract. Do not inherit Prototype/Off from
+        // the developer's installed app preferences, and restore their choice after each case.
+        previousSecurityLevel = SecurityLevel.current(context)
+        SecurityLevel.set(context, SecurityLevel.STANDARD)
         db = Room.inMemoryDatabaseBuilder(context, UnoOneDatabase::class.java)
             .allowMainThreadQueries()
             .build()
@@ -52,7 +58,10 @@ class AgentSafetyPipelineHeadlessTest {
     }
 
     @After
-    fun tearDown() = db.close()
+    fun tearDown() {
+        db.close()
+        SecurityLevel.set(context, previousSecurityLevel)
+    }
 
     @Test
     fun skillWithDeleteAllNotesStepRequiresStrongConfirmAndDeletesWhenConfirmed() = runBlocking {

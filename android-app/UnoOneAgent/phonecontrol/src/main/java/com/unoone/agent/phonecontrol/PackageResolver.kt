@@ -4,7 +4,7 @@ object PackageResolver {
     fun resolveAppName(name: String): String? {
         return when (name.lowercase()) {
             "whatsapp" -> "com.whatsapp"
-            "gmail" -> "com.google.android.gmail"
+            "gmail" -> "com.google.android.gm"
             "calendar" -> "com.google.android.calendar"
             "camera" -> "com.android.camera"
             "settings" -> "com.android.settings"

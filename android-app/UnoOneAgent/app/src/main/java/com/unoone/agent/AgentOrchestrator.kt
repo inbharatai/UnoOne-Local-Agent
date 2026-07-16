@@ -182,12 +182,12 @@ class AgentOrchestrator(
         safetyGuard = com.unoone.agent.safetyguard.SafetyGuard()
     )
 
-    val skillsModule = SkillsModule(skillDao)
+    val skillsModule = SkillsModule(skillDao, memoryDao)
 
     // Wire ActionExecutor callbacks to orchestrator state
     init {
         actionExecutor._skillsModule = skillsModule
-        actionExecutor._setBlindAidActive = { active -> setBlindAidActive(active) }
+        actionExecutor._setBlindAidActive = { active -> setBlindAidActiveFromTool(active) }
         actionExecutor._speak = { text -> speakText(text) }
         actionExecutor._recordVoiceNote = { durationSeconds -> recordVoiceNote(durationSeconds) }
         // Multimodal vision for describe_scene — INACTIVE until a vision-capable .litertlm artifact
@@ -225,11 +225,11 @@ class AgentOrchestrator(
 
     /** Speaks text via the shared VoiceModule, used by the speak_response tool. */
     private fun speakText(text: String) {
-        try {
-            voiceModule.speak(text)
-                .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: speak_response failed: $msg") }
-        } catch (e: Exception) {
-            Logger.e("Orchestrator: speak_response exception", e)
+        scope.launch {
+            runCatching { voiceModule.speakAwait(text) }
+                .onFailure { Logger.e("Orchestrator: speak_response exception", it) }
+                .getOrNull()
+                ?.onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: speak_response failed: $msg") }
         }
     }
 
@@ -285,9 +285,11 @@ class AgentOrchestrator(
     // guard to "safe to unload" and a reload callback that honours those leases on deactivation.
     var brainReleaseGuard: () -> Boolean = { true }
     var brainReloadCallback: (() -> Unit)? = null
+    var brainLoadCancelCallback: (() -> Unit)? = null
 
     private val _isBlindAidActive = MutableStateFlow(false)
     val isBlindAidActive: StateFlow<Boolean> = _isBlindAidActive.asStateFlow()
+    private val blindAidActivationInFlight = AtomicBoolean(false)
 
     var onPermissionRequired: ((List<String>) -> Unit)? = null
     var onConfirmationRequired: ((String, (Boolean) -> Unit) -> Unit)? = null
@@ -416,35 +418,71 @@ class AgentOrchestrator(
     }
 
     fun setBlindAidActive(active: Boolean) {
-        _isBlindAidActive.value = active
         if (active) {
+            if (!blindAidActivationInFlight.compareAndSet(false, true)) return
+            brainLoadCancelCallback?.invoke()
             // C1: free the 2.5 GB Gemma brain BEFORE binding the camera. Blind Aid is a pure
-            // CameraX + ML Kit path — it never uses the brain — and on a ~5 GB-available device
+            // CameraX + MediaPipe path — it never uses the brain — and on a ~5 GB-available device
             // keeping the brain resident while the camera + object detector load trips the kernel
-            // lowmemorykiller and kills the app (the reported "system shuts down" crash). Unload
-            // now, reload on deactivate. Don't touch the brain if a Secure Browser / exclusive
-            // lease owns it, or if a command is mid-flight (the lock guards an in-flight inference).
-            if (isLlmLoaded() && !processingLock.get() && brainReleaseGuard()) {
-                runCatching { unloadLlmModel() }
-                    .onSuccess { Logger.i("Orchestrator: unloaded Gemma brain for Blind Aid (RAM freed for camera)") }
-                    .onFailure { Logger.e("Orchestrator: brain unload for Blind Aid failed", it) }
+            // lowmemorykiller and kills the app. Native release must not run on the UI thread: wait
+            // for the IO handoff, then expose the camera state so camera and Gemma never overlap.
+            scope.launch {
+                try {
+                    if (isLlmLoaded() && !processingLock.get() && brainReleaseGuard()) {
+                        runCatching { withContext(Dispatchers.IO) { unloadLlmModel() } }
+                            .onSuccess {
+                                Logger.i("Orchestrator: unloaded Gemma brain for Blind Aid (RAM freed for camera)")
+                            }
+                            .onFailure { Logger.e("Orchestrator: brain unload for Blind Aid failed", it) }
+                    }
+                    _isBlindAidActive.value = true
+                    bringAppToForegroundIfNeeded()
+                    // Accessibility disclaimer: Blind Aid is assistive guidance, not a certified
+                    // navigation or medical-safety device. Spoken once on activation.
+                    voiceModule.speakAwait(
+                        "Blind Aid activated. Scanning for obstacles ahead. " +
+                            "This is assistive guidance only, not a certified navigation device — " +
+                            "please use a cane or a guide and normal safety precautions."
+                    ).onError { msg: String, _: Throwable? ->
+                        Logger.e("Orchestrator: Blind aid speak failed: $msg")
+                    }
+                } catch (e: Exception) {
+                    Logger.e("Orchestrator: Blind Aid activation failed", e)
+                } finally {
+                    blindAidActivationInFlight.set(false)
+                }
             }
-            // Accessibility disclaimer: Blind Aid is assistive guidance, not a certified navigation
-            // or medical-safety device. Spoken once on activation so the user is never unaware.
-            voiceModule.speak(
-                "Blind Aid activated. Scanning for obstacles ahead. " +
-                    "This is assistive guidance only, not a certified navigation device — " +
-                    "please use a cane or a guide and normal safety precautions."
-            )
-                .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: Blind aid speak failed: $msg") }
-            bringAppToForegroundIfNeeded()
         } else {
-            voiceModule.speak("Blind Aid deactivated.")
-                .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: Blind aid speak failed: $msg") }
+            blindAidActivationInFlight.set(false)
+            // Flush a currently-playing/queued scene before announcing the mode transition.
+            voiceModule.stopSpeaking()
+            _isBlindAidActive.value = false
+            scope.launch {
+                kotlinx.coroutines.delay(150L)
+                voiceModule.speakAwait("Blind Aid deactivated.")
+                    .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: Blind aid speak failed: $msg") }
+            }
             // C1: restore the brain for chat/agent commands. The Application's reloader honours the
             // exclusive-lease guards so it won't fight a Secure Browser session.
             brainReloadCallback?.invoke()
         }
+    }
+
+    /**
+     * Voice/agent actions run while [processingLock] is held. The public UI path deliberately avoids
+     * unloading Gemma during an in-flight command, so the tool path must release it explicitly before
+     * CameraX and ML Kit are started. This prevents the voice activation path from retaining both
+     * multi-gigabyte workloads at once on memory-constrained phones.
+     */
+    private suspend fun setBlindAidActiveFromTool(active: Boolean) {
+        if (active && isLlmLoaded() && brainReleaseGuard()) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { unloadLlmModel() }
+                    .onSuccess { Logger.i("Orchestrator: unloaded Gemma before voice-started Blind Aid") }
+                    .onFailure { Logger.e("Orchestrator: voice Blind Aid brain unload failed", it) }
+            }
+        }
+        setBlindAidActive(active)
     }
 
     /**
@@ -516,13 +554,29 @@ class AgentOrchestrator(
             if (skill != null) {
                 addStep(AgentStatus.TOOL_SELECTED, "Executing Skill", skill.name)
                 val steps = skillsModule.getSkillSteps(skill)
+                if (steps.isEmpty()) {
+                    addStep(AgentStatus.FAILED, "Invalid Skill", "This skill has no executable steps.")
+                    saveLog(log.copy(selectedTool = "skill:${skill.name}", status = "failed"))
+                    releaseProcessingLock()
+                    return
+                }
                 for (step in steps) {
                     addStep(AgentStatus.EXECUTING, "Skill Step", step)
-                    val toolCall = commandParser.parse(step) ?: continue
+                    val toolCall = commandParser.parse(step)
+                    if (toolCall == null) {
+                        addStep(
+                            AgentStatus.FAILED,
+                            "Invalid Skill Step",
+                            "Could not understand: $step. Edit or disable this skill."
+                        )
+                        saveLog(log.copy(selectedTool = "skill:${skill.name}", status = "failed"))
+                        releaseProcessingLock()
+                        return
+                    }
                     // Skills no longer bypass safety: each step runs the full pipeline
                     // (permissions → risk → block → confirm → execute → audit) just like a
                     // standalone command. On any NeedsAccess/Blocked/Cancelled we stop the skill.
-                    val outcome = runValidatedToolCall(toolCall, step)
+                    val outcome = runValidatedToolCall(toolCall, step, learnUsage = false)
                     when (outcome) {
                         is StepOutcome.NeedsSystemAccess -> {
                             addStep(AgentStatus.FAILED, "Skill Paused", "Needs system access for ${toolCall.tool}")
@@ -1060,7 +1114,11 @@ class AgentOrchestrator(
      * be granted via the runtime permission flow — the caller must surface them via
      * [onSystemPermissionRequired]. Runtime permissions are surfaced via [onPermissionRequired].
      */
-    private suspend fun runValidatedToolCall(toolCall: ToolCall, sanitizedText: String): StepOutcome {
+    private suspend fun runValidatedToolCall(
+        toolCall: ToolCall,
+        sanitizedText: String,
+        learnUsage: Boolean = true
+    ): StepOutcome {
         // 1. Non-runtime system access (Accessibility / Overlay / MediaProjection)
         val unsatisfiedSystem = safetyPipeline.unsatisfiedRequirements(toolCall.tool)
             .filterNot { it is PermissionRequirement.RuntimePerm }
@@ -1170,6 +1228,20 @@ class AgentOrchestrator(
                 errorMessage = (result as? Result.Error)?.message
             )
         } catch (_: Exception) { }
+        if (learnUsage && result is Result.Success) {
+            try {
+                val suggested = skillsModule.recordSuccessfulUse(sanitizedText, toolCall.tool)
+                if (suggested != null) {
+                    addStep(
+                        AgentStatus.VERIFYING,
+                        "Skill Suggested",
+                        "${suggested.name.removePrefix(com.unoone.agent.skills.SkillLearningPolicy.SUGGESTION_PREFIX)} is ready for your review in Skills."
+                    )
+                }
+            } catch (e: Exception) {
+                Logger.w("Skills: usage learning failed safely: ${e.message}")
+            }
+        }
         // Self-heal: track per-tool health and surface a flaky tool once (e.g. an action that
         // consistently fails on this device) so the user knows it is unreliable. Pure decision in
         // ToolHealthTracker; this is the device-time wiring + audit record.
@@ -1262,7 +1334,7 @@ class AgentOrchestrator(
         lastNarrationAt.set(now)
         scope.launch {
             speakMutex.withLock {
-                voiceModule.speak(phrase)
+                voiceModule.speakAwait(phrase)
                     .onError { msg: String, _: Throwable? -> Logger.w("Orchestrator: milestone narration failed: $msg") }
             }
         }
@@ -1277,7 +1349,7 @@ class AgentOrchestrator(
     private suspend fun speakAnswer(text: String) {
         if (text.isBlank()) return
         speakMutex.withLock {
-            voiceModule.speak(text)
+            voiceModule.speakAwait(text)
                 .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: answer speak failed: $msg") }
         }
     }

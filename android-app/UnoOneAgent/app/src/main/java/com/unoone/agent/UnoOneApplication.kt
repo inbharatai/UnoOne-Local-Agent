@@ -3,6 +3,7 @@ package com.unoone.agent
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
+import android.os.Process
 import com.unoone.agent.browser.SecureBrowserModelLease
 import com.unoone.agent.core.model.BrainModelRegistry
 import com.unoone.agent.core.model.ExclusiveBrainLeaseState
@@ -16,7 +17,9 @@ import com.unoone.agent.voice.VoiceService
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -45,6 +48,7 @@ class UnoOneApplication : Application() {
 
     /** Prevents startup/onResume/memory-recovery callers from queueing duplicate 2.5 GB loads. */
     private val modelLoadGate = ModelLoadGate()
+    @Volatile private var modelLoadJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -57,6 +61,7 @@ class UnoOneApplication : Application() {
         // Sherpa model construction performs file I/O and native initialization. Keep it off the
         // main thread so a cold offline launch cannot freeze Compose while voice models warm up.
         appScope.launch(Dispatchers.IO) {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
             val modelBaseDir = (getExternalFilesDir(null)?.absolutePath ?: filesDir.absolutePath) + "/models"
             sharedVoiceModule.reinitForLanguage(modelBaseDir)
         }
@@ -69,6 +74,9 @@ class UnoOneApplication : Application() {
             db.skillDao()
         )
         orchestrator.setVoiceModule(sharedVoiceModule)
+        appScope.launch(Dispatchers.IO) {
+            orchestrator.skillsModule.ensureBuiltIns()
+        }
         secureBrowserModelLease = SecureBrowserModelLease(this, orchestrator)
 
         // C1: Blind Aid unloads the 2.5 GB Gemma brain to free ~800 MB RAM for the camera (the
@@ -79,6 +87,10 @@ class UnoOneApplication : Application() {
             !ExclusiveBrainLeaseState.isActive() && !secureBrowserModelLease.isActive()
         }
         orchestrator.brainReloadCallback = { reloadLlmIfUnloaded() }
+        orchestrator.brainLoadCancelCallback = {
+            modelLoadJob?.cancel()
+            Logger.i("UnoOneApplication: cancelled pending brain load for Blind Aid")
+        }
 
         AuditLogger.initialize(db.actionLogDao())
 
@@ -106,7 +118,7 @@ class UnoOneApplication : Application() {
         // block the spotting loop from capturing the command that follows.
         VoiceService.onWakeWord = {
             appScope.launch(Dispatchers.IO) {
-                runCatching { sharedVoiceModule.speak("Yes, I'm listening.") }
+                runCatching { sharedVoiceModule.speakAwait("Yes, I'm listening.") }
                     .onFailure { Logger.w("UnoOneApplication: wake cue speak failed: ${it.message}") }
             }
         }
@@ -172,10 +184,17 @@ class UnoOneApplication : Application() {
             return
         }
         Logger.i("UnoOneApplication: starting $reason ${spec.displayName} load")
-        appScope.launch(Dispatchers.IO) {
+        modelLoadJob = appScope.launch(Dispatchers.IO) {
             try {
+                // Let the landing screen and direct camera/voice controls become interactive first.
+                // Blind Aid cancels this delay, avoiding contention with a multi-GB native load.
+                if (reason == "initial") delay(8_000L)
+                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
                 // A browser/Blind-Aid transition may have completed between scheduling and execution.
-                if (ExclusiveBrainLeaseState.isActive() || secureBrowserModelLease.isActive()) {
+                if (ExclusiveBrainLeaseState.isActive() ||
+                    secureBrowserModelLease.isActive() ||
+                    orchestrator.isBlindAidActive.value
+                ) {
                     Logger.i("UnoOneApplication: cancelled $reason brain load; exclusive mode is active")
                     return@launch
                 }
@@ -185,7 +204,14 @@ class UnoOneApplication : Application() {
                 }
                 val result = orchestrator.loadLlmModel(path, spec)
                 if (result is Result.Success) {
-                    Logger.i("UnoOneApplication: ${spec.displayName} loaded from $path ($reason)")
+                    if (orchestrator.isBlindAidActive.value) {
+                        // Native model creation is not cancellable once entered. If Blind Aid was
+                        // activated mid-load, release the newly-created brain immediately.
+                        orchestrator.unloadLlmModel()
+                        Logger.i("UnoOneApplication: released brain that finished loading during Blind Aid")
+                    } else {
+                        Logger.i("UnoOneApplication: ${spec.displayName} loaded from $path ($reason)")
+                    }
                 } else {
                     Logger.w(
                         "UnoOneApplication: ${spec.displayName} $reason load failed: " +
@@ -194,6 +220,7 @@ class UnoOneApplication : Application() {
                 }
             } finally {
                 modelLoadGate.release()
+                modelLoadJob = null
             }
         }
     }

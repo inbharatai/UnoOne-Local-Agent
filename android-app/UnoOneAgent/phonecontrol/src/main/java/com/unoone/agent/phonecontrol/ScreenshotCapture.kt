@@ -34,7 +34,41 @@ class ScreenshotCapture(private val context: Context) {
 
         /** Holds the granted MediaProjection across the app session. */
         @JvmStatic
+        @Volatile
         var mediaProjection: MediaProjection? = null
+            private set
+
+        private var sharedImageReader: ImageReader? = null
+        private var sharedVirtualDisplay: VirtualDisplay? = null
+        private var sharedWidth: Int = 0
+        private var sharedHeight: Int = 0
+
+        /** Installs a projection only after the app's media-projection foreground service starts. */
+        @JvmStatic
+        @Synchronized
+        fun installProjection(projection: MediaProjection) {
+            releaseCaptureSession()
+            mediaProjection = projection
+        }
+
+        /** Clears only the currently installed token, ignoring stale service callbacks. */
+        @JvmStatic
+        @Synchronized
+        fun clearProjection(projection: MediaProjection? = null) {
+            if (projection != null && mediaProjection !== projection) return
+            releaseCaptureSession()
+            mediaProjection = null
+        }
+
+        @Synchronized
+        private fun releaseCaptureSession() {
+            runCatching { sharedVirtualDisplay?.release() }
+            runCatching { sharedImageReader?.close() }
+            sharedVirtualDisplay = null
+            sharedImageReader = null
+            sharedWidth = 0
+            sharedHeight = 0
+        }
 
         /** Optional listener invoked when the permission activity finishes. */
         @JvmStatic
@@ -60,7 +94,7 @@ class ScreenshotCapture(private val context: Context) {
         if (requestCode != REQUEST_CODE) return
         if (resultCode == Activity.RESULT_OK && data != null) {
             val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            mediaProjection = manager.getMediaProjection(resultCode, data)
+            installProjection(manager.getMediaProjection(resultCode, data))
             Logger.i("ScreenshotCapture: MediaProjection permission granted")
             permissionListener?.invoke(true)
         } else {
@@ -73,6 +107,7 @@ class ScreenshotCapture(private val context: Context) {
      * Capture the current screen into a [Bitmap]. Requires [mediaProjection] to be non-null.
      */
     @Suppress("DEPRECATION")
+    @Synchronized
     fun captureScreen(): Result<Bitmap> {
         val projection = mediaProjection
             ?: return Result.Error("Screen capture permission not granted")
@@ -82,20 +117,30 @@ class ScreenshotCapture(private val context: Context) {
         val height = metrics.heightPixels
         val density = metrics.densityDpi
 
-        val imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-        var virtualDisplay: VirtualDisplay? = null
-
         return try {
-            virtualDisplay = projection.createVirtualDisplay(
-                "UnoOneScreenshot",
-                width,
-                height,
-                density,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader.surface,
-                null,
-                Handler(Looper.getMainLooper())
-            )
+            // Android 14+ allows one createVirtualDisplay() call per MediaProjection grant. Keep
+            // the display/reader alive and reuse it for subsequent voice "read screen" requests.
+            if (sharedVirtualDisplay == null || sharedImageReader == null ||
+                sharedWidth != width || sharedHeight != height
+            ) {
+                releaseCaptureSession()
+                val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+                sharedImageReader = reader
+                sharedWidth = width
+                sharedHeight = height
+                sharedVirtualDisplay = projection.createVirtualDisplay(
+                    "UnoOneScreenshot",
+                    width,
+                    height,
+                    density,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                    reader.surface,
+                    null,
+                    Handler(Looper.getMainLooper())
+                )
+            }
+            val imageReader = sharedImageReader
+                ?: return Result.Error("Screen capture session unavailable")
 
             // Wait briefly for a frame to be available.
             var image = imageReader.acquireLatestImage()
@@ -128,12 +173,6 @@ class ScreenshotCapture(private val context: Context) {
         } catch (e: Exception) {
             Logger.e("ScreenshotCapture: capture failed", e)
             Result.Error("Screenshot capture failed: ${e.message}")
-        } finally {
-            try {
-                virtualDisplay?.release()
-            } catch (_: Exception) {
-            }
-            imageReader.close()
         }
     }
 

@@ -60,6 +60,9 @@ android {
         baseline = file("lint-baseline.xml")
         disable += "MissingTranslation"
         disable += "OldTargetApi"
+        // Google Maven marks the legacy MediaPipe 0.20230731 artifact as newer than the
+        // maintained 0.10.x line. Keep real dependency/native-binary checks enabled.
+        disable += "GradleDependency"
         enable += "UnusedResources"
         enable += "IconMissingDensityFolder"
     }
@@ -112,6 +115,9 @@ dependencies {
     implementation("androidx.camera:camera-camera2:$cameraVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraVersion")
     implementation("androidx.camera:camera-view:$cameraVersion")
+    // ProcessCameraProvider exposes Guava's ListenableFuture in its public API. MediaPipe also
+    // depends on Guava, so keep the concrete Android artifact on the app compile classpath.
+    implementation("com.google.guava:guava:27.0.1-android")
 
     implementation("com.google.dagger:hilt-android:2.56.1")
     ksp("com.google.dagger:hilt-compiler:2.56.1")
@@ -126,6 +132,9 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    //noinspection GradleDependency -- Google publishes a legacy date-version that sorts above
+    // the current 0.10.x line; use the current Tasks release instead.
+    androidTestImplementation("com.google.mediapipe:tasks-vision:0.10.35")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

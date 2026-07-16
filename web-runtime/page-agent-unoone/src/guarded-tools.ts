@@ -12,8 +12,15 @@ interface AuthorizationResponse {
 
 async function elementSummary(agent: any, index: number): Promise<string> {
   const state = await agent.pageController.getBrowserState()
-  const lines = String(state.content ?? '').split('\n')
-  const exact = lines.find((line) => line.includes(`[${index}]`))
+  return indexedElementSummary(String(state.content ?? ''), index)
+}
+
+export function indexedElementSummary(content: string, index: number): string {
+  const lines = content.split('\n')
+  // Match the controller's leading index token exactly. `includes('[1]')` also matched `[10]`,
+  // which could authorize one field and then act on another.
+  const exactIndex = new RegExp(`^\\s*\\[${index}\\](?:<|\\s|$)`)
+  const exact = lines.find((line) => exactIndex.test(line))
   return exact?.trim() || `interactive element index ${index}`
 }
 
@@ -164,6 +171,41 @@ export function createGuardedTools(): Record<string, PageAgentTool | null> {
         // "takeover complete" dialog and never clicked the element, so no chooser could be opened
         // and the upload always stalled after approval.
         return (await this.pageController.clickElement(input.index)).message
+      }
+    }),
+
+    scroll: tool({
+      description: 'Scroll vertically after UnoOne native read-only authorization',
+      inputSchema: z.object({
+        down: z.boolean().default(true),
+        num_pages: z.number().min(0).max(10).optional().default(0.1),
+        pixels: z.number().int().min(0).optional(),
+        index: z.number().int().min(0).optional()
+      }),
+      execute: async function (input) {
+        const summary = input.index === undefined
+          ? 'scroll the current page vertically'
+          : `scroll container index ${input.index} vertically`
+        const auth = await authorize('scroll', summary, { elementIndex: input.index })
+        if (!auth.allowed) return rejected(auth)
+        return (await this.pageController.scroll({ ...input, numPages: input.num_pages })).message
+      }
+    }),
+
+    scroll_horizontally: tool({
+      description: 'Scroll horizontally after UnoOne native read-only authorization',
+      inputSchema: z.object({
+        right: z.boolean().default(true),
+        pixels: z.number().int().min(0),
+        index: z.number().int().min(0).optional()
+      }),
+      execute: async function (input) {
+        const summary = input.index === undefined
+          ? 'scroll the current page horizontally'
+          : `scroll container index ${input.index} horizontally`
+        const auth = await authorize('scroll_horizontally', summary, { elementIndex: input.index })
+        if (!auth.allowed) return rejected(auth)
+        return (await this.pageController.scrollHorizontally(input)).message
       }
     })
   }

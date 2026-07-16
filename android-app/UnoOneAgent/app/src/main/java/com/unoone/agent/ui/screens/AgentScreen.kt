@@ -18,6 +18,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,6 +74,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -107,13 +110,16 @@ import com.unoone.agent.ui.theme.UnderstandingBlue
 import com.unoone.agent.ui.theme.VerifyingTeal
 import com.unoone.agent.ui.viewmodel.AgentViewModel
 import com.unoone.agent.voice.VoiceLanguage
+import kotlinx.coroutines.launch
 
 @Composable
 fun AgentScreen(
     viewModel: AgentViewModel,
     voiceLanguage: String = VoiceLanguage.DEFAULT,
     onVoiceLanguageSelected: (String) -> Unit = {},
-    onNavigateToSecureBrowser: () -> Unit = {}
+    onNavigateToSecureBrowser: () -> Unit = {},
+    skillCount: Int = 0,
+    onNavigateToSkills: () -> Unit = {}
 ) {
     // 5B: rememberSaveable preserves text across configuration changes (rotation)
     var textInput by rememberSaveable { mutableStateOf("") }
@@ -189,6 +195,7 @@ fun AgentScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
         // Header
@@ -255,14 +262,19 @@ fun AgentScreen(
             // clears the pending permission command, releases the lock, and speaks "Stopped." It is
             // never disabled by isProcessing (the whole point), and carries a full TalkBack label.
             Surface(
-                onClick = { viewModel.cancelCommand() },
+                onClick = {
+                    if (isBlindAidActive) viewModel.setBlindAidActive(false)
+                    else viewModel.cancelCommand()
+                },
                 enabled = true,
                 shape = CircleShape,
                 color = FailedRed.copy(alpha = if (isProcessing) 0.85f else 0.15f),
                 contentColor = if (isProcessing) Color.White else FailedRed,
                 modifier = Modifier
                     .size(44.dp)
-                    .semantics { contentDescription = "Stop and cancel" }
+                    .semantics {
+                        contentDescription = if (isBlindAidActive) "Stop Blind Aid" else "Stop and cancel"
+                    }
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
@@ -273,6 +285,34 @@ fun AgentScreen(
                 }
             }
         }
+
+        // Blind Aid is a camera-first mode. Do not bury its live boxes below the normal landing
+        // controls: keep the status header and give the preview almost the entire visible panel.
+        if (isBlindAidActive) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(620.dp)
+                    .padding(vertical = 8.dp),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(8.dp)
+            ) {
+                BlindAidCameraPreview(
+                    voiceModule = viewModel.voiceModuleInstance,
+                    onClose = { viewModel.setBlindAidActive(false) }
+                )
+            }
+        } else {
+        // Keep the agent's work above the controls. The latest step is always visible, expansion is
+        // bounded so it cannot push the whole command surface off-screen, and a running task opens
+        // the panel automatically. Skills are reachable here because this is where users look to
+        // understand which local routine is executing.
+        AgentWorkPanel(
+            timeline = timeline,
+            isProcessing = isProcessing,
+            skillCount = skillCount,
+            onNavigateToSkills = onNavigateToSkills
+        )
 
         VoiceLanguageQuickSwitcher(
             selectedCode = voiceLanguage,
@@ -294,7 +334,9 @@ fun AgentScreen(
                 // During an in-flight command it instead CANCELS (never bricked — a blind user can
                 // always interrupt). One tap starts the session: speak → voice reply → re-listen
                 // automatically, no repeated tapping. A second tap (or "stop listening") ends it.
-                if (isProcessing) {
+                if (isHandsFree) {
+                    viewModel.stopHandsFreeSession()
+                } else if (isProcessing) {
                     viewModel.cancelCommand()
                 } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
                     == PackageManager.PERMISSION_GRANTED
@@ -323,22 +365,6 @@ fun AgentScreen(
             },
             onSecureBrowser = onNavigateToSecureBrowser
         )
-
-        // Live Blind Aid Camera Preview
-        AnimatedVisibility(visible = isBlindAidActive) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(260.dp)
-                    .padding(vertical = 8.dp),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(8.dp)
-            ) {
-                BlindAidCameraPreview(
-                    voiceModule = viewModel.voiceModuleInstance,
-                    onClose = { viewModel.setBlindAidActive(false) }
-                )
-            }
         }
 
         // Progress indicator — 5C: derivedStateOf avoids recomputing every frame
@@ -568,76 +594,102 @@ fun AgentScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+    }
+}
 
-        // C7: Agent timeline — COLLAPSIBLE and given all remaining vertical space (weight(1f)) so the
-        // running agent's work shows FULLY and is never covered/clipped by the controls above. The
-        // header toggles collapse; the newest step is auto-scrolled into view and summarized in the
-        // header so the current activity is visible even when collapsed (agent work no longer hidden
-        // under the fold). Eyes-free live-region still announces each progression via TimelineStepCard.
-        var timelineExpanded by rememberSaveable { mutableStateOf(true) }
-        val timelineListState = rememberLazyListState()
-        val latestStep = timeline.lastOrNull()
-        // Auto-scroll to the newest step as it arrives so it is always in view.
-        LaunchedEffect(timeline.size) {
-            if (timeline.isNotEmpty()) {
-                runCatching { timelineListState.animateScrollToItem(timeline.lastIndex) }
-            }
-        }
+@Composable
+private fun AgentWorkPanel(
+    timeline: List<TimelineStep>,
+    isProcessing: Boolean,
+    skillCount: Int,
+    onNavigateToSkills: () -> Unit
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val latest = timeline.lastOrNull()
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .semantics {
-                    contentDescription = "Agent Flow Timeline, " +
-                        if (timelineExpanded) "expanded" else "collapsed" +
-                        (latestStep?.let { ". Latest: ${it.label}." } ?: "")
-                },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Agent Flow Timeline",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-                // C7: latest-activity summary — always visible (even when collapsed) so the agent's
-                // current work surfaces instead of being hidden below the controls.
-                latestStep?.let { step ->
-                    val summary = if (step.detail.isNotBlank()) "${step.label} — ${step.detail}" else step.label
+    LaunchedEffect(isProcessing) {
+        if (isProcessing) expanded = true
+    }
+    LaunchedEffect(timeline.size) {
+        if (timeline.isNotEmpty()) runCatching { listState.animateScrollToItem(timeline.lastIndex) }
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .semantics {
+                contentDescription = "Agent activity, ${if (expanded) "expanded" else "collapsed"}. " +
+                    (latest?.let { "Latest: ${it.label}." } ?: "Ready.")
+            },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Default.SmartToy, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Agent activity", fontWeight = FontWeight.SemiBold)
+                    val summary = latest?.let {
+                        if (it.detail.isBlank()) it.label else "${it.label} — ${it.detail}"
+                    } ?: "Ready — waiting for your command"
                     Text(
                         text = "Now: $summary",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        // Eyes-free: live region so TalkBack speaks the latest step as it lands.
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
                     )
                 }
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Collapse agent activity" else "Expand agent activity"
+                    )
+                }
             }
-            IconButton(onClick = { timelineExpanded = !timelineExpanded }) {
-                Icon(
-                    imageVector = if (timelineExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (timelineExpanded) "Collapse timeline" else "Expand timeline"
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
 
-        if (timelineExpanded) {
-            LazyColumn(
-                state = timelineListState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                itemsIndexed(timeline) { index, step ->
-                    // Eyes-free (WS6): the newest timeline step is a TalkBack live region, so a blind
-                    // user hears each progression ("Listening", "Processing", "Done") as it happens
-                    // without scrubbing the list. Older steps remain plain cards for review.
-                    TimelineStepCard(step, isLatest = index == timeline.lastIndex)
+                Text(
+                    if (isProcessing) "Working locally" else "Runs locally and follows the safety level",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isProcessing) ExecutingCyan else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(onClick = onNavigateToSkills) {
+                    Text("Skills ($skillCount)")
+                }
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                if (timeline.isEmpty()) {
+                    Text(
+                        "Steps will appear here while the agent understands, checks safety, executes, and verifies.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height((timeline.size * 72).coerceIn(72, 190).dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        itemsIndexed(timeline) { index, step ->
+                            TimelineStepCard(step, isLatest = index == timeline.lastIndex)
+                        }
+                    }
                 }
             }
         }
@@ -653,20 +705,34 @@ fun BlindAidCameraPreview(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+    val narrationScope = rememberCoroutineScope()
+    val narrationJob = remember {
+        java.util.concurrent.atomic.AtomicReference<kotlinx.coroutines.Job?>(null)
+    }
     // C2: "warming up" state shown until the camera provider is ready and bound off the main thread.
     var cameraBound by remember { mutableStateOf(false) }
 
-    // BlindAidManager is eagerly created via remember — it only runs when this composable
-    // is visible (inside AnimatedVisibility). The ML Kit detector itself is lazy (created on the
+    // BlindAidManager is eagerly created via remember — it only runs while the camera-first Blind
+    // Aid panel is visible. The MediaPipe detector itself is lazy (created on the
     // first analyzed frame) so construction never blocks activation.
     val blindAidManager = remember {
         com.unoone.agent.phonecontrol.BlindAidManager(context) { feedback ->
-            voiceModule.speak(feedback)
+            val next = narrationScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                voiceModule.speakAwait(feedback)
+            }
+            narrationJob.getAndSet(next)?.cancel()
+            // A changed, freshly-confirmed scene replaces any older spoken observation.
+            voiceModule.stopSpeaking()
+            next.start()
         }
     }
 
     DisposableEffect(lifecycleOwner) {
         onDispose {
+            narrationJob.getAndSet(null)?.cancel()
+            // Coroutine cancellation stops the await, but AudioTrack must also be flushed so no
+            // cached Blind Aid utterance survives after the camera panel closes.
+            voiceModule.stopSpeaking()
             // Directly unbind camera — cameraProviderFuture is already complete by this point
             try {
                 cameraProviderFuture.get().unbindAll()
@@ -682,6 +748,9 @@ fun BlindAidCameraPreview(
             factory = { ctx ->
                 val previewView = PreviewView(ctx).apply {
                     scaleType = PreviewView.ScaleType.FILL_CENTER
+                    // TextureView-backed preview composes correctly with status/close controls.
+                    // SurfaceView mode can consume overlay/accessibility touches on Xiaomi builds.
+                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                 }
 
                 // C2: bind the camera ASYNCHRONOUSLY off the main thread. The prior
@@ -697,9 +766,10 @@ fun BlindAidCameraPreview(
                         }
                         val imageAnalysis = ImageAnalysis.Builder()
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                             .build().also { analysis ->
                                 analysis.setAnalyzer(
-                                    ContextCompat.getMainExecutor(context),
+                                    blindAidManager.analyzerExecutor,
                                     blindAidManager.getAnalyzer()
                                 )
                             }
@@ -745,7 +815,7 @@ fun BlindAidCameraPreview(
             }
         }
 
-        // Live bounding-box overlay — draws ML Kit detections over the preview. Boxes are
+        // Live bounding-box overlay — draws labeled MediaPipe detections over the preview. Boxes are
         // normalized to the upright image; FILL_CENTER maps them into this view (center-crop).
         val overlay by blindAidManager.overlay.collectAsState()
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -783,6 +853,32 @@ fun BlindAidCameraPreview(
                         canvas.nativeCanvas.drawText(box.label, left, (top - 8f).coerceAtLeast(labelPaint.textSize), labelPaint)
                     }
                 }
+            }
+        }
+
+        if (cameraBound) {
+            val detectionText = if (overlay.boxes.isEmpty()) {
+                "Scanning • no object detected yet"
+            } else {
+                "Detected: " + overlay.boxes.map { it.label }.distinct().joinToString()
+            }
+            Surface(
+                color = Color.Black.copy(alpha = 0.62f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(12.dp)
+                    .semantics {
+                        liveRegion = LiveRegionMode.Polite
+                        contentDescription = detectionText
+                    }
+            ) {
+                Text(
+                    text = detectionText,
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
             }
         }
 
@@ -895,8 +991,8 @@ private fun CapabilitySurface(
                 labelOverride = if (isHandsFree) "Stop listening" else if (isProcessing) "Stop" else null,
                 iconOverride = if (isHandsFree || isProcessing) Icons.Default.Stop else null,
                 talkBackOverride = when {
-                    isProcessing -> "Stop. Cancels the current command."
                     isHandsFree -> "Stop listening. Ends the hands-free session."
+                    isProcessing -> "Stop. Cancels the current command."
                     else -> null
                 }
             )

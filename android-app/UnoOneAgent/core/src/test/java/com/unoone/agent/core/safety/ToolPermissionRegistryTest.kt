@@ -34,7 +34,7 @@ class ToolPermissionRegistryTest {
     fun cameraAndCalendarMappingsAreCorrect() {
         assertEquals(listOf(Manifest.permission.CAMERA), ToolPermissionRegistry.runtimePermissionsFor("open_camera"))
         assertEquals(listOf(Manifest.permission.READ_CALENDAR), ToolPermissionRegistry.runtimePermissionsFor("check_calendar"))
-        assertEquals(listOf(Manifest.permission.WRITE_CALENDAR), ToolPermissionRegistry.runtimePermissionsFor("open_calendar_insert"))
+        assertTrue(ToolPermissionRegistry.runtimePermissionsFor("open_calendar_insert").isEmpty())
         assertEquals(listOf(Manifest.permission.RECORD_AUDIO), ToolPermissionRegistry.runtimePermissionsFor("voice_recording"))
     }
 
@@ -55,7 +55,7 @@ class ToolPermissionRegistryTest {
     @Test
     fun intentOnlyToolsNeedNoRuntimePermissions() {
         // These launch other apps via intent — no dangerous runtime permission required.
-        for (tool in listOf("open_dialer", "share_text", "draft_email", "send_whatsapp", "open_url", "open_app", "open_chrome")) {
+        for (tool in listOf("open_dialer", "share_text", "draft_email", "send_whatsapp", "open_url", "open_app", "open_chrome", "open_calendar_insert")) {
             assertTrue(
                 "$tool should not require runtime permissions (got ${ToolPermissionRegistry.runtimePermissionsFor(tool)})",
                 ToolPermissionRegistry.runtimePermissionsFor(tool).isEmpty()

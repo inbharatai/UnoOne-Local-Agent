@@ -14,6 +14,7 @@ import com.unoone.agent.core.model.onError
 import com.unoone.agent.securebrowser.BrowserActionClass
 import com.unoone.agent.securebrowser.BrowserAuditEvent
 import com.unoone.agent.securebrowser.BrowserDomainPolicy
+import com.unoone.agent.securebrowser.BrowserNavigationMode
 import com.unoone.agent.securebrowser.BrowserEventSink
 import com.unoone.agent.securebrowser.BrowserUserInteraction
 import com.unoone.agent.securebrowser.BrowserSafetyMode
@@ -54,7 +55,7 @@ data class BrowserPrompt(
 data class SecureBrowserUiState(
     val phase: String = "Idle",
     val status: String = "Secure Browser is not started",
-    val currentUrl: String = DEFAULT_URL,
+    val currentUrl: String = "",
     val runtimeReady: Boolean = false,
     val sessionActive: Boolean = false,
     val taskRunning: Boolean = false,
@@ -62,11 +63,7 @@ data class SecureBrowserUiState(
     val prototypeSafetyOff: Boolean = false,
     val lastResult: String = "",
     val error: String = ""
-) {
-    companion object {
-        const val DEFAULT_URL = "https://unigurus.com"
-    }
-}
+)
 
 private data class PromptAnswer(val approved: Boolean, val text: String)
 
@@ -153,10 +150,16 @@ class SecureBrowserViewModel(
                         }
                     )
                     withContext(Dispatchers.Main.immediate) {
+                        val prototypeMode = SecurityLevel.current(appContext) == SecurityLevel.OFF
                         controller = SecureWebViewController(
                             context = appContext,
                             webView = webView,
                             domainPolicy = domainPolicy,
+                            navigationMode = if (prototypeMode) {
+                                BrowserNavigationMode.PROTOTYPE_PUBLIC_HTTPS
+                            } else {
+                                BrowserNavigationMode.APPROVED_ONLY
+                            },
                             scope = viewModelScope,
                             requestHandler = handler,
                             onBlockedNavigation = { reason ->
@@ -165,11 +168,17 @@ class SecureBrowserViewModel(
                             onRuntimeReady = {
                                 _state.value = _state.value.copy(
                                     phase = "Ready",
-                                    status = "PageAgent ready on approved page",
+                                    status = if (_state.value.currentUrl.isBlank()) {
+                                        "PageAgent ready — enter a URL or load an offline form"
+                                    } else if (prototypeMode) {
+                                        "PageAgent ready on public HTTPS page"
+                                    } else {
+                                        "PageAgent ready on approved page"
+                                    },
                                     runtimeReady = true,
                                     sessionActive = true,
                                     modelBackend = modelLease.activeBackend(),
-                                    prototypeSafetyOff = SecurityLevel.current(appContext) == SecurityLevel.OFF,
+                                    prototypeSafetyOff = prototypeMode,
                                     error = ""
                                 )
                                 runPendingTaskIfAny()
@@ -183,7 +192,14 @@ class SecureBrowserViewModel(
                                 )
                             },
                             onShowFileChooser = ::openFileChooser
-                        ).also { it.load(_state.value.currentUrl) }
+                        ).also { browser ->
+                            val requestedUrl = _state.value.currentUrl
+                            if (requestedUrl.isBlank()) {
+                                browser.loadLocalHtml(WELCOME_PAGE_HTML, "Page Agent Home")
+                            } else {
+                                browser.load(requestedUrl)
+                            }
+                        }
                     }
                 }
             }
@@ -191,9 +207,15 @@ class SecureBrowserViewModel(
     }
 
     fun navigate(rawUrl: String) {
-        val clean = rawUrl.trim()
-        if (clean.isBlank()) return
-        _state.value = _state.value.copy(currentUrl = clean, status = "Opening approved page…", error = "")
+        val entered = rawUrl.trim()
+        if (entered.isBlank()) return
+        val clean = if (entered.contains("://")) entered else "https://$entered"
+        val prototypeMode = SecurityLevel.current(appContext) == SecurityLevel.OFF
+        _state.value = _state.value.copy(
+            currentUrl = clean,
+            status = if (prototypeMode) "Opening public HTTPS page…" else "Opening approved page…",
+            error = ""
+        )
         controller?.load(clean)
     }
 
@@ -438,7 +460,7 @@ class SecureBrowserViewModel(
         if (toSpeak.isBlank() || toSpeak == lastNarration) return
         lastNarration = toSpeak
         cleanupScope.launch {
-            vm.speak(toSpeak).onError { msg, _ -> Logger.w("SecureBrowser: narration failed: $msg") }
+            vm.speakAwait(toSpeak).onError { msg, _ -> Logger.w("SecureBrowser: narration failed: $msg") }
         }
     }
 
@@ -546,6 +568,62 @@ class SecureBrowserViewModel(
     }
 
     companion object {
+        /**
+         * Offline first-run page. Keeping the instructions inside the WebView means the large
+         * browser area is useful without internet and "Read Page" can narrate the same workflow.
+         * It contains no script, remote resource or form action; the normal PageAgent runtime is
+         * injected afterward at the isolated synthetic local-form origin.
+         */
+        private val WELCOME_PAGE_HTML = """
+            <!doctype html>
+            <html lang="en">
+            <head>
+              <meta name="viewport" content="width=device-width,initial-scale=1">
+              <title>UnoOne Page Agent Home</title>
+              <style>
+                :root { color-scheme: light dark; font-family: sans-serif; }
+                body { margin: 0; padding: 22px; line-height: 1.45; background: #f7f5ff; color: #201a32; }
+                h1 { margin: 0 0 6px; font-size: 1.55rem; }
+                .tag { display: inline-block; padding: 4px 9px; border-radius: 99px; background: #e4dcff; font-weight: 700; }
+                .card { margin-top: 14px; padding: 15px; border-radius: 14px; background: white; border: 1px solid #d8d0ef; }
+                h2 { margin: 0 0 8px; font-size: 1.05rem; }
+                ol, ul { padding-left: 22px; margin-bottom: 0; }
+                .example { padding: 8px 10px; margin-top: 8px; border-radius: 9px; background: #f0ecff; }
+                @media (prefers-color-scheme: dark) {
+                  body { background: #100d18; color: #f0eaff; }
+                  .card { background: #1b1726; border-color: #423858; }
+                  .tag, .example { background: #30264a; }
+                }
+              </style>
+            </head>
+            <body>
+              <span class="tag">Offline Page Agent ready</span>
+              <h1>Browse, read and fill pages with UnoOne</h1>
+              <p>The planning model runs on your phone. Internet is needed only to open an online page.</p>
+              <section class="card">
+                <h2>Start in three steps</h2>
+                <ol>
+                  <li>Enter a website address above and tap Go, or tap Load Form for an offline HTML form.</li>
+                  <li>Type a task below, or tap the microphone and speak it.</li>
+                  <li>Tap Run. Watch the status card; tap Stop at any time.</li>
+                </ol>
+              </section>
+              <section class="card">
+                <h2>Commands you can try</h2>
+                <div class="example">Read this page aloud.</div>
+                <div class="example">Fill my name as Reetu and my email, then stop before submitting.</div>
+                <div class="example">Fill the job application and upload my resume, but do not submit it.</div>
+                <div class="example">Select India, accept the newsletter checkbox, and choose tomorrow's date.</div>
+              </section>
+              <section class="card">
+                <h2>Hands-free from the main screen</h2>
+                <p>Say: “Open secure browser example.com and fill the contact form, then stop before submit.”</p>
+                <p>Say “read this page aloud” after the page opens. When spoken feedback is enabled, UnoOne narrates Page Agent progress and completion.</p>
+              </section>
+            </body>
+            </html>
+        """.trimIndent()
+
         /**
          * Approved HTTPS origins the Secure Browser may automate. Single source of truth lives in
          * [com.unoone.agent.securebrowser.ApprovedOriginPolicy] so the WebView navigation policy and

@@ -9,10 +9,11 @@ import { currentSession, sendNative } from './native-bridge'
 interface RuntimeResult {
   success: boolean
   data: string
+  taskId?: number
 }
 
 interface UnoOneRuntimeApi {
-  execute(task: string): Promise<RuntimeResult>
+  execute(task: string, taskId?: number): Promise<RuntimeResult>
   stop(): Promise<void>
   status(): string
   dispose(): Promise<void>
@@ -28,7 +29,10 @@ const pageController = new PageController({
   enableMask: true,
   viewportExpansion: 0,
   keepSemanticTags: true,
-  includeAttributes: ['name', 'type', 'placeholder', 'aria-label', 'role', 'autocomplete']
+  includeAttributes: [
+    'id', 'name', 'type', 'placeholder', 'aria-label', 'aria-describedby', 'role',
+    'autocomplete', 'required', 'for', 'min', 'max', 'step'
+  ]
 })
 
 const agent = new PageAgentCore({
@@ -44,7 +48,7 @@ const agent = new PageAgentCore({
   stepDelay: 0.4,
   instructions: {
     system: [
-      'Operate only on the current approved page origin.',
+      'Operate only on the current native-admitted page origin.',
       'Use one DOM action per step and verify the result before continuing.',
       'Request native authorization for every DOM action and obey its decision exactly.',
       'When native authorization allows an action, execute it; when it denies or requests takeover, do not bypass or retry it.',
@@ -53,6 +57,9 @@ const agent = new PageAgentCore({
     ].join(' ')
   }
 })
+
+const MAX_TASK_CHARS = 2_000
+let taskRunning = false
 
 agent.onAskUser = async (question, options) => {
   if (options?.signal.aborted) throw new DOMException('Task aborted', 'AbortError')
@@ -69,20 +76,32 @@ agent.addEventListener('statuschange', () => {
 })
 
 const runtime: UnoOneRuntimeApi = {
-  async execute(task: string): Promise<RuntimeResult> {
+  async execute(task: string, taskId?: number): Promise<RuntimeResult> {
     const cleanTask = task.trim()
     if (!cleanTask) throw new Error('Browser task is required')
+    if (cleanTask.length > MAX_TASK_CHARS) throw new Error('Browser task is too long')
+    if (taskRunning) throw new Error('Another browser task is already running')
     const session = currentSession()
     if (session.origin !== window.location.origin) throw new Error('Browser origin changed')
 
-    const result = await agent.execute(cleanTask)
-    const compact = { success: result.success, data: String(result.data ?? '') }
-    await sendNative('TASK_RESULT', compact).catch(() => undefined)
-    return compact
+    taskRunning = true
+    try {
+      const result = await agent.execute(cleanTask)
+      const compact: RuntimeResult = { success: result.success, data: String(result.data ?? ''), taskId }
+      await sendNative('TASK_RESULT', compact).catch(() => undefined)
+      return compact
+    } catch (error) {
+      const compact: RuntimeResult = { success: false, data: String(error), taskId }
+      await sendNative('TASK_RESULT', compact).catch(() => undefined)
+      return compact
+    } finally {
+      taskRunning = false
+    }
   },
 
   async stop(): Promise<void> {
     await agent.stop()
+    taskRunning = false
   },
 
   status(): string {

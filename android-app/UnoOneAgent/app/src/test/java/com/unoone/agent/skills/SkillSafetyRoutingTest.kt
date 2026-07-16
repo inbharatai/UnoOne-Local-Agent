@@ -7,6 +7,7 @@ import com.unoone.agent.core.model.InputType
 import com.unoone.agent.storage.db.UnoOneDatabase
 import com.unoone.agent.storage.entity.NoteEntity
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -129,5 +130,32 @@ class SkillSafetyRoutingTest {
             "A blocked step must stop the skill — no Skill Complete",
             timeline.any { it.label == "Skill Complete" }
         )
+    }
+
+    @Test
+    fun unparseableSkillStepFailsVisiblyInsteadOfBeingSkipped() = runBlocking {
+        orchestrator.skillsModule.saveSkill(
+            name = "Broken routine",
+            triggerPhrases = listOf("run broken routine"),
+            steps = listOf("flibbertigibbet zzq")
+        )
+
+        orchestrator.processCommand("run broken routine", InputType.TEXT)
+
+        val timeline = orchestrator.timelineSteps.value
+        assertTrue(timeline.any { it.label == "Invalid Skill Step" })
+        assertFalse(timeline.any { it.label == "Skill Complete" })
+    }
+
+    @Test
+    fun repeatedSafeUseCreatesDisabledSuggestionOnly() = runBlocking {
+        repeat(3) {
+            orchestrator.skillsModule.recordSuccessfulUse("open calendar", "open_calendar")
+        }
+
+        val suggestion = db.skillDao().getAll().first()
+            .single { it.name == "Suggested · Open Calendar" }
+        assertFalse("Learned skills must require review before activation", suggestion.enabled)
+        assertEquals(listOf("open calendar"), orchestrator.skillsModule.getSkillSteps(suggestion))
     }
 }

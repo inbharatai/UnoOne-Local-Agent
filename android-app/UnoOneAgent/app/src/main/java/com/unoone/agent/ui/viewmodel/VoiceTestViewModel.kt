@@ -110,12 +110,14 @@ class VoiceTestViewModel(private val voiceModule: VoiceModule) : ViewModel() {
             _message.value = "Type something to speak first."
             return
         }
-        val result = voiceModule.speak(text)
-        _message.value = when (result) {
-            is Result.Success -> "Speaking: \"$text\""
-            is Result.Error -> "TTS failed: ${result.message}"
+        viewModelScope.launch {
+            val result = voiceModule.speakAwait(text)
+            _message.value = when (result) {
+                is Result.Success -> "Spoke: \"$text\""
+                is Result.Error -> "TTS failed: ${result.message}"
+            }
+            refresh()
         }
-        refresh()
     }
 
     fun stopSpeaking() {

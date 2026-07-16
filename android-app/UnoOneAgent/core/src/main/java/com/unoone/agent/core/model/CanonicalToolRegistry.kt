@@ -109,12 +109,10 @@ object CanonicalToolRegistry {
         ToolParamSchema("aspect", ToolParamType.STRING, required = false)
     ))
     /**
-     * Drive the UnoOne Secure Browser (Alibaba PageAgent on a hardened WebView) to an approved
-     * origin and run a task. The `origin` may be a full HTTPS URL, a bare host, or a friendly name
-     * ("unigurus", "uniassist", "testsprep", "inbharat"); it is resolved and approved-origin-gated
-     * before the browser session opens, so the model cannot drive an arbitrary site. The in-browser
-     * action policy (BrowserSafetyPolicy) and per-action confirm/takeover gates still apply inside
-     * the session. Risk tier CONFIRM: it drives a browser, so the user confirms opening the session.
+     * Drive the UnoOne Secure Browser (Alibaba PageAgent on a hardened WebView) and run a task.
+     * Standard mode resolves and gates the target to an approved origin. Explicit Prototype/Off
+     * admits arbitrary public HTTPS targets. Transport restrictions and the session-bound bridge
+     * remain enforced. Risk tier CONFIRM in Standard: it drives a browser.
      */
     val secure_browser_task = ToolSchema("secure_browser_task", listOf(
         ToolParamSchema("origin", ToolParamType.STRING, required = true),

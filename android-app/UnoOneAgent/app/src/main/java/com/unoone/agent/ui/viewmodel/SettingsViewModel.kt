@@ -130,7 +130,9 @@ class SettingsViewModel(context: Context) : ViewModel() {
     /** 5E: Test TTS by speaking a test phrase */
     fun testTts(context: Context) {
         val voiceModule = VoiceModule(context)
-        voiceModule.speak("UnoOne is online and ready. Voice synthesis is working correctly.")
+        viewModelScope.launch {
+            voiceModule.speakAwait("UnoOne is online and ready. Voice synthesis is working correctly.")
+        }
     }
 
     /** 5E: Clear logs via the action log DAO */

@@ -45,7 +45,8 @@ object ToolPermissionRegistry {
         // Calendar.
         "open_calendar" to listOf(PermissionRequirement.None), // launcher intent; no permission
         "check_calendar" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.READ_CALENDAR)),
-        "open_calendar_insert" to listOf(PermissionRequirement.RuntimePerm(Manifest.permission.WRITE_CALENDAR)),
+        // ACTION_INSERT only opens the calendar's own review UI; UnoOne never writes the provider.
+        "open_calendar_insert" to listOf(PermissionRequirement.None),
 
         // Screen / UI control — Accessibility (NOT overlay).
         "system_control" to listOf(PermissionRequirement.Accessibility),

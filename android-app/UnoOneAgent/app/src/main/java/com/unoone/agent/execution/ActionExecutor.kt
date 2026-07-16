@@ -69,6 +69,9 @@ class ActionExecutor(
                     }
                     val module = _skillsModule
                         ?: return Result.Error("Skills module not available")
+                    if (stepsList.isEmpty()) {
+                        return Result.Error("A skill needs at least one executable step.")
+                    }
                     try {
                         module.saveSkill(name, listOf(name), stepsList)
                         Result.Success("Skill '$name' deployed with ${stepsList.size} step(s).")
@@ -223,11 +226,21 @@ class ActionExecutor(
                     // task for a bare "open unigurus".
                     val originRaw = toolCall.args["origin"]?.jsonPrimitive?.content ?: ""
                     val task = toolCall.args["task"]?.jsonPrimitive?.content ?: ""
-                    val origin = com.unoone.agent.securebrowser.ApprovedOriginPolicy.originFor(originRaw)
+                    val prototypeMode = com.unoone.agent.safety.SecurityLevel.current(context) ==
+                        com.unoone.agent.safety.SecurityLevel.OFF
+                    val origin = if (prototypeMode) {
+                        com.unoone.agent.securebrowser.ApprovedOriginPolicy.prototypeUrlFor(originRaw)
+                    } else {
+                        com.unoone.agent.securebrowser.ApprovedOriginPolicy.originFor(originRaw)
+                    }
                     if (origin == null) {
                         Result.Error(
-                            "Origin '$originRaw' is not approved for UnoOne automation. " +
-                                "Approved origins: unigurus, uniassist, testsprep, inbharat."
+                            if (prototypeMode) {
+                                "Target '$originRaw' is not a valid public HTTPS page."
+                            } else {
+                                "Origin '$originRaw' is not approved for UnoOne automation. " +
+                                    "Approved origins: unigurus, uniassist, testsprep, inbharat."
+                            }
                         )
                     } else {
                         val runner = _openSecureBrowserTask
@@ -254,7 +267,7 @@ class ActionExecutor(
 
     // Injected callbacks — set by Orchestrator to avoid circular dependencies
     var _skillsModule: com.unoone.agent.skills.SkillsModule? = null
-    var _setBlindAidActive: ((Boolean) -> Unit)? = null
+    var _setBlindAidActive: (suspend (Boolean) -> Unit)? = null
     /** Speak text via the shared VoiceModule (TTS). Lets speak_response force audio in any input mode. */
     var _speak: ((String) -> Unit)? = null
     /**

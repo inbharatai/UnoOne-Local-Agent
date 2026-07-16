@@ -149,7 +149,7 @@ fun SecureBrowserScreen(
                 }
                 Text(
                     if (state.prototypeSafetyOff) {
-                        "⚠ PROTOTYPE MODE: browser action safety is OFF. PageAgent may submit forms, files, credentials and payment actions without confirmation."
+                        "⚠ PROTOTYPE MODE: browser action safety is OFF. PageAgent may open any public HTTPS page and submit forms, files, credentials and payment actions without confirmation."
                     } else {
                         "Standard mode: credentials, OTPs, CAPTCHA and legal steps require manual control; payments are blocked; files and final submission require confirmation."
                     },
@@ -168,7 +168,7 @@ fun SecureBrowserScreen(
             OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
-                label = { Text("Approved HTTPS URL") },
+                label = { Text(if (state.prototypeSafetyOff) "Public HTTPS URL" else "Approved HTTPS URL") },
                 singleLine = true,
                 modifier = Modifier.weight(1f)
             )

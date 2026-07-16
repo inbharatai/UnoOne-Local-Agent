@@ -26,7 +26,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -161,7 +160,7 @@ class AgentViewModel(
                 // Low-confidence retry: ask the user to repeat once, then re-listen. Don't loop.
                 if (confidence < LOW_CONFIDENCE_THRESHOLD && !retryArmed) {
                     retryArmed = true
-                    voiceModuleInstance.speak("Sorry, I didn't catch that clearly. Could you please repeat?")
+                    voiceModuleInstance.speakAwait("Sorry, I didn't catch that clearly. Could you please repeat?")
                     Logger.i("AgentViewModel: Low STT confidence (${"%.2f".format(confidence)}); re-listening once.")
                     // Re-listen using the app-scoped context (a singleton) rather than holding an
                     // Activity Context across the coroutine — avoids a ViewModel context leak.
@@ -215,7 +214,7 @@ class AgentViewModel(
             } else {
                 viewModelScope.launch {
                     runCatching {
-                        voiceModuleInstance.speak("Screen reading needs your permission. Tap read screen again to allow it, or say stop.")
+                        voiceModuleInstance.speakAwait("Screen reading needs your permission. Tap read screen again to allow it, or say stop.")
                     }
                 }
             }
@@ -237,9 +236,7 @@ class AgentViewModel(
                 is Result.Error -> "I couldn't read the screen. ${result.message}"
             }
             _lastReadScreenText.value = (result as? Result.Success)?.data
-            withContext(Dispatchers.Main) {
-                runCatching { voiceModuleInstance.speak(spoken) }
-            }
+            runCatching { voiceModuleInstance.speakAwait(spoken) }
         }
     }
 
@@ -268,25 +265,23 @@ class AgentViewModel(
             val doc = (result as? Result.Success)?.data
             _loadedDocument.value = doc
             _isLoadingDocument.value = false
-            withContext(Dispatchers.Main) {
-                if (doc != null) {
-                    val kindWord = when (doc.kind) {
-                        com.unoone.agent.core.document.DocKind.PDF -> "PDF"
-                        com.unoone.agent.core.document.DocKind.IMAGE -> "image"
-                        com.unoone.agent.core.document.DocKind.XLSX -> "spreadsheet"
-                        com.unoone.agent.core.document.DocKind.HTML -> "web page"
-                        com.unoone.agent.core.document.DocKind.CSV -> "C S V"
-                        com.unoone.agent.core.document.DocKind.TEXT -> "text file"
-                        else -> "document"
-                    }
-                    val trunc = if (doc.truncated) " I could only read the first part, it is large." else ""
-                    runCatching {
-                        voiceModuleInstance.speak("Loaded $kindWord: ${doc.name}. ${doc.text.length} characters.$trunc Ask me about it, or say summarize this document.")
-                    }
-                } else {
-                    runCatching {
-                        voiceModuleInstance.speak("I couldn't read that document. ${(result as? Result.Error)?.message ?: ""}")
-                    }
+            if (doc != null) {
+                val kindWord = when (doc.kind) {
+                    com.unoone.agent.core.document.DocKind.PDF -> "PDF"
+                    com.unoone.agent.core.document.DocKind.IMAGE -> "image"
+                    com.unoone.agent.core.document.DocKind.XLSX -> "spreadsheet"
+                    com.unoone.agent.core.document.DocKind.HTML -> "web page"
+                    com.unoone.agent.core.document.DocKind.CSV -> "C S V"
+                    com.unoone.agent.core.document.DocKind.TEXT -> "text file"
+                    else -> "document"
+                }
+                val trunc = if (doc.truncated) " I could only read the first part, it is large." else ""
+                runCatching {
+                    voiceModuleInstance.speakAwait("Loaded $kindWord: ${doc.name}. ${doc.text.length} characters.$trunc Ask me about it, or say summarize this document.")
+                }
+            } else {
+                runCatching {
+                    voiceModuleInstance.speakAwait("I couldn't read that document. ${(result as? Result.Error)?.message ?: ""}")
                 }
             }
         }
@@ -350,11 +345,11 @@ class AgentViewModel(
         VoiceService.foregroundSessionActive = true
         _isHandsFree.value = true
         _isListening.value = true
-        viewModelScope.launch {
-            runCatching { voiceModuleInstance.speak("I'm listening. Say a command.") }
-        }
         sessionJob = viewModelScope.launch {
             try {
+                // Finish the cue before opening the mic. Running these concurrently let UnoOne
+                // transcribe its own "I'm listening" prompt as the user's command.
+                runCatching { voiceModuleInstance.speakAwait("I'm listening. Say a command.") }
                 while (isActive && _isHandsFree.value) {
                     val utterance = captureUtterance(context)
                     if (!_isHandsFree.value) break
@@ -405,7 +400,9 @@ class AgentViewModel(
         // Release the mic back to the background KWS loop.
         VoiceService.foregroundSessionActive = false
         viewModelScope.launch {
-            runCatching { voiceModuleInstance.speak("Stopped listening.") }
+            // Offline synthesis is CPU-heavy; keep it off the UI thread and wait for playback so a
+            // rapid start/stop cannot trigger a watchdog stall or overlap the next recording.
+            runCatching { voiceModuleInstance.speakAwait("Stopped listening.") }
         }
     }
 

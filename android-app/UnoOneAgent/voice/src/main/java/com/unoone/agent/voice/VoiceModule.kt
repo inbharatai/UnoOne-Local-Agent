@@ -196,15 +196,20 @@ class VoiceModule(private val context: Context) {
             lastSttConfidence = if (res is Result.Success && res.data.isNotBlank()) 1f else 0f
             res
         } else {
-            val engine = sttEngine
-                ?: return Result.Error("Offline STT model not installed. Install the Sherpa ASR model or enable the system fallback in Settings.")
-            val pcm = recorder.stop()
-            if (pcm.isEmpty()) return Result.Error("No audio captured")
-            val sttStart = System.currentTimeMillis()
-            val res = engine.transcribe(pcm)
-            com.unoone.agent.observability.Diagnostics.recordSttLatency(System.currentTimeMillis() - sttStart)
-            lastSttConfidence = if (res is Result.Success) engine.lastConfidence else 0f
-            res
+            // Sherpa decoding is CPU-heavy and may take multiple seconds on a phone. This method is
+            // often called by a Main-scoped ViewModel coroutine, so own the dispatcher boundary here
+            // instead of requiring every UI/agent caller to remember to move it off the UI thread.
+            withContext(Dispatchers.IO) {
+                val engine = sttEngine
+                    ?: return@withContext Result.Error("Offline STT model not installed. Install the Sherpa ASR model or enable the system fallback in Settings.")
+                val pcm = recorder.stop()
+                if (pcm.isEmpty()) return@withContext Result.Error("No audio captured")
+                val sttStart = System.currentTimeMillis()
+                val res = engine.transcribe(pcm)
+                com.unoone.agent.observability.Diagnostics.recordSttLatency(System.currentTimeMillis() - sttStart)
+                lastSttConfidence = if (res is Result.Success) engine.lastConfidence else 0f
+                res
+            }
         }
     }
 
@@ -242,6 +247,16 @@ class VoiceModule(private val context: Context) {
         // Emergency Android TTS fallback — explicitly logged, not the default production path.
         Logger.i("VoiceModule: Sherpa TTS not available, synthesizing via Android TTS fallback: '$text'")
         return ttsPlayer.speak(text, languageCode)
+    }
+
+    /** Speaks and suspends until playback completes, preventing hands-free self-capture. */
+    suspend fun speakAwait(text: String, languageCode: String = "en-IN"): Result<Unit> {
+        val engine = ttsEngine
+        return if (engine != null && engine.isInitialized()) {
+            engine.speakAwait(text)
+        } else {
+            ttsPlayer.speakAwait(text, languageCode)
+        }
     }
 
     fun stopSpeaking() {

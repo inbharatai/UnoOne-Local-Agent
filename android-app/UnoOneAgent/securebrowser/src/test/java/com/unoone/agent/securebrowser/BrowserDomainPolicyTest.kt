@@ -35,4 +35,29 @@ class BrowserDomainPolicyTest {
     fun `blocks urls containing user info`() {
         assertTrue(policy.evaluate("https://user:pass@unigurus.com/") is NavigationDecision.Block)
     }
+
+    @Test
+    fun `prototype admits arbitrary public https without admitting unsafe targets`() {
+        val mode = BrowserNavigationMode.PROTOTYPE_PUBLIC_HTTPS
+        assertTrue(policy.evaluate("https://example.org/a-form", mode) is NavigationDecision.Allow)
+        assertTrue(policy.evaluate("https://subdomain.example.org/", mode) is NavigationDecision.Allow)
+        assertTrue(policy.isPublicHttpsOrigin("https://example.org"))
+
+        assertTrue(policy.evaluate("http://example.org/", mode) is NavigationDecision.Block)
+        assertTrue(policy.evaluate("javascript:alert(1)", mode) is NavigationDecision.Block)
+        assertTrue(policy.evaluate("https://user:pass@example.org/", mode) is NavigationDecision.Block)
+        assertTrue(policy.evaluate("https://localhost/", mode) is NavigationDecision.Block)
+        assertTrue(policy.evaluate("https://router.local/", mode) is NavigationDecision.Block)
+        assertTrue(policy.evaluate("https://unoone.local-form/", mode) is NavigationDecision.Block)
+        assertTrue(policy.evaluate("https://10.0.0.1/", mode) is NavigationDecision.Block)
+    }
+
+    @Test
+    fun `prototype resolver preserves path while standard stays allow listed`() {
+        assertTrue(ApprovedOriginPolicy.originFor("https://example.org/form") == null)
+        assertTrue(
+            ApprovedOriginPolicy.prototypeUrlFor("example.org/form?step=2") ==
+                "https://example.org/form?step=2"
+        )
+    }
 }

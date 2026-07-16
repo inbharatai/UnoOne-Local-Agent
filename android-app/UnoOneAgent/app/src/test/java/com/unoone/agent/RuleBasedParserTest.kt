@@ -275,6 +275,16 @@ class RuleBasedParserTest {
     }
 
     @Test
+    fun testOpenWhatsAppRoutesToAppLaunchNotMessageDraft() {
+        for (phrase in listOf("open whatsapp", "open my whatsapp", "launch whatsapp")) {
+            val toolCall = RuleBasedParser.parse(phrase)
+            assertNotNull(phrase, toolCall)
+            assertEquals("$phrase must launch the app", "open_app", toolCall!!.tool)
+            assertEquals("com.whatsapp", toolCall.args["package_name"]?.toString()?.trim('"'))
+        }
+    }
+
+    @Test
     fun testReadScreen() {
         val toolCall = RuleBasedParser.parse("read screen")
         assertNotNull(toolCall)
@@ -380,6 +390,17 @@ class RuleBasedParserTest {
         assertNotNull(toolCall)
         assertEquals("secure_browser_task", toolCall!!.tool)
         assertEquals("https://unigurus.com", toolCall.args["origin"]?.jsonPrimitive?.content)
+        assertEquals("fill the contact form", toolCall.args["task"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun spokenPublicUrlIsPreservedForPrototypeExecutorValidation() {
+        val toolCall = RuleBasedParser.parse(
+            "open secure browser example.org/application and fill the contact form"
+        )
+        assertNotNull(toolCall)
+        assertEquals("secure_browser_task", toolCall!!.tool)
+        assertEquals("example.org/application", toolCall.args["origin"]?.jsonPrimitive?.content)
         assertEquals("fill the contact form", toolCall.args["task"]?.jsonPrimitive?.content)
     }
 }

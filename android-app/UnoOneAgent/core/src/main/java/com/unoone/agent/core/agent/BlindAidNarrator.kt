@@ -16,10 +16,10 @@ package com.unoone.agent.core.agent
 object BlindAidNarrator {
 
     /** Min gap between scene narrations when the label set has changed. */
-    const val DEFAULT_CHANGE_INTERVAL_MS = 2_000L
+    const val DEFAULT_CHANGE_INTERVAL_MS = 10_000L
 
-    /** Min gap between scene narrations when the label set is unchanged (periodic re-narration). */
-    const val DEFAULT_STEADY_INTERVAL_MS = 6_000L
+    /** Min gap between unchanged-scene reminders; avoid repeating a cached observation. */
+    const val DEFAULT_STEADY_INTERVAL_MS = 30_000L
 
     /**
      * Build a spoken scene summary from the detected labels. Returns "" when there is nothing
