@@ -83,6 +83,7 @@ object PromptBuilder {
         appendLine("- deactivate_blind_aid()")
         appendLine("- describe_scene(aspect?)")
         appendLine("- secure_browser_task(origin, task)  # Standard accepts approved sites; explicit Prototype/Off accepts any public HTTPS URL. Drives the voice-controlled Secure Browser; Standard keeps sensitive steps gated.")
+        appendLine("- prepare_document_fill(format)  # Opens the fully offline, save-as-copy PDF or DOCX document workflow; format must be pdf or docx.")
     }
 
     /** Compatibility overload used by existing callers and tests. */

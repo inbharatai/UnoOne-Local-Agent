@@ -65,7 +65,7 @@ class ToolPermissionRegistryTest {
 
     @Test
     fun localDataToolsNeedNoAccess() {
-        for (tool in listOf("create_note", "search_notes", "summarize_text", "delete_notes", "delete_all_notes", "export_data", "speak_response", "create_skill", "deactivate_blind_aid")) {
+        for (tool in listOf("create_note", "search_notes", "summarize_text", "delete_notes", "delete_all_notes", "export_data", "speak_response", "create_skill", "deactivate_blind_aid", "prepare_document_fill")) {
             assertEquals(
                 "$tool should require only None",
                 listOf(PermissionRequirement.None),

@@ -135,6 +135,11 @@ dependencies {
     //noinspection GradleDependency -- Google publishes a legacy date-version that sorts above
     // the current 0.10.x line; use the current Tasks release instead.
     androidTestImplementation("com.google.mediapipe:tasks-vision:0.10.35")
+    androidTestImplementation("com.tom-roush:pdfbox-android:2.0.27.0") {
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15to18")
+        exclude(group = "org.bouncycastle", module = "bcpkix-jdk15to18")
+        exclude(group = "org.bouncycastle", module = "bcutil-jdk15to18")
+    }
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

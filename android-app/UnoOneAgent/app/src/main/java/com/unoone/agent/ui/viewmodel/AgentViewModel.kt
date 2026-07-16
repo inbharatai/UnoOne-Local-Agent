@@ -135,6 +135,10 @@ class AgentViewModel(
             _pendingConfirmation.value = message to level
             confirmationCallback.set(callback)
         }
+
+        orchestrator.onDocumentFillRequest = { format ->
+            _documentFillPickerRequest.value = format.lowercase()
+        }
     }
 
     fun startListening(context: Context) {
@@ -245,6 +249,88 @@ class AgentViewModel(
         com.unoone.agent.phonecontrol.document.DocumentLoader(com.unoone.agent.UnoOneApplication.appContext)
     }
 
+    private val documentFillEngine by lazy {
+        com.unoone.agent.phonecontrol.document.DocumentFillEngine(com.unoone.agent.UnoOneApplication.appContext)
+    }
+    private var documentFillSourceUri: Uri? = null
+
+    private val _editableDocument = MutableStateFlow<com.unoone.agent.phonecontrol.document.EditableDocumentTemplate?>(null)
+    val editableDocument: StateFlow<com.unoone.agent.phonecontrol.document.EditableDocumentTemplate?> =
+        _editableDocument.asStateFlow()
+
+    private val _isFillingDocument = MutableStateFlow(false)
+    val isFillingDocument: StateFlow<Boolean> = _isFillingDocument.asStateFlow()
+
+    private val _documentFillMessage = MutableStateFlow("")
+    val documentFillMessage: StateFlow<String> = _documentFillMessage.asStateFlow()
+
+    private val _documentFillPickerRequest = MutableStateFlow<String?>(null)
+    val documentFillPickerRequest: StateFlow<String?> = _documentFillPickerRequest.asStateFlow()
+
+    fun consumeDocumentFillPickerRequest() {
+        _documentFillPickerRequest.value = null
+    }
+
+    fun inspectDocumentForFilling(uri: Uri, mimeType: String?) {
+        if (_isFillingDocument.value) return
+        _isFillingDocument.value = true
+        _documentFillMessage.value = "Inspecting document fields offline…"
+        viewModelScope.launch(Dispatchers.IO) {
+            when (val result = documentFillEngine.inspect(uri, mimeType)) {
+                is Result.Success -> {
+                    documentFillSourceUri = uri
+                    _editableDocument.value = result.data
+                    _documentFillMessage.value = "Found ${result.data.fields.size} editable field(s)."
+                    val labels = result.data.fields.take(5).joinToString { it.label }
+                    runCatching {
+                        voiceModuleInstance.speakAwait(
+                            "Loaded ${result.data.displayName}. Found ${result.data.fields.size} editable fields: $labels. Fill them, then save a new copy."
+                        )
+                    }
+                }
+                is Result.Error -> {
+                    documentFillSourceUri = null
+                    _editableDocument.value = null
+                    _documentFillMessage.value = result.message
+                    runCatching { voiceModuleInstance.speakAwait("I couldn't prepare that document. ${result.message}") }
+                }
+            }
+            _isFillingDocument.value = false
+        }
+    }
+
+    fun fillDocumentCopy(outputUri: Uri, values: Map<String, String>) {
+        val source = documentFillSourceUri ?: return
+        val template = _editableDocument.value ?: return
+        if (_isFillingDocument.value) return
+        _isFillingDocument.value = true
+        _documentFillMessage.value = "Writing and verifying a new copy…"
+        viewModelScope.launch(Dispatchers.IO) {
+            when (val result = documentFillEngine.fillCopy(source, outputUri, template, values)) {
+                is Result.Success -> {
+                    _documentFillMessage.value =
+                        "Saved ${result.data.displayName}; verified ${result.data.fieldsWritten} field(s). Original unchanged."
+                    runCatching {
+                        voiceModuleInstance.speakAwait(
+                            "Done. Saved ${result.data.displayName} with ${result.data.fieldsWritten} verified fields. The original was not changed."
+                        )
+                    }
+                }
+                is Result.Error -> {
+                    _documentFillMessage.value = result.message
+                    runCatching { voiceModuleInstance.speakAwait("The document was not saved. ${result.message}") }
+                }
+            }
+            _isFillingDocument.value = false
+        }
+    }
+
+    fun clearEditableDocument() {
+        documentFillSourceUri = null
+        _editableDocument.value = null
+        _documentFillMessage.value = ""
+    }
+
     /** The currently loaded document (name + extracted text), or null. Surfaced in the UI. */
     private val _loadedDocument = MutableStateFlow<com.unoone.agent.core.document.ExtractedDoc?>(null)
     val loadedDocument: StateFlow<com.unoone.agent.core.document.ExtractedDoc?> = _loadedDocument.asStateFlow()
@@ -270,6 +356,7 @@ class AgentViewModel(
                     com.unoone.agent.core.document.DocKind.PDF -> "PDF"
                     com.unoone.agent.core.document.DocKind.IMAGE -> "image"
                     com.unoone.agent.core.document.DocKind.XLSX -> "spreadsheet"
+                    com.unoone.agent.core.document.DocKind.DOCX -> "Word document"
                     com.unoone.agent.core.document.DocKind.HTML -> "web page"
                     com.unoone.agent.core.document.DocKind.CSV -> "C S V"
                     com.unoone.agent.core.document.DocKind.TEXT -> "text file"
@@ -504,5 +591,6 @@ class AgentViewModel(
         runCatching { ocrControl.release() }
         // C8: release the document loader's OCR recognizer.
         runCatching { documentLoader.release() }
+        orchestrator.onDocumentFillRequest = null
     }
 }

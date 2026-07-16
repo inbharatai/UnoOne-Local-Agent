@@ -16,9 +16,9 @@ import org.junit.Test
 class CanonicalToolRegistryTest {
 
     @Test
-    fun hasExactly28Tools() {
-        assertEquals(28, CanonicalToolRegistry.tools.size)
-        assertEquals(28, CanonicalToolRegistry.names.size)
+    fun hasExactly29Tools() {
+        assertEquals(29, CanonicalToolRegistry.tools.size)
+        assertEquals(29, CanonicalToolRegistry.names.size)
     }
 
     @Test
@@ -31,6 +31,7 @@ class CanonicalToolRegistryTest {
     fun isKnownAcceptsCanonicalNamesAndRejectsOthers() {
         assertTrue(CanonicalToolRegistry.isKnown("create_note"))
         assertTrue(CanonicalToolRegistry.isKnown("deactivate_blind_aid"))
+        assertTrue(CanonicalToolRegistry.isKnown("prepare_document_fill"))
         // Names the safety system BLOCKs must never be canonical executable tools.
         assertFalse(CanonicalToolRegistry.isKnown("make_payment"))
         assertFalse(CanonicalToolRegistry.isKnown("send_message"))

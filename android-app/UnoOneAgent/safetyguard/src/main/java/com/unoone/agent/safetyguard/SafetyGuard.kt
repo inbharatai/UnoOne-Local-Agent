@@ -14,6 +14,7 @@ class SafetyGuard {
         "open_chrome" to RiskLevel.DIRECT,
         "open_app" to RiskLevel.DIRECT,
         "deactivate_blind_aid" to RiskLevel.DIRECT,
+        "prepare_document_fill" to RiskLevel.DIRECT,
         "check_calendar" to RiskLevel.DIRECT,
         "open_calendar" to RiskLevel.DIRECT,
 

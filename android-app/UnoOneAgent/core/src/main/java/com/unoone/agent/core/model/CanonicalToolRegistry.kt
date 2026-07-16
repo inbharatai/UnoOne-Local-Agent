@@ -118,14 +118,18 @@ object CanonicalToolRegistry {
         ToolParamSchema("origin", ToolParamType.STRING, required = true),
         ToolParamSchema("task", ToolParamType.STRING, required = true)
     ))
+    /** Opens the offline Document Agent picker for a fillable PDF or DOCX template. */
+    val prepare_document_fill = ToolSchema("prepare_document_fill", listOf(
+        ToolParamSchema("format", ToolParamType.STRING, required = true)
+    ))
 
-    /** All 28 canonical tools, in declaration order. */
+    /** All canonical tools, in declaration order. */
     val tools: List<ToolSchema> = listOf(
         create_note, search_notes, summarize_text, speak_response, voice_recording, web_search,
         open_chrome, open_app, open_url, open_camera, system_control, read_screen, ocr_screen,
         create_skill, draft_email, send_whatsapp, check_calendar, open_calendar, open_calendar_insert,
         open_dialer, share_text, delete_notes, delete_all_notes, export_data, detect_objects,
-        deactivate_blind_aid, describe_scene, secure_browser_task
+        deactivate_blind_aid, describe_scene, secure_browser_task, prepare_document_fill
     )
 
     /** The set of tool names a model is allowed to propose. Anything else is rejected by the brain. */

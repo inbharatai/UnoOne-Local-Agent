@@ -26,9 +26,9 @@ class ToolRegistryAgreementTest {
     @Test
     fun gemma4InstructionAdvertisesExactlyTheCanonicalTools() {
         val advertised = advertisedNames(PromptBuilder.buildSystemInstruction(ModelFamily.GEMMA_4))
-        assertEquals(28, CanonicalToolRegistry.names.size)
+        assertEquals(29, CanonicalToolRegistry.names.size)
         assertEquals(
-            "Gemma 4 instruction must advertise exactly the canonical 28 tools (no more, no less)",
+            "Gemma 4 instruction must advertise exactly the canonical 29 tools (no more, no less)",
             CanonicalToolRegistry.names,
             advertised
         )

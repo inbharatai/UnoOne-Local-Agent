@@ -200,6 +200,7 @@ class AgentOrchestrator(
             }
         }
         actionExecutor._openSecureBrowserTask = { origin, task -> openSecureBrowserTask(origin, task) }
+        actionExecutor._prepareDocumentFill = { format -> onDocumentFillRequest?.invoke(format) }
     }
 
     /**
@@ -212,6 +213,10 @@ class AgentOrchestrator(
      */
     @Volatile
     var onSecureBrowserTask: ((origin: String, task: String) -> Unit)? = null
+
+    /** UI-owned picker request emitted by the offline Document Agent tool. */
+    @Volatile
+    var onDocumentFillRequest: ((format: String) -> Unit)? = null
 
     private fun openSecureBrowserTask(origin: String, task: String): Result<String> {
         val handler = onSecureBrowserTask

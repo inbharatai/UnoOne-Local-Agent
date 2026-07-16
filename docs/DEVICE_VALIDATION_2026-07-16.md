@@ -6,9 +6,9 @@ Device: Xiaomi 14 (`7f8cafef`), Android 15, 1200 × 2670.  Build: debug APK from
 ## Automated gates
 
 - Android lint, JVM unit tests, debug APK and Android-test APK builds passed.
-- Connected-device instrumentation passed `OK (46 tests)` and includes offline speech initialization,
+- Connected-device instrumentation passed `OK (48 tests)` and includes offline speech initialization,
   Gemma planning, rendered-image OCR, camera policies, skills safety, browser safety modes,
-  PageAgent asset authenticity, notes and memory.
+  PageAgent asset authenticity, notes, memory, and verified PDF/DOCX round trips.
 - PageAgent TypeScript typecheck and Vitest passed; Playwright passed text/email/number/textarea,
   blocked payment fields, a real file chooser, and a complex select/checkbox/radio/date/submit form.
 
@@ -17,7 +17,7 @@ Device: Xiaomi 14 (`7f8cafef`), Android 15, 1200 × 2670.  Build: debug APK from
 | Area | Result | Evidence / boundary |
 | --- | --- | --- |
 | Landing panel | Pass | Agent activity is always visible, collapsible, and shows the current/latest step. Skills count links directly to Skills. |
-| Skills | Pass | Two enabled built-ins were seeded: Read Screen Aloud and Start Blind Aid Guidance. Steps and triggers are visible. Learned routines remain disabled until review. |
+| Skills | Pass | Four enabled built-ins were seeded: Read Screen Aloud, Start Blind Aid Guidance, Fill an Offline PDF Form, and Fill an Offline DOCX Template. Steps and triggers are visible. Learned routines remain disabled until review. |
 | Hands-free | Pass after device-found fixes | Spoken cue completes before AudioRecord starts. Sherpa decoding and synthesis run off the UI thread. Start/stop released the recorder and produced no watchdog/frame-skip trace. “Stop listening” now ends the session even while an agent task is processing. |
 | Blind Aid camera and detection | Pass for lifecycle/stale-cache fix; broader accuracy qualification pending | Replaced the generic fallback with official EfficientDet-Lite2 and full-frame + centered detail inference. On-device regression detects a representative mobile phone. Live CameraX stop released the detector and no object/TTS callbacks continued after close; unchanged warnings are cooldown-limited. A controlled multi-light person/car/product corpus is still required before a production accuracy claim. |
 | Read Screen / OCR | Pass after device-found fix | Android 15 MediaProjection foreground service started with type `mediaProjection`; ML Kit extracted visible Settings text and offline TTS spoke it. The display is reused for repeated reads. |
@@ -25,6 +25,7 @@ Device: Xiaomi 14 (`7f8cafef`), Android 15, 1200 × 2670.  Build: debug APK from
 | Calendar | Pass | Voice/text command `open calendar` launched Google Calendar directly. The insert-event flow remains a review draft; Save was not pressed. |
 | WhatsApp | Pass | `open whatsapp` launched the installed WhatsApp Business package through the new consumer/business fallback. Draft-message code does not press Send. |
 | Email | Pass (automated boundary) | Mailto draft preserves recipient, subject and body and requires the external mail UI; Send was not pressed. |
+| Offline Document Agent | Pass (engine and device fixtures); picker UI remains locked-device gated | Xiaomi ART tests created real AcroForm PDF and DOCX fixtures, discovered their fields, filled exact text/checkbox/template values, reopened and verified both outputs, and proved the originals were byte-identical. The landing-screen picker/card could not be visually rerun because the device returned to the pattern-locked AOD after instrumentation. |
 | PageAgent | Pass with native-picker boundary noted | Packaged runtime initialized in a physical Xiaomi WebView, filled an indexed local form through the authenticated native bridge, returned a correlated task result, and extracted title/body for read-aloud. The former white start page is now an offline Page Agent home with URL/form/voice steps and readable examples. Playwright covers complex controls and a real chooser. The phone was pattern-locked before a foreground Android picker rerun, so that visible picker handoff remains pending. |
 | Prototype safety Off | Pass | Settings exposed `Off — prototype (agent + browser)` and it was selected on-device. Device ART tests prove a non-approved public HTTPS target is admitted while HTTP, credentials-in-URL, localhost and IP targets remain blocked. Android runtime permissions and OS consent dialogs still apply. |
 

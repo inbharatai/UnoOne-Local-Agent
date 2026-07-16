@@ -21,19 +21,30 @@ The Accessibility-based `read_screen` tool remains available for cross-app UI re
 - PDF: Android `PdfRenderer`, up to eight pages, rendered to bounded bitmaps and OCR'd with ML Kit; each bitmap is recycled immediately.
 - Image: bounded platform decode followed by ML Kit OCR.
 - `.xlsx`: the pure-JVM SAX/ZIP extractor in `:core` (no desktop Apache POI dependency).
+- `.docx`: the bounded, XXE-hardened `DocxTemplateProcessor` extracts paragraph text from the document, headers and footers.
 - HTML: UTF-8 read followed by the `:core` HTML text extractor.
 - CSV and text: UTF-8 plain-text extraction.
 - Legacy binary `.xls`: explicitly unsupported; UnoOne reports the limitation instead of returning fabricated content.
 
 Extracted output is capped by `PlainTextExtractor.DEFAULT_MAX_CHARS` to fit the on-device brain context. `ExtractedDoc.truncated` is surfaced in the UI and spoken confirmation. All renderer, stream, and OCR work runs on `Dispatchers.IO`.
 
+## Offline document filling
+
+`document/DocumentFillEngine` provides a separate save-as-copy workflow for editable documents:
+
+- PDF AcroForms are inspected and filled with the Android PDFBox fork. Text, checkbox, radio and choice fields are supported; encrypted, flat/scanned and signature-only PDFs fail explicitly.
+- DOCX templates use Word content-control tags/titles or `{{name}}`, `${name}` and `<<name>>` placeholders, including placeholders split across runs.
+- Unknown fields are rejected, the source URI cannot be reused as the output URI, and bytes are written to the destination only after the completed document has been reopened and its values verified.
+
+The landing-screen review card owns user-entered values. They are not stored by this module or learned into a skill. `prepare_document_fill` only opens the appropriate picker through the agent's canonical tool and safety pipeline.
+
 ## Verification
 
 Run JVM and device coverage from the Android root:
 
 ```powershell
-.\gradlew.bat :phonecontrol:testDebugUnitTest :app:testDebugUnitTest
-adb shell am instrument -w -e class com.unoone.agent.phonecontrol.CameraAccessHeadlessTest,com.unoone.agent.phonecontrol.OcrControlHeadlessTest com.unoone.agent.test/androidx.test.runner.AndroidJUnitRunner
+.\gradlew.bat :phonecontrol:testDebugUnitTest :core:testDebugUnitTest :app:testDebugUnitTest
+adb shell am instrument -w -e class com.unoone.agent.phonecontrol.DocumentFillEngineDeviceTest com.unoone.agent.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 Physical-device checks still matter for camera preview rendering, spoken output, MediaProjection consent, OCR quality, memory pressure, and TalkBack announcements.

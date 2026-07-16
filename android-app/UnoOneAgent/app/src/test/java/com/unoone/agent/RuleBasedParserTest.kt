@@ -12,6 +12,16 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class RuleBasedParserTest {
+    @Test
+    fun routesOfflinePdfAndDocxFillCommands() {
+        val pdf = RuleBasedParser.parse("fill a PDF form")!!
+        assertEquals("prepare_document_fill", pdf.tool)
+        assertEquals("pdf", pdf.args["format"]!!.jsonPrimitive.content)
+
+        val docx = RuleBasedParser.parse("fill a DOCX template")!!
+        assertEquals("prepare_document_fill", docx.tool)
+        assertEquals("docx", docx.args["format"]!!.jsonPrimitive.content)
+    }
 
     @Test
     fun testBlindAidActivationTriggers() {

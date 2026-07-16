@@ -43,6 +43,15 @@ Development-only values must be visibly labelled and must fail closed in product
 - An always-visible, collapsible **Agent activity** panel on the landing screen shows the latest understanding, safety, execution and verification step and opens automatically while work is running.
 - Local **Skills** include reviewable built-ins and user-created routines. Repeated successful low-risk actions can create a disabled learned suggestion; UnoOne never auto-enables a suggestion or learns recipients, message bodies, email contents or form values.
 
+### Offline Document Agent
+
+- **Fill PDF / DOCX Offline** is available on the Agent landing screen and through the built-in voice skills “fill a PDF form” and “fill a DOCX template.”
+- Fillable PDF AcroForm text, checkbox, radio and choice fields are discovered locally, shown for review, written to a new file and reopened to verify the persisted values.
+- DOCX templates support Word content controls and named placeholders written as `{{field_name}}`, `${field_name}` or `<<field_name>>`, including placeholders split across Word runs. Main document, header and footer parts are processed locally.
+- The original is never overwritten: Android always asks for a separate destination and UnoOne verifies the completed copy before reporting success.
+- Ordinary DOCX files can also be loaded for offline text extraction and agent questions. Scanned/flat PDFs remain read-only unless they contain AcroForm fields; PDF signing, encrypted PDFs and arbitrary free-position editing are intentionally not automated.
+- Detailed usage, template authoring, safety limits and test coverage are in [Offline Document Skills](docs/OFFLINE_DOCUMENT_SKILLS.md).
+
 ### Secure Browser
 
 - Alibaba PageAgent headless core embedded in a mode-aware Android WebView: exact allow-list in Standard, public HTTPS in explicit Prototype/Off.
