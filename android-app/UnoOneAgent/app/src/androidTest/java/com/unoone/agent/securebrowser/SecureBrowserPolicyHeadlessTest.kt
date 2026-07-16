@@ -67,11 +67,11 @@ class SecureBrowserPolicyHeadlessTest {
         val policy = BrowserDomainPolicy(allowed)
         val mode = BrowserNavigationMode.PROTOTYPE_PUBLIC_HTTPS
 
-        assertTrue(policy.evaluate("https://example.org/a-form", mode) is NavigationDecision.Allow)
-        assertTrue(policy.evaluate("https://forms.example.net/step/2", mode) is NavigationDecision.Allow)
-        assertTrue(policy.evaluate("http://example.org", mode) is NavigationDecision.Block)
+        assertTrue(policy.evaluate("https://forms.inbharat.ai/a-form", mode) is NavigationDecision.Allow)
+        assertTrue(policy.evaluate("https://apply.inbharat.ai/step/2", mode) is NavigationDecision.Allow)
+        assertTrue(policy.evaluate("http://forms.inbharat.ai", mode) is NavigationDecision.Block)
         assertTrue(policy.evaluate("javascript:alert(1)", mode) is NavigationDecision.Block)
-        assertTrue(policy.evaluate("https://user:pass@example.org", mode) is NavigationDecision.Block)
+        assertTrue(policy.evaluate("https://user:pass@forms.inbharat.ai", mode) is NavigationDecision.Block)
         assertTrue(policy.evaluate("https://localhost", mode) is NavigationDecision.Block)
         assertTrue(policy.evaluate("https://192.168.0.1", mode) is NavigationDecision.Block)
     }
