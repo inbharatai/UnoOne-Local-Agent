@@ -150,7 +150,11 @@ The Secure Browser uses an exclusive Gemma lease:
 4. block phone self-heal from allocating a second engine;
 5. restore the phone brain after the browser session closes.
 
-The browser bridge is exact-origin HTTPS only. PageAgent cannot execute arbitrary JavaScript. Payments are blocked; credentials, OTPs, CAPTCHA and legal acceptance require manual takeover.
+The browser bridge is exact-origin HTTPS only and PageAgent cannot execute arbitrary JavaScript.
+In the default **Standard** security level, payments are blocked and credentials, OTPs, CAPTCHA and
+legal acceptance require manual takeover. The explicit **Off — prototype (agent + browser)** setting
+removes those per-action browser blocks for local prototyping and displays a persistent warning;
+exact-origin bridge isolation remains enforced in every mode.
 
 ## Language packs
 

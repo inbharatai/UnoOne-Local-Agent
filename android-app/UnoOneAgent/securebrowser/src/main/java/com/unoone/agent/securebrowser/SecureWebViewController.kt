@@ -3,6 +3,8 @@ package com.unoone.agent.securebrowser
 import android.annotation.SuppressLint
 import android.content.Context
 import android.net.Uri
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -40,6 +42,10 @@ class SecureWebViewController(
     private val onBlockedNavigation: (String) -> Unit = {},
     private val onRuntimeReady: () -> Unit = {},
     private val onRuntimeError: (String) -> Unit = {},
+    private val onShowFileChooser: (
+        ValueCallback<Array<Uri>>,
+        WebChromeClient.FileChooserParams
+    ) -> Boolean = { _, _ -> false },
     val session: BrowserSession = BrowserSession(
         // C9: always admit the synthetic local-form origin in the bridge filter. This does NOT admit
         // remote navigation to it (BrowserDomainPolicy.evaluate still blocks non-approved https hosts,
@@ -238,6 +244,21 @@ class SecureWebViewController(
                     session.activeOrigin = decision.origin
                     injectRuntime(decision.origin)
                 }
+            }
+        }
+
+        // Android WebView does not implement <input type="file"> by itself. Forward the chooser
+        // request to the Activity-owned launcher; its result is returned to this callback by the
+        // ViewModel. Without this client, PageAgent could authorize and click an upload field but
+        // the selected URI was never delivered back to the page.
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                if (filePathCallback == null || fileChooserParams == null) return false
+                return onShowFileChooser(filePathCallback, fileChooserParams)
             }
         }
     }

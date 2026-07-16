@@ -13,4 +13,18 @@ package com.unoone.agent.voice
  */
 object WakePhrases {
     val LIST: List<String> = listOf("uno one", "listen", "listen to me")
+
+    private val TRANSCRIPT_PREFIXES = listOf("listen to me", "uno one", "unoone", "listen")
+
+    /** Removes only a leading wake phrase while preserving identical words inside the command. */
+    fun stripFromCommand(transcript: String): String {
+        val trimmed = transcript.trim()
+        val lower = trimmed.lowercase()
+        val prefix = TRANSCRIPT_PREFIXES.firstOrNull { phrase ->
+            lower == phrase || lower.startsWith("$phrase ") ||
+                lower.startsWith("$phrase,") || lower.startsWith("$phrase:") ||
+                lower.startsWith("$phrase-")
+        } ?: return trimmed
+        return trimmed.drop(prefix.length).trimStart(' ', ',', '.', ':', '-', '—')
+    }
 }

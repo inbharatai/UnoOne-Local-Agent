@@ -7,6 +7,9 @@ sealed class BrowserActionDecision {
     data class Block(val actionClass: BrowserActionClass, val reason: String) : BrowserActionDecision()
 }
 
+/** Explicit browser authorization posture. STANDARD is always the default. */
+enum class BrowserSafetyMode { STANDARD, PROTOTYPE_OFF }
+
 /**
  * Deterministic safety boundary around PageAgent actions.
  *
@@ -15,7 +18,25 @@ sealed class BrowserActionDecision {
  */
 object BrowserSafetyPolicy {
 
-    fun evaluate(actionName: String, summary: String = ""): BrowserActionDecision {
+    /**
+     * Keeps deterministic action classification in every mode, while allowing an explicitly chosen
+     * local prototype session to bypass confirm/takeover/block decisions. Origin isolation and the
+     * restricted native bridge are enforced elsewhere and are never disabled by this setting.
+     */
+    fun evaluate(
+        actionName: String,
+        summary: String = "",
+        mode: BrowserSafetyMode = BrowserSafetyMode.STANDARD
+    ): BrowserActionDecision {
+        val classified = classify(actionName, summary)
+        return if (mode == BrowserSafetyMode.PROTOTYPE_OFF) {
+            BrowserActionDecision.Allow(classified.actionClass())
+        } else {
+            classified
+        }
+    }
+
+    private fun classify(actionName: String, summary: String): BrowserActionDecision {
         val action = actionName.trim().lowercase()
         val text = summary.lowercase()
 
@@ -71,6 +92,13 @@ object BrowserSafetyPolicy {
             BrowserActionClass.SENSITIVE_INPUT,
             "Unrecognized browser action requires confirmation"
         )
+    }
+
+    private fun BrowserActionDecision.actionClass(): BrowserActionClass = when (this) {
+        is BrowserActionDecision.Allow -> actionClass
+        is BrowserActionDecision.Confirm -> actionClass
+        is BrowserActionDecision.UserTakeover -> actionClass
+        is BrowserActionDecision.Block -> actionClass
     }
 
     private fun containsAny(text: String, terms: Set<String>): Boolean = terms.any(text::contains)

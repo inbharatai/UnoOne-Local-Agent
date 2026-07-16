@@ -100,13 +100,13 @@ class SecureBrowserPolicyHeadlessTest {
         val bytes = context.assets.open("page-agent/unoone-page-agent.js").use { it.readBytes() }
 
         assertTrue("PageAgent runtime asset must be non-blank", bytes.isNotEmpty())
-        assertEquals("PageAgent asset exact size", 193488, bytes.size)
+        assertEquals("PageAgent asset exact size", 193472, bytes.size)
 
         val sha = MessageDigest.getInstance("SHA-256").digest(bytes)
             .joinToString("") { "%02x".format(it) }
         assertEquals(
             "PageAgent asset SHA-256 must match the laptop-built bundle (Phase 2)",
-            "d434912a15ebaac5434cbaf847291d0cdec1cb8054594cd537b4245c02ade71e",
+            "54bc79fb8d57a73fac6c269c9b211b6c63ab801a634f324921024e65ce8d55b9",
             sha
         )
 

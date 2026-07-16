@@ -1,6 +1,10 @@
 package com.unoone.agent.ui.viewmodel
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -12,6 +16,7 @@ import com.unoone.agent.securebrowser.BrowserAuditEvent
 import com.unoone.agent.securebrowser.BrowserDomainPolicy
 import com.unoone.agent.securebrowser.BrowserEventSink
 import com.unoone.agent.securebrowser.BrowserUserInteraction
+import com.unoone.agent.securebrowser.BrowserSafetyMode
 import com.unoone.agent.securebrowser.PageAgentRequestType
 import com.unoone.agent.securebrowser.SecureBrowserNativeHandler
 import com.unoone.agent.securebrowser.SecureWebViewController
@@ -19,6 +24,7 @@ import com.unoone.agent.core.util.Logger
 import com.unoone.agent.storage.dao.ActionLogDao
 import com.unoone.agent.storage.entity.ActionLogEntity
 import com.unoone.agent.voice.VoiceModule
+import com.unoone.agent.safety.SecurityLevel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +59,7 @@ data class SecureBrowserUiState(
     val sessionActive: Boolean = false,
     val taskRunning: Boolean = false,
     val modelBackend: String = "",
+    val prototypeSafetyOff: Boolean = false,
     val lastResult: String = "",
     val error: String = ""
 ) {
@@ -82,6 +89,8 @@ class SecureBrowserViewModel(
     private val domainPolicy = BrowserDomainPolicy(APPROVED_ORIGINS)
     private var controller: SecureWebViewController? = null
     private var pendingPrompt: CompletableDeferred<PromptAnswer>? = null
+    private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
+    private var fileChooserLauncher: ((Intent) -> Unit)? = null
     private var attached = false
 
     // Eyes-free (WS4): a (origin, task) stashed by the `secure_browser_task` tool before the
@@ -134,7 +143,14 @@ class SecureBrowserViewModel(
                     val handler = SecureBrowserNativeHandler(
                         modelPort = leaseResult.data,
                         userInteraction = this@SecureBrowserViewModel,
-                        eventSink = BrowserEventSink { type, payload -> onNativeEvent(type, payload) }
+                        eventSink = BrowserEventSink { type, payload -> onNativeEvent(type, payload) },
+                        safetyModeProvider = {
+                            if (SecurityLevel.current(appContext) == SecurityLevel.OFF) {
+                                BrowserSafetyMode.PROTOTYPE_OFF
+                            } else {
+                                BrowserSafetyMode.STANDARD
+                            }
+                        }
                     )
                     withContext(Dispatchers.Main.immediate) {
                         controller = SecureWebViewController(
@@ -153,6 +169,7 @@ class SecureBrowserViewModel(
                                     runtimeReady = true,
                                     sessionActive = true,
                                     modelBackend = modelLease.activeBackend(),
+                                    prototypeSafetyOff = SecurityLevel.current(appContext) == SecurityLevel.OFF,
                                     error = ""
                                 )
                                 runPendingTaskIfAny()
@@ -164,7 +181,8 @@ class SecureBrowserViewModel(
                                     runtimeReady = false,
                                     error = message
                                 )
-                            }
+                            },
+                            onShowFileChooser = ::openFileChooser
                         ).also { it.load(_state.value.currentUrl) }
                     }
                 }
@@ -177,6 +195,42 @@ class SecureBrowserViewModel(
         if (clean.isBlank()) return
         _state.value = _state.value.copy(currentUrl = clean, status = "Opening approved page…", error = "")
         controller?.load(clean)
+    }
+
+    /** Registers the Activity Result launcher owned by the Compose screen. */
+    fun setFileChooserLauncher(launcher: ((Intent) -> Unit)?) {
+        fileChooserLauncher = launcher
+        if (launcher == null) {
+            pendingFileCallback?.onReceiveValue(null)
+            pendingFileCallback = null
+        }
+    }
+
+    /** Returns the Android picker result to the exact WebView file input that requested it. */
+    fun completeFileChooser(resultCode: Int, data: Intent?) {
+        val callback = pendingFileCallback ?: return
+        pendingFileCallback = null
+        callback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
+    }
+
+    private fun openFileChooser(
+        callback: ValueCallback<Array<Uri>>,
+        params: WebChromeClient.FileChooserParams
+    ): Boolean {
+        val launcher = fileChooserLauncher ?: return false
+        // WebView permits only one outstanding callback. Cancel the older request explicitly so a
+        // page cannot leak it by opening a second picker before the first one returns.
+        pendingFileCallback?.onReceiveValue(null)
+        return try {
+            pendingFileCallback = callback
+            launcher(params.createIntent())
+            true
+        } catch (e: Exception) {
+            pendingFileCallback = null
+            callback.onReceiveValue(null)
+            _state.value = _state.value.copy(error = "Could not open the file picker: ${e.message}")
+            false
+        }
     }
 
     /**
@@ -485,6 +539,8 @@ class SecureBrowserViewModel(
         controller?.stop()
         controller = null
         pendingPrompt?.cancel()
+        pendingFileCallback?.onReceiveValue(null)
+        pendingFileCallback = null
         cleanupScope.launch { modelLease.release(restore = true) }
         super.onCleared()
     }

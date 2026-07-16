@@ -40,4 +40,20 @@ class BrowserSafetyPolicyTest {
     fun `unknown browser action defaults to confirmation`() {
         assertTrue(BrowserSafetyPolicy.evaluate("unknown_action") is BrowserActionDecision.Confirm)
     }
+
+    @Test
+    fun `prototype off allows every class while retaining classification`() {
+        val payment = BrowserSafetyPolicy.evaluate(
+            "click_element_by_index",
+            "Pay now using card",
+            BrowserSafetyMode.PROTOTYPE_OFF
+        )
+        val credential = BrowserSafetyPolicy.evaluate(
+            "enter_password",
+            mode = BrowserSafetyMode.PROTOTYPE_OFF
+        )
+
+        assertEquals(BrowserActionDecision.Allow(BrowserActionClass.PAYMENT), payment)
+        assertEquals(BrowserActionDecision.Allow(BrowserActionClass.CREDENTIAL), credential)
+    }
 }

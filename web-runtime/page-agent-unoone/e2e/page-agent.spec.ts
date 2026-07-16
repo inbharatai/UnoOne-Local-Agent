@@ -207,3 +207,46 @@ test('does not click a payment button when native authorization blocks it', asyn
   expect(result.success).toBe(false)
   expect(await page.evaluate(() => (window as any).paymentClicked)).toBe(false)
 })
+
+test('authorized upload clicks the real file input and completes selection', async ({ page }) => {
+  await installMockNativeBridge(
+    page,
+    [
+      {
+        evaluationPreviousGoal: 'No previous action',
+        memory: 'A resume file input is available',
+        nextGoal: 'Open the resume file input',
+        actionName: 'upload_file',
+        actionArgumentsJson: JSON.stringify({ index: AUTO_INDEX, purpose: 'Attach the resume' })
+      },
+      {
+        evaluationPreviousGoal: 'The file picker was opened',
+        memory: 'The requested file is attached',
+        nextGoal: 'Finish the task',
+        actionName: 'done',
+        actionArgumentsJson: JSON.stringify({ text: 'Resume attached', success: true })
+      }
+    ],
+    ({ actionName }) => ({
+      allowed: actionName === 'upload_file',
+      actionClass: 'FILE_TRANSFER',
+      message: 'User confirmed'
+    })
+  )
+
+  await loadFixture(
+    page,
+    `<!doctype html><html><body><main><label for="resume">Resume</label><input id="resume" type="file" name="resume" /></main></body></html>`
+  )
+
+  const chooserPromise = page.waitForEvent('filechooser')
+  const resultPromise = page.evaluate(() =>
+    window.UnoOnePageAgentRuntime!.execute('Attach my resume and finish')
+  )
+  const chooser = await chooserPromise
+  await chooser.setFiles({ name: 'resume.txt', mimeType: 'text/plain', buffer: Buffer.from('UnoOne test resume') })
+  const result = await resultPromise
+
+  expect(result.success).toBe(true)
+  expect(await page.locator('#resume').evaluate((input: HTMLInputElement) => input.files?.[0]?.name)).toBe('resume.txt')
+})

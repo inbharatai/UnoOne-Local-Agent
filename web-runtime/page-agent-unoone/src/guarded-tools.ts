@@ -150,7 +150,7 @@ export function createGuardedTools(): Record<string, PageAgentTool | null> {
     }),
 
     upload_file: tool({
-      description: 'Request user takeover to choose a local file; PageAgent never reads arbitrary device files',
+      description: 'Open the Android file picker for the user to choose a local file; PageAgent never reads arbitrary device files',
       inputSchema: z.object({ index: z.number().int().min(0), purpose: z.string() }),
       execute: async function (input) {
         const summary = `${await elementSummary(this, input.index)}; upload purpose: ${input.purpose}`
@@ -159,12 +159,11 @@ export function createGuardedTools(): Record<string, PageAgentTool | null> {
           fieldLabel: summary
         })
         if (!auth.allowed) return rejected(auth)
-        await sendNative('USER_TAKEOVER', {
-          reason: 'FILE_PICKER',
-          elementIndex: input.index,
-          purpose: input.purpose
-        })
-        return '⏸ User takeover opened for file selection.'
+        // Clicking the real <input type="file"> is what asks Android WebView to invoke
+        // WebChromeClient.onShowFileChooser. The previous implementation only displayed a native
+        // "takeover complete" dialog and never clicked the element, so no chooser could be opened
+        // and the upload always stalled after approval.
+        return (await this.pageController.clickElement(input.index)).message
       }
     })
   }

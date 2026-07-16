@@ -191,12 +191,15 @@ See [Speech Model Qualification](docs/SPEECH_MODEL_QUALIFICATION.md).
 
 ## Secure Browser safety policy
 
+The table below is the default **Standard** posture. The explicit prototype Off override is
+documented under Security Level.
+
 | Action | Policy |
 |---|---|
 | Read, wait, scroll | allowed |
 | Ordinary form input | allowed after native classification |
 | Unknown or sensitive action | explicit confirmation |
-| File upload/download | explicit confirmation and Android picker takeover |
+| File upload/download | explicit native authorization and Android picker takeover |
 | Final form submission | explicit confirmation |
 | Login credentials/passwords | manual takeover |
 | OTP/verification code | manual takeover |
@@ -221,13 +224,25 @@ Both are exposed in **Settings** (no rebuild needed; the change takes effect on 
 |---|---|---|---|---|
 | Standard (default) | on | enforced | required | real use / production posture |
 | Relaxed | off | enforced | auto-approved | everyday testing — benign commands like "add a calendar event" are no longer over-blocked by the judge, but payments / credentials / install stay blocked |
-| Off (demo) | off | bypassed | auto-approved | demo / developer — every module can be exercised |
+| Off (prototype) | off | bypassed | auto-approved | local prototype — phone tools and PageAgent browser actions execute without safety prompts |
 
-Off is safe only because the BLOCK-tier tool names (`make_payment`, `send_message`, `access_passwords`, `install_app`, `silent_control`) have **no `ActionExecutor` handlers** — they fall through to the plugin router (a no-op error) — so unblocking them triggers no real payment / SMS / credential / install action. Standard is the default and the production posture; the app never silently weakens safety on first launch.
+**Off is intentionally unrestricted prototype mode, not a production-safe mode.** It removes the
+native PageAgent authorization blocks as well as the phone-agent judge/confirm gates, so the
+browser may submit forms, upload user-selected files, and interact with credential or payment
+fields. It must be selected explicitly and is shown with a persistent warning. Exact-origin bridge
+isolation remains enforced and arbitrary native JavaScript execution remains unavailable; these are
+process boundaries, not action-policy prompts. Standard is the default and the app never silently
+weakens safety on first launch.
 
 ### Voice Language
 
-The offline STT/TTS language is chosen in **Settings → Voice language**. English uses the streaming zipformer transducer (`speech/shared/sherpa-asr-en`); every Indic language uses the multilingual Whisper model (`speech/shared/sherpa-asr-whisper`) pinned to that language code. **Speak in the language you have selected** — the English-only transducer cannot transcribe Hindi, so Hindi speech with English selected will not transcribe correctly. There is no automatic language detection today. Changing the language rebuilds the Sherpa engines live (no restart).
+The offline STT/TTS language can be changed from the **Voice** dropdown on the main screen or from
+**Settings → Voice language**. English uses the streaming zipformer transducer
+(`speech/shared/sherpa-asr-en`); every Indic language uses the multilingual Whisper model
+(`speech/shared/sherpa-asr-whisper`) pinned to that language code. **Speak in the language you have
+selected** — the English-only transducer cannot transcribe Hindi, so Hindi speech with English
+selected will not transcribe correctly. There is no automatic language detection today. Changing
+the language rebuilds the Sherpa engines live on a background thread (no restart or UI freeze).
 
 ---
 

@@ -36,4 +36,16 @@ class WakePhrasesTest {
             WakePhrases.LIST.size
         )
     }
+
+    @Test
+    fun stripsWakePhraseFromOneBreathCommand() {
+        assertEquals("open Chrome", WakePhrases.stripFromCommand("Uno One, open Chrome"))
+        assertEquals("create a note", WakePhrases.stripFromCommand("UnoOne create a note"))
+        assertEquals("read the screen", WakePhrases.stripFromCommand("Listen: read the screen"))
+    }
+
+    @Test
+    fun doesNotStripListenInsideCommand() {
+        assertEquals("play my listen later playlist", WakePhrases.stripFromCommand("play my listen later playlist"))
+    }
 }

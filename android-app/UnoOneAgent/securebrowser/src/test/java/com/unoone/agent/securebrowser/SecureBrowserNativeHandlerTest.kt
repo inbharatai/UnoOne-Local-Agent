@@ -95,6 +95,29 @@ class SecureBrowserNativeHandlerTest {
         assertEquals(1, interaction.takeoverCalls)
     }
 
+    @Test
+    fun `explicit prototype mode allows classified payment without prompt`() = runBlocking {
+        val interaction = FakeInteraction(confirmResult = false, takeoverResult = false)
+        val handler = SecureBrowserNativeHandler(
+            modelPort = BrowserModelPort { Result.failure(Exception()) },
+            userInteraction = interaction,
+            safetyModeProvider = { BrowserSafetyMode.PROTOTYPE_OFF }
+        )
+        val input = BrowserActionAuthorizationRequest(
+            actionName = "click_element_by_index",
+            summary = "Pay now using card"
+        )
+
+        val response = handler.handle(request(PageAgentRequestType.AUTHORIZE_ACTION, json.encodeToString(input)))
+        val auth = json.decodeFromString(BrowserActionAuthorizationResponse.serializer(), response.payload)
+
+        assertTrue(auth.allowed)
+        assertEquals(BrowserActionClass.PAYMENT, auth.actionClass)
+        assertEquals(0, interaction.confirmCalls)
+        assertEquals(0, interaction.takeoverCalls)
+        assertTrue(auth.message.contains("prototype browser safety is off"))
+    }
+
     private class FakeInteraction(
         private val confirmResult: Boolean = false,
         private val takeoverResult: Boolean = false

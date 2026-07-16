@@ -26,7 +26,9 @@ fun interface BrowserEventSink {
 class SecureBrowserNativeHandler(
     private val modelPort: BrowserModelPort,
     private val userInteraction: BrowserUserInteraction,
-    private val eventSink: BrowserEventSink = BrowserEventSink { _, _ -> }
+    private val eventSink: BrowserEventSink = BrowserEventSink { _, _ -> },
+    /** Read per action so changing the local prototype setting does not require recreating WebView. */
+    private val safetyModeProvider: () -> BrowserSafetyMode = { BrowserSafetyMode.STANDARD }
 ) : PageAgentRequestHandler {
 
     private val json = Json { ignoreUnknownKeys = false; encodeDefaults = true }
@@ -65,16 +67,22 @@ class SecureBrowserNativeHandler(
             return failure(request, "INVALID_ACTION_REQUEST", e.message ?: "Invalid action request")
         }
 
+        val safetyMode = safetyModeProvider()
         val decision = BrowserSafetyPolicy.evaluate(
             input.actionName,
-            listOfNotNull(input.summary, input.fieldLabel, input.valueCategory).joinToString(" | ")
+            listOfNotNull(input.summary, input.fieldLabel, input.valueCategory).joinToString(" | "),
+            safetyMode
         )
 
         val response = when (decision) {
             is BrowserActionDecision.Allow -> BrowserActionAuthorizationResponse(
                 allowed = true,
                 actionClass = decision.actionClass,
-                message = "Allowed"
+                message = if (safetyMode == BrowserSafetyMode.PROTOTYPE_OFF) {
+                    "Allowed — prototype browser safety is off"
+                } else {
+                    "Allowed"
+                }
             )
             is BrowserActionDecision.Confirm -> {
                 val approved = userInteraction.confirm(decision.message)

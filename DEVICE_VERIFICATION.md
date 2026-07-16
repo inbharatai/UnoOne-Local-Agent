@@ -140,13 +140,19 @@ The Secure Browser must use the same Gemma artifact through an exclusive model l
 - [ ] Checkbox and radio selection work.
 - [ ] Date input works.
 - [ ] Scrolling and observation loop work.
-- [ ] File upload opens Android user takeover; PageAgent cannot read arbitrary files.
-- [x] Final submission requires explicit confirmation — ✅ 2026-07-14 headless (BrowserSafetyPolicy submit_form → Confirm);
-- [x] Password entry requires manual takeover — ✅ 2026-07-14 headless (BrowserSafetyPolicy → UserTakeover);
-- [x] OTP requires manual takeover — ✅ 2026-07-14 headless (BrowserSafetyPolicy → UserTakeover);
-- [x] CAPTCHA requires manual takeover — ✅ 2026-07-14 headless (BrowserSafetyPolicy → UserTakeover);
-- [x] Legal acceptance requires manual takeover — ✅ 2026-07-14 headless (BrowserSafetyPolicy → UserTakeover);
-- [x] Payment action is blocked and cannot click the payment control — ✅ 2026-07-14 headless (BrowserSafetyPolicy → Block; live control-not-clicked remains manual);
+- [ ] File upload opens Android user takeover; PageAgent cannot read arbitrary files. Automated ✅
+      2026-07-16 (Playwright proves authorized `upload_file` clicks the real file input and receives
+      only the selected file; Android `WebChromeClient`/Activity-result wiring covered by JVM tests
+      and compilation). Physical Android picker selection remains ☐.
+- [x] In Standard mode, final submission requires explicit confirmation — ✅ 2026-07-16 JVM (BrowserSafetyPolicy submit_form → Confirm);
+- [x] In Standard mode, password entry requires manual takeover — ✅ 2026-07-16 JVM (BrowserSafetyPolicy → UserTakeover);
+- [x] In Standard mode, OTP requires manual takeover — ✅ 2026-07-16 JVM (BrowserSafetyPolicy → UserTakeover);
+- [x] In Standard mode, CAPTCHA requires manual takeover — ✅ 2026-07-16 JVM (BrowserSafetyPolicy → UserTakeover);
+- [x] In Standard mode, legal acceptance requires manual takeover — ✅ 2026-07-16 JVM (BrowserSafetyPolicy → UserTakeover);
+- [x] In Standard mode, payment action is blocked and cannot click the payment control — ✅ 2026-07-16 JVM (BrowserSafetyPolicy → Block; live control-not-clicked remains manual);
+- [x] Explicit prototype Off mode converts browser Confirm/Takeover/Block decisions to Allow — ✅
+      2026-07-16 JVM (policy + native-handler tests); Settings and browser show an unsafe-mode
+      warning. Physical payment/credential workflow intentionally not exercised.
 - [ ] Arbitrary JavaScript execution is unavailable.
 - [ ] Page prompt injection cannot bypass the native policy.
 - [ ] Audit log records origin/action/decision without typed form values.
@@ -173,7 +179,9 @@ P95 step latency ms:
 - [x] Streaming STT loads and transcribes offline — ✅ 2026-07-14 (engine loads offline proven Phase 6c; transcription-accuracy on real mic audio remains manual);
 - [x] TTS loads and speaks offline — ✅ 2026-07-14 (Phase 6c: real PCM generated for English on device);
 - [ ] Wake-word/VAD path works as configured.
-- [x] Airplane-mode test proves no silent network dependency — ✅ 2026-07-14 headless (SpeechNoCloudFallbackTest: engines return Error, never cloud/Android-SpeechRecognizer fallback; live airplane-mode toggle remains manual);
+- [x] Airplane-mode test proves no silent network dependency — ✅ 2026-07-16 Xiaomi 14 live toggle:
+      cold activity in 1583 ms, OFFLINE UI + language control rendered, one Gemma load, zero UnoOne
+      ANR/FATAL; radio state restored. SpeechNoCloudFallbackTest also proves no implicit system/cloud STT fallback.
 - [ ] Low-confidence retry behaves correctly.
 
 ### Current Indic baselines
@@ -311,8 +319,8 @@ on-device evidence. No item below is flipped to ✅ from compilation or JVM test
       the real approved list — ✅ JVM 2026-07-15 (ApprovedOriginPolicyTest +
       CanonicalToolRegistryTest + ActionExecutorToolCoverageTest); device ☐: voice task to an
       approved origin runs via PageAgent (not system Chrome), reads the page aloud, and a
-      spoken CONFIRM/ASK is answered by voice. BrowserSafetyPolicy unchanged (no takeover
-      gate weakened).
+      spoken CONFIRM/ASK is answered by voice. Standard-mode BrowserSafetyPolicy remains enforced;
+      the separately labelled Off mode is an explicit prototype override.
 - [x] B5/WS3: Blind Aid scene-summary throttle + wording — ✅ JVM 2026-07-15
       (BlindAidNarratorTest); device ☐: live camera scene narration speaks and respects quiet
       mode; "read the screen"/"describe scene" speaks the result for VOICE.
@@ -442,13 +450,42 @@ Human-gated (stay ☐ until the owner verifies at the device):
 
 ### 11.3 Honesty constraints for this section
 
-- `BrowserSafetyPolicy` and every per-action confirm/takeover gate are unchanged; C9 only admits
-  a synthetic local-form origin reachable solely via explicit `loadDataWithBaseURL`. No gate was
-  weakened; hands-free still means *spoken* confirms, never skipped.
+- C9 admits a synthetic local-form origin reachable solely via explicit `loadDataWithBaseURL`.
+  Standard mode keeps every per-action confirm/takeover/block decision. The user-requested
+  **Off — prototype (agent + browser)** mode now bypasses those action decisions explicitly and
+  warns that PageAgent may submit forms/files/credentials/payment fields. Exact-origin isolation
+  and the absence of arbitrary native JavaScript remain enforced in every mode.
 - No fake URLs, origins, dummy narration, or placeholder parsers. Legacy `.xls` is reported
   unsupported rather than faked.
 - Live-mic STT, audible TTS, live camera/OCR, MediaProjection Read Screen, live form-fill and
   TalkBack announcements are NOT faked and stay ☐ until a human verifies them at the device.
+
+### 11.4 Full-function hardening verification (`codex/full-function-audit`)
+
+```text
+Run date: 2026-07-16
+Branch base: main@f13c42f
+Device: Xiaomi 14 23127PN0CG (houji), serial 7f8cafef, Android 15/API 35
+Android exact gate: :app:lintDebug (no new issues), :app + :core JVM tests,
+  :app:assembleDebug and :app:assembleDebugAndroidTest ✅
+PageAgent gate: TypeScript typecheck, Vitest 2/2, production build, Playwright 3/3,
+  Android asset bundle ✅
+Install: adb push + pm install -r for app and androidTest APKs ✅
+Instrumented suite: OK (42 tests), 148.442 s ✅
+Normal cold launch: MainActivity 1673 ms; one Gemma load; zero UnoOne ANR ✅
+Thread audit: process/main TID 19438; Gemma TID 22603, shared VoiceModule TID 22604,
+  VoiceService TID 22638 — native model initialization is off the UI thread ✅
+Airplane cold launch: 1583 ms; OFFLINE UI rendered; one Gemma load; zero ANR/FATAL;
+  airplane state restored to disabled ✅
+Language quick switch: all 7 choices rendered; Hindi selected on the main screen; offline
+  WHISPER/hi STT and Hindi TTS reinitialized on worker TID 19407 ✅
+Browser prototype-Off policy: JVM/native-handler coverage ✅; physical sensitive transaction ☐
+File upload: real browser input + selected filename Playwright coverage ✅; physical picker ☐
+Wake command buffering/wake-phrase stripping: JVM coverage ✅; live acoustic wake test ☐ because
+  the optional keyword-spotter model is not installed (service reports manual activation only).
+Live speaker intelligibility, camera/Blind Aid, MediaProjection, TalkBack, and real remote-site
+PageAgent semantic accuracy remain human-gated ☐.
+```
 
 ## Evidence requirements
 

@@ -173,8 +173,8 @@ class PageAgentGemmaPlanner {
         appendLine("{\"evaluation_previous_goal\":\"...\",\"memory\":\"...\",\"next_goal\":\"...\",\"action\":{\"ACTION_NAME\":{...}}}")
         appendLine("ACTION_NAME must be one of: ${ALLOWED_ACTIONS.joinToString()}")
         appendLine("Choose one action only. Never output execute_javascript.")
-        appendLine("Never enter passwords, OTPs, CAPTCHA answers, payment or banking data, or accept legal declarations.")
-        appendLine("Use ask_user when information is missing and done when the task is complete or cannot safely continue.")
+        appendLine("Every proposed DOM action is independently authorized by native UnoOne policy. Obey that decision; never retry or bypass a denial.")
+        appendLine("Use ask_user when information is missing and done when the task is complete or native policy prevents progress.")
         appendLine("Suggested output budget: ${maxOutputTokens.coerceIn(128, 1_024)} tokens.")
     }
 
@@ -267,8 +267,8 @@ class PageAgentGemmaPlanner {
         private const val PAGE_AGENT_SYSTEM_INSTRUCTION =
             "You are UnoOne's local browser planning model operating Alibaba PageAgent. " +
                 "Return one strict JSON reflection/action object per turn. You propose DOM actions only; " +
-                "native UnoOne safety authorizes every action before execution. Never use JavaScript " +
-                "execution, credentials, OTPs, CAPTCHA answers, payments, banking data, legal acceptance, " +
-                "or hidden actions. Stop or ask the user when safe autonomous progress is impossible."
+                "native UnoOne policy authorizes every action before execution. Obey native allow, deny, " +
+                "or takeover decisions exactly and never retry a denial. Never use JavaScript execution " +
+                "or hidden actions. Stop or ask the user when authorized progress is impossible."
     }
 }

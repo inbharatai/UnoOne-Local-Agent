@@ -29,7 +29,14 @@ class VoiceService : Service() {
 
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+    private var engineInitJob: Job? = null
     private var monitoringJob: Job? = null
+
+    @Volatile
+    private var enginesInitialized = false
+
+    @Volatile
+    private var monitoringStarted = false
 
     /** Serializes runtime STT/TTS rebuilds so rapid language switches never overlap on the IO pool. */
     private val reinitLock = Mutex()
@@ -131,9 +138,37 @@ class VoiceService : Service() {
             }
             return START_STICKY
         }
-        initEngines()
-        startMonitoring()
+        ensureEnginesAndMonitoring()
         return START_STICKY
+    }
+
+    /**
+     * Initializes native speech models once on the service IO scope. Android invokes
+     * [onStartCommand] on the main thread, and doing this work inline previously stalled the whole
+     * process for several seconds during a cold offline launch.
+     */
+    private fun ensureEnginesAndMonitoring() {
+        if (enginesInitialized) {
+            if (!monitoringStarted) {
+                monitoringStarted = true
+                startMonitoring()
+            }
+            return
+        }
+        if (engineInitJob?.isActive == true) return
+
+        engineInitJob = serviceScope.launch {
+            reinitLock.withLock {
+                if (!enginesInitialized) {
+                    initEngines()
+                    enginesInitialized = true
+                }
+            }
+            if (!monitoringStarted) {
+                monitoringStarted = true
+                startMonitoring()
+            }
+        }
     }
 
     /** The models root under app external files dir. */
@@ -224,6 +259,7 @@ class VoiceService : Service() {
 
         var consecutiveSilenceChunks = 0
         val maxSilenceChunks = 3 // 3 seconds of silence = end of command
+        val commandAudio = PcmChunkAccumulator()
 
         // 0C-7: Keep recorder running continuously instead of start/stop every second.
         // Start recording ONCE and use readChunk() to drain accumulated audio incrementally.
@@ -275,6 +311,10 @@ class VoiceService : Service() {
                         Logger.i("VoiceService: Wake word detected: '$keyword'")
                         isListeningForCommand = true
                         consecutiveSilenceChunks = 0
+                        // Retain the trigger chunk because users often say "UnoOne, open Chrome" in
+                        // one breath. The leading wake phrase is removed from the final transcript.
+                        commandAudio.clear()
+                        commandAudio.add(pcmData)
                         onWakeWordDetected?.invoke()
                         // Eyes-free (WS2): speak the "I'm listening" cue. Invoked via the static
                         // callback so the Application can route it to the shared VoiceModule without
@@ -286,6 +326,10 @@ class VoiceService : Service() {
                         updateNotification("Listening for command...")
                     }
                 } else {
+                    // Retain every post-wake chunk. Previously only the final (usually silent)
+                    // chunk reached STT, so wake detection succeeded but the actual command was
+                    // discarded and recognition appeared random or empty.
+                    commandAudio.add(pcmData)
                     // In command mode, check for silence
                     val hasSpeech = hasSpeechActivity(pcmData)
 
@@ -296,28 +340,30 @@ class VoiceService : Service() {
                     }
 
                     // End of command when silence detected
-                    if (consecutiveSilenceChunks >= maxSilenceChunks) {
+                    if (consecutiveSilenceChunks >= maxSilenceChunks || commandAudio.isFull) {
                         // Drain final audio and stop recording
                         val finalChunk = recorder.readChunk()
                         isListeningForCommand = false
-
-                        // Combine final chunk with what we already have
-                        val commandPcm = if (finalChunk.isNotEmpty()) {
-                            pcmData + finalChunk
-                        } else {
-                            pcmData
-                        }
+                        commandAudio.add(finalChunk)
+                        val commandPcm = commandAudio.toByteArray()
+                        commandAudio.clear()
 
                         val transcript = transcribeAudio(commandPcm)
-                        if (transcript is Result.Success && transcript.data.isNotBlank()) {
-                            Logger.i("VoiceService: Command: '${transcript.data}'")
-                            onCommandReceived?.invoke(transcript.data)
+                        if (transcript is Result.Success) {
+                            val command = WakePhrases.stripFromCommand(transcript.data)
+                            if (command.isBlank()) {
+                                Logger.i("VoiceService: Wake phrase detected but no command followed")
+                                updateNotification("UnoOne is listening")
+                                continue
+                            }
+                            Logger.i("VoiceService: Command: '$command'")
+                            onCommandReceived?.invoke(command)
 
                             // SECURITY: Use static callback instead of broadcast Intent.
                             // sendBroadcast() is visible in system logs even with setPackage(),
                             // exposing the user's transcribed speech. The callback is set by the
                             // Application layer, keeping commands in-process only.
-                            voiceCommandCallback?.invoke(transcript.data)
+                            voiceCommandCallback?.invoke(command)
                         }
 
                         updateNotification("UnoOne is listening")
@@ -398,6 +444,7 @@ class VoiceService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        engineInitJob?.cancel()
         monitoringJob?.cancel()
         // Cancel the SupervisorJob so any stray child coroutine on serviceScope can't outlive the service.
         serviceJob.cancel()

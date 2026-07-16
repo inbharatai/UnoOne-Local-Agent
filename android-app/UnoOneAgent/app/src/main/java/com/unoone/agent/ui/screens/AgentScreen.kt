@@ -36,12 +36,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.SmartToy
@@ -51,11 +53,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -101,10 +106,13 @@ import com.unoone.agent.ui.theme.TranscribingYellow
 import com.unoone.agent.ui.theme.UnderstandingBlue
 import com.unoone.agent.ui.theme.VerifyingTeal
 import com.unoone.agent.ui.viewmodel.AgentViewModel
+import com.unoone.agent.voice.VoiceLanguage
 
 @Composable
 fun AgentScreen(
     viewModel: AgentViewModel,
+    voiceLanguage: String = VoiceLanguage.DEFAULT,
+    onVoiceLanguageSelected: (String) -> Unit = {},
     onNavigateToSecureBrowser: () -> Unit = {}
 ) {
     // 5B: rememberSaveable preserves text across configuration changes (rotation)
@@ -265,6 +273,12 @@ fun AgentScreen(
                 }
             }
         }
+
+        VoiceLanguageQuickSwitcher(
+            selectedCode = voiceLanguage,
+            enabled = !isListening && !isProcessing,
+            onSelected = onVoiceLanguageSelected
+        )
 
         // Eyes-free (WS5): large, TalkBack-labeled capability surface. The four primary actions a
         // blind user reaches in one tap from the top of the screen — Listen (speak a command), Blind
@@ -798,6 +812,48 @@ private fun QuickActionButton(label: String, icon: androidx.compose.ui.graphics.
             Icon(icon, contentDescription = label, tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
         }
         Text(label, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/** Primary-screen selector for the active offline STT/TTS language. */
+@Composable
+private fun VoiceLanguageQuickSwitcher(
+    selectedCode: String,
+    enabled: Boolean,
+    onSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = VoiceLanguage.SUPPORTED.firstOrNull { it.code == selectedCode }
+        ?: VoiceLanguage.SUPPORTED.first()
+    Box(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            enabled = enabled,
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics {
+                    contentDescription = "Voice language: ${selected.display}. Double tap to change."
+                }
+        ) {
+            Icon(Icons.Default.Language, contentDescription = null)
+            Text("Voice: ${selected.display}", modifier = Modifier.padding(horizontal = 8.dp))
+            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.fillMaxWidth(0.9f)
+        ) {
+            VoiceLanguage.SUPPORTED.forEach { language ->
+                DropdownMenuItem(
+                    text = { Text(language.display) },
+                    onClick = {
+                        expanded = false
+                        if (language.code != selected.code) onSelected(language.code)
+                    }
+                )
+            }
+        }
     }
 }
 
