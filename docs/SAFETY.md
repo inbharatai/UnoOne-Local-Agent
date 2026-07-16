@@ -51,6 +51,22 @@ All UI control is executed through `system_control(action=…)` (Option A). The 
 classifications** so any tool call that arrives under those names is still gated, even though the
 normal path is `system_control`. This is intentional defense-in-depth, not a naming bug.
 
+## 3.1 User-selected enforcement level
+
+The stored security level is consulted by both the phone agent and Secure Browser PageAgent:
+
+| Level | Phone agent | Secure Browser |
+|---|---|---|
+| `STANDARD` (default) | Judge and every confirmation/block enforced. | Confirmation, takeover and block decisions enforced. |
+| `RELAXED` | Judge disabled; BLOCK enforced; confirmations auto-approve. | Standard browser action decisions remain enforced. |
+| `OFF` | Judge, confirmations and blocks bypassed. | PageAgent confirmation, takeover and block decisions bypassed. |
+
+`OFF` is deliberately unsafe and is labelled as such in Settings and Secure Browser. It allows
+PageAgent to interact with forms, user-selected file inputs, credentials and payment fields without
+an UnoOne safety prompt. It does not disable the exact-origin WebView message bridge, grant arbitrary
+filesystem access, or add a JavaScript/native-code execution tool. Those boundaries remain in every
+mode. Changing the mode is local and persistent; `STANDARD` remains the first-launch default.
+
 ## 4. Online tools toggle (spec — partial)
 
 - `web_search` is `CONFIRM` and in `UnoOneToolSet` so the model can propose it.
