@@ -8,18 +8,25 @@ sealed class NavigationDecision {
     data class Block(val reason: String) : NavigationDecision()
 }
 
+/** Remote-navigation scope. Standard stays allow-listed; prototype mode admits public HTTPS. */
+enum class BrowserNavigationMode { APPROVED_ONLY, PROTOTYPE_PUBLIC_HTTPS }
+
 /**
- * Exact-origin policy for PageAgent automation.
+ * Navigation policy for PageAgent automation.
  *
- * Only HTTPS origins explicitly supplied to the policy are allowed. Localhost, IP literals,
- * cleartext HTTP and executable/non-web schemes are rejected before WebView navigation or bridge
- * exposure. Subdomains are not implicitly trusted.
+ * Standard mode permits only explicitly supplied exact HTTPS origins. Explicit Prototype/Off may
+ * admit other public HTTPS hosts. Both modes reject localhost, `.local`, IP literals, cleartext
+ * HTTP, embedded credentials and executable/non-web schemes before WebView navigation or bridge
+ * exposure. Standard does not implicitly trust subdomains.
  */
 class BrowserDomainPolicy(allowedOrigins: Set<String>) {
 
     private val allowed: Set<String> = allowedOrigins.mapNotNull { normalizeOrigin(it) }.toSet()
 
-    fun evaluate(rawUrl: String): NavigationDecision {
+    fun evaluate(
+        rawUrl: String,
+        mode: BrowserNavigationMode = BrowserNavigationMode.APPROVED_ONLY
+    ): NavigationDecision {
         val uri = try {
             URI(rawUrl.trim())
         } catch (_: Exception) {
@@ -38,7 +45,11 @@ class BrowserDomainPolicy(allowedOrigins: Set<String>) {
         val asciiHost = try { IDN.toASCII(uri.host.lowercase()) } catch (_: Exception) {
             return NavigationDecision.Block("Invalid internationalized host")
         }
-        if (asciiHost == "localhost" || asciiHost.endsWith(".localhost") || isIpLiteral(asciiHost)) {
+        if (
+            asciiHost == "localhost" || asciiHost.endsWith(".localhost") ||
+            asciiHost == "unoone.local-form" || asciiHost.endsWith(".local") ||
+            isIpLiteral(asciiHost)
+        ) {
             return NavigationDecision.Block("Local and IP-literal hosts are blocked")
         }
 
@@ -48,7 +59,7 @@ class BrowserDomainPolicy(allowedOrigins: Set<String>) {
             append(asciiHost)
             if (port != -1) append(":$port")
         }
-        if (origin !in allowed) {
+        if (mode == BrowserNavigationMode.APPROVED_ONLY && origin !in allowed) {
             return NavigationDecision.Block("Origin is not approved for UnoOne automation: $origin")
         }
 
@@ -66,13 +77,21 @@ class BrowserDomainPolicy(allowedOrigins: Set<String>) {
 
     fun isAllowedOrigin(origin: String): Boolean = normalizeOrigin(origin) in allowed
 
+    /** True only for a syntactically valid public HTTPS origin accepted by prototype navigation. */
+    fun isPublicHttpsOrigin(origin: String): Boolean =
+        evaluate(origin, BrowserNavigationMode.PROTOTYPE_PUBLIC_HTTPS) is NavigationDecision.Allow
+
     fun origins(): Set<String> = allowed
 
     private fun normalizeOrigin(value: String): String? {
         val uri = try { URI(value.trim()) } catch (_: Exception) { return null }
         if (!uri.scheme.equals("https", ignoreCase = true) || uri.host.isNullOrBlank()) return null
         val host = try { IDN.toASCII(uri.host.lowercase()) } catch (_: Exception) { return null }
-        if (host == "localhost" || host.endsWith(".localhost") || isIpLiteral(host)) return null
+        if (
+            host == "localhost" || host.endsWith(".localhost") ||
+            host == "unoone.local-form" || host.endsWith(".local") ||
+            isIpLiteral(host)
+        ) return null
         val port = if (uri.port == -1 || uri.port == 443) -1 else uri.port
         return if (port == -1) "https://$host" else "https://$host:$port"
     }

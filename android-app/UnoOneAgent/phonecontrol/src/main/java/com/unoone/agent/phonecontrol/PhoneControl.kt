@@ -45,7 +45,14 @@ class PhoneControl(private val context: Context) {
 
     fun openApp(packageName: String): Result<Unit> {
         return try {
-            val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+            val candidatePackages = if (packageName == "com.whatsapp") {
+                listOf("com.whatsapp", "com.whatsapp.w4b")
+            } else {
+                listOf(packageName)
+            }
+            val intent = candidatePackages.firstNotNullOfOrNull {
+                context.packageManager.getLaunchIntentForPackage(it)
+            }
                 ?: return Result.Error("App not installed: $packageName")
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
             context.startActivity(intent)
@@ -81,17 +88,13 @@ class PhoneControl(private val context: Context) {
         }
     }
 
-    /**
-     * Opens the device's default calendar app via the standard [Intent.CATEGORY_APP_CALENDAR]
-     * launcher intent — NOT an OEM-specific package (e.g. com.google.android.calendar), so it
-     * works on any device with a calendar app installed. No permission required (it only launches).
-     */
+    /** Opens an installed calendar directly, falling back to the platform calendar category. */
     fun openCalendar(): Result<Unit> {
         return try {
-            val intent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_APP_CALENDAR)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
+            val intent = listOf("com.google.android.calendar", "com.xiaomi.calendar")
+                .firstNotNullOfOrNull { context.packageManager.getLaunchIntentForPackage(it) }
+                ?: Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_APP_CALENDAR) }
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
             context.startActivity(intent)
             Result.Success(Unit)
         } catch (e: Exception) {
@@ -131,7 +134,7 @@ class PhoneControl(private val context: Context) {
         val safeBody = InputSanitizer.sanitize(body)
         return try {
             val intent = Intent(Intent.ACTION_SENDTO).apply {
-                data = Uri.parse("mailto:")
+                data = Uri.Builder().scheme("mailto").opaquePart(to.trim()).build()
                 putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
                 putExtra(Intent.EXTRA_SUBJECT, safeSubject)
                 putExtra(Intent.EXTRA_TEXT, safeBody)
@@ -151,15 +154,19 @@ class PhoneControl(private val context: Context) {
         val safeMessage = InputSanitizer.sanitize(message)
 
         return try {
-            val uri = Uri.parse("https://api.whatsapp.com/send?phone=$safeNumber&text=${Uri.encode(safeMessage)}")
+            val uri = Uri.parse("https://wa.me/${safeNumber.removePrefix("+")}?text=${Uri.encode(safeMessage)}")
+            val whatsappPackage = listOf("com.whatsapp", "com.whatsapp.w4b").firstOrNull {
+                context.packageManager.getLaunchIntentForPackage(it) != null
+            } ?: return Result.Error("WhatsApp is not installed")
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                setPackage(whatsappPackage)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
             Result.Success(Unit)
         } catch (e: Exception) {
             Logger.e("Failed to send WhatsApp message", e)
-            Result.Error("Cannot send WhatsApp message", e)
+            Result.Error("WhatsApp is not installed or cannot open this draft", e)
         }
     }
 

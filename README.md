@@ -36,23 +36,27 @@ Development-only values must be visibly labelled and must fail closed in product
 - Room-based notes, memory, skills, logs and browser audit records.
 - Offline Sherpa-ONNX STT/TTS with explicit model health checks.
 - CameraX/ML Kit Blind Aid preserved independently of the Gemma model folder.
-- Camera access via the `open_camera` tool (system camera capture intent, CONFIRM + CAMERA permission) and CameraX Blind Aid (`detect_objects`, STRONG_CONFIRM + CAMERA + Accessibility); `deactivate_blind_aid` stops it. The CAMERA runtime permission is requested on first use.
+- Camera access via the `open_camera` tool (system camera capture intent, CONFIRM + CAMERA permission) and CameraX Blind Aid (`detect_objects`, STRONG_CONFIRM + CAMERA only); `deactivate_blind_aid` stops it. The CAMERA runtime permission is requested on first use.
 - On-device OCR via bundled ML Kit Latin text recognition (no model download, no network); used by the `ocr_screen` tool and the always-available OCR fallback of `describe_scene` (the multimodal-vision path is wired but inactive until a vision-capable Gemma artifact is provided).
 - Floating assistant and background voice service.
 - In-app **Security Level** chooser (Standard / Relaxed / Off) and **Voice Language** chooser (English, Hindi, Bengali, Tamil, Telugu, Kannada, Malayalam) — see below.
+- An always-visible, collapsible **Agent activity** panel on the landing screen shows the latest understanding, safety, execution and verification step and opens automatically while work is running.
+- Local **Skills** include reviewable built-ins and user-created routines. Repeated successful low-risk actions can create a disabled learned suggestion; UnoOne never auto-enables a suggestion or learns recipients, message bodies, email contents or form values.
 
 ### Secure Browser
 
-- Alibaba PageAgent headless core embedded in an origin-restricted Android WebView.
+- Alibaba PageAgent headless core embedded in a mode-aware Android WebView: exact allow-list in Standard, public HTTPS in explicit Prototype/Off.
+- Offline Page Agent home replaces the former blank start page with URL/form/voice steps, example tasks and text that Read Page can narrate.
 - PageAgent model calls are redirected to local Gemma; there is no cloud LLM endpoint.
-- Exact HTTPS origin allow-list.
-- AndroidX WebKit origin-scoped message bridge; no unrestricted `addJavascriptInterface` object.
+- Exact HTTPS origin allow-list in Standard; Prototype/Off can open arbitrary public HTTPS targets while HTTP, executable URLs, embedded credentials, localhost, `.local` and IP literals stay blocked.
+- AndroidX WebKit message bridge with main-frame, session-id, 256-bit nonce, declared/source/active-origin and navigation-scope validation; no unrestricted `addJavascriptInterface` object.
 - Native authorization before each DOM click, input, dropdown, upload or submission.
 - JavaScript execution tool disabled.
 - Payments blocked.
 - Passwords, OTPs, CAPTCHA and legal acceptance require manual takeover.
 - File transfer and final submission require explicit confirmation.
 - Browser audit logs store origin, action class and decision, not typed form values.
+- PageAgent tasks are single-flight, have a two-minute native timeout, and complete through an authenticated per-task bridge result so stale Promise callbacks cannot finish a newer run. Indexed DOM authorization uses exact indices, and the browser suite covers text/email/number/textarea, select, checkbox, radio, date, file upload, blocked payment and final submission paths.
 
 ### Offline language packs
 
@@ -208,7 +212,10 @@ documented under Security Level.
 | Payment, banking, card, UPI PIN | blocked |
 | Arbitrary JavaScript execution | unavailable |
 
-Only approved exact HTTPS origins may use the PageAgent bridge. Subdomains are not implicitly trusted.
+Standard admits only approved exact HTTPS origins and does not implicitly trust subdomains. Explicit
+Prototype/Off admits arbitrary public HTTPS origins, but every bridge request still requires the
+main frame, matching session id + 256-bit nonce, matching declared/source/active origin and a target
+that passes the HTTPS/host checks.
 
 See [SAFETY](docs/SAFETY.md) and [Architecture](docs/ARCHITECTURE.md).
 
@@ -224,15 +231,15 @@ Both are exposed in **Settings** (no rebuild needed; the change takes effect on 
 |---|---|---|---|---|
 | Standard (default) | on | enforced | required | real use / production posture |
 | Relaxed | off | enforced | auto-approved | everyday testing — benign commands like "add a calendar event" are no longer over-blocked by the judge, but payments / credentials / install stay blocked |
-| Off (prototype) | off | bypassed | auto-approved | local prototype — phone tools and PageAgent browser actions execute without safety prompts |
+| Off (prototype) | off | bypassed | auto-approved | local prototype — phone tools and PageAgent execute without action prompts and Secure Browser admits public HTTPS |
 
 **Off is intentionally unrestricted prototype mode, not a production-safe mode.** It removes the
 native PageAgent authorization blocks as well as the phone-agent judge/confirm gates, so the
 browser may submit forms, upload user-selected files, and interact with credential or payment
-fields. It must be selected explicitly and is shown with a persistent warning. Exact-origin bridge
-isolation remains enforced and arbitrary native JavaScript execution remains unavailable; these are
-process boundaries, not action-policy prompts. Standard is the default and the app never silently
-weakens safety on first launch.
+fields. It must be selected explicitly and is shown with a persistent warning. HTTP, executable URLs,
+embedded credentials, localhost, `.local`, IP literals, subframe bridge calls, wrong session/nonces
+and origin mismatches remain blocked, and arbitrary PageAgent JavaScript execution remains unavailable.
+Standard is the default and the app never silently weakens safety on first launch.
 
 ### Voice Language
 
@@ -514,7 +521,7 @@ The granular per-item ✅/☐ matrix with evidence paths is in [DEVICE_VERIFICAT
 - Gemma 4 E2B is device-qualified on the primary Xiaomi 14 (loads on CPU, 18/18 tool-match) but not yet on a secondary device; the full 50-task planning/PageAgent benchmark and 30-minute thermal run are not yet recorded.
 - Assamese and several other Indian languages are planned, not downloadable.
 - Baseline speech model presence does not imply production accuracy.
-- Secure Browser is restricted to approved domains and intentionally cannot automate payments, credentials, OTPs, CAPTCHA or legal acceptance.
+- Secure Browser defaults to approved domains and gated sensitive actions. Explicit Prototype/Off admits public HTTPS and bypasses UnoOne action gates, while Android/WebView transport, origin, file-picker and consent boundaries remain.
 - Optional web search or Android system speech fallbacks may use network-dependent services only when explicitly enabled; the core offline path must not silently invoke them.
 - The installer PWA must remain download-locked until a real production public key and signed catalogue are configured.
 

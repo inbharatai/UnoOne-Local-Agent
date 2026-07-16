@@ -86,7 +86,21 @@ object RuleBasedParser {
                 )
             }
 
-            // WhatsApp Integration
+            // Opening WhatsApp is a launch action, not a message draft. Keep this before the
+            // generic WhatsApp branch so "open WhatsApp" never becomes send_whatsapp with an empty
+            // phone number (which the executor correctly rejects).
+            lowered in setOf(
+                "open whatsapp", "open my whatsapp", "open whatsapp app",
+                "launch whatsapp", "start whatsapp", "show whatsapp"
+            ) -> ToolCall(
+                "open_app",
+                JsonObject(mapOf(
+                    "app_name" to JsonPrimitive("whatsapp"),
+                    "package_name" to JsonPrimitive("com.whatsapp")
+                ))
+            )
+
+            // WhatsApp Integration — prepare a draft only; the user presses Send in WhatsApp.
             lowered.contains("whatsapp") -> {
                 val number = Regex("(?:to|at) ([+]?[\\d]{8,15})").find(lowered)?.groupValues?.get(1) ?: ""
                 val message = lowered.substringAfter("whatsapp")
@@ -169,10 +183,16 @@ object RuleBasedParser {
                 lowered.startsWith("start ") || lowered.startsWith("use ")) &&
                 SECURE_ORIGIN_FRIENDLY.any { lowered.contains(it.first) }) ||
                 lowered.contains("secure browser") -> {
-                val origin = SECURE_ORIGIN_FRIENDLY.firstOrNull { lowered.contains(it.first) }?.second
+                val explicitTarget = Regex(
+                    "(?:https?://)?(?:www\\.)?[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)+(?:/[^\\s]*)?",
+                    RegexOption.IGNORE_CASE
+                ).find(lowered)?.value?.trimEnd('.', ',', ';')
+                val origin = explicitTarget
+                    ?: SECURE_ORIGIN_FRIENDLY.firstOrNull { lowered.contains(it.first) }?.second
                     ?: "https://unigurus.com"
                 val task = lowered
                     .replace(Regex("\\bsecure browser\\b", RegexOption.IGNORE_CASE), " ")
+                    .let { s -> if (explicitTarget == null) s else s.replace(explicitTarget, " ") }
                     .let { s -> SECURE_ORIGIN_FRIENDLY.fold(s) { acc, (name, _) -> acc.replace(name, " ") } }
                     .trim()
                     .let { Regex("^(open|launch|start|use|the)\\s*", RegexOption.IGNORE_CASE).replace(it, "") }

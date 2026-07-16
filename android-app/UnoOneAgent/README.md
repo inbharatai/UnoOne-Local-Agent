@@ -15,6 +15,8 @@ Android implementation for UnoOne V2.
 - Accessibility-based phone control.
 - CameraX/ML Kit Blind Aid.
 - Alibaba PageAgent Secure Browser using local Gemma planning.
+- Landing-screen Agent activity panel with a persistent latest-step summary, bounded expansion, and direct Skills access.
+- Safety-routed built-in/custom skills plus disabled, review-first suggestions learned only from repeated successful low-risk routines.
 - Command-path three-lane router (FAST_ACTION / CHAT / AGENT_ACTION) plus eyes-free assist
   (Listen wake mode, step narration, Blind Aid scene narration, voice-driven Secure Browser,
   TalkBack live regions), merged to `main`. Automated gate green; live hands-free/voice/visual
@@ -28,7 +30,7 @@ Android implementation for UnoOne V2.
   timeline, real document loaders (PDF/Excel/image/HTML/text via PdfRenderer+ML Kit OCR and JDK
   SAX, JVM-tested; legacy `.xls` honestly unsupported), and PageAgent offline form-fill at a
   synthetic local-form origin with all `BrowserSafetyPolicy` gates intact. Automated gate green
-  (lint, JVM unit, instrumented OK 42, assemble); live voice/camera/OCR/form-fill/TalkBack UX
+  (lint, JVM unit, instrumented OK 46, assemble); live voice/camera/OCR/form-fill/TalkBack UX
   stays device-gated (see `DEVICE_VERIFICATION.md` §11).
 - Alpha branch; physical-device qualification remains pending.
 
@@ -150,11 +152,16 @@ The Secure Browser uses an exclusive Gemma lease:
 4. block phone self-heal from allocating a second engine;
 5. restore the phone brain after the browser session closes.
 
-The browser bridge is exact-origin HTTPS only and PageAgent cannot execute arbitrary JavaScript.
+Standard uses exact approved HTTPS origins; explicit Prototype/Off admits arbitrary public HTTPS.
+The first screen is an offline Page Agent home rather than a blank remote page. It explains URL entry,
+offline HTML form loading, typed/voice tasks, Read Page and hands-free command examples.
+The bridge still validates the main frame, session id, nonce and exact source/declared/active origin,
+and PageAgent cannot execute arbitrary JavaScript.
 In the default **Standard** security level, payments are blocked and credentials, OTPs, CAPTCHA and
 legal acceptance require manual takeover. The explicit **Off — prototype (agent + browser)** setting
-removes those per-action browser blocks for local prototyping and displays a persistent warning;
-exact-origin bridge isolation remains enforced in every mode.
+removes those per-action browser blocks for local prototyping and displays a persistent warning.
+HTTP, executable URLs, embedded credentials, localhost, `.local`, IP literals and invalid bridge
+sessions remain blocked in every mode.
 
 ## Language packs
 

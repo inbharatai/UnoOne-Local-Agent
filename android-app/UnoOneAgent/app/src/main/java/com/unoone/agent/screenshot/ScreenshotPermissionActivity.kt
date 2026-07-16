@@ -23,13 +23,22 @@ class ScreenshotPermissionActivity : ComponentActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            ScreenshotCapture.mediaProjection = manager.getMediaProjection(result.resultCode, result.data!!)
-            Logger.i("ScreenshotPermissionActivity: MediaProjection granted")
-            ScreenshotCapture.permissionListener?.invoke(true)
+            try {
+                // Android 14+ requires the foreground service to be active before constructing the
+                // MediaProjection. The service owns the token and reports readiness to the listener.
+                MediaProjectionService.start(this, result.resultCode, result.data!!)
+                Logger.i("ScreenshotPermissionActivity: projection consent forwarded to foreground service")
+            } catch (t: Throwable) {
+                Logger.e("ScreenshotPermissionActivity: failed to start projection service", t)
+                val listener = ScreenshotCapture.permissionListener
+                ScreenshotCapture.permissionListener = null
+                listener?.invoke(false)
+            }
         } else {
             Logger.w("ScreenshotPermissionActivity: MediaProjection denied")
-            ScreenshotCapture.permissionListener?.invoke(false)
+            val listener = ScreenshotCapture.permissionListener
+            ScreenshotCapture.permissionListener = null
+            listener?.invoke(false)
         }
         finish()
     }

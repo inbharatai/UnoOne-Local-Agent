@@ -29,9 +29,10 @@ dependencies {
     // On-device OCR via bundled ML Kit text-recognition.
     implementation("com.google.mlkit:text-recognition:16.0.0")
 
-    // On-device object detection via ML Kit default + custom detector.
-    implementation("com.google.mlkit:object-detection:17.0.2")
-    implementation("com.google.mlkit:object-detection-custom:17.0.2")
+    // Labeled, fully offline COCO object detection for Blind Aid.
+    //noinspection GradleDependency -- Google publishes a legacy date-version that sorts above
+    // the current 0.10.x line; use the current Tasks release instead.
+    implementation("com.google.mediapipe:tasks-vision:0.10.35")
 
     // CameraX for real-time continuous blind aid analysis
     val cameraVersion = "1.3.3"

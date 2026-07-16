@@ -23,6 +23,7 @@
     <!-- Background Processing -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -31,7 +32,6 @@
     <!-- System Integration & Control -->
     <!-- READ_CONTACTS removed: declared but never used in code. Will trigger Play review. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
-    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <!-- QUERY_ALL_PACKAGES removed: PackageResolver uses a hardcoded 10-app map, no runtime
          package query needed. This permission is sensitive and causes Play review rejection.
          Use queryIntentActivities() with specific intents instead. -->
@@ -41,6 +41,29 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+
+    <!-- Android 11+ package visibility for the small, curated offline app launcher map. This is
+         intentionally exact-package visibility, not QUERY_ALL_PACKAGES. -->
+    <queries>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+        <package android:name="com.google.android.gm" />
+        <package android:name="com.google.android.calendar" />
+        <package android:name="com.xiaomi.calendar" />
+        <package android:name="com.android.chrome" />
+        <package android:name="com.android.camera" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.android.vending" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.APP_CALENDAR" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+    </queries>
 
     <application
         android:name=".UnoOneApplication"
@@ -70,6 +93,11 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:excludeFromRecents="true"
             android:noHistory="true" />
+
+        <service
+            android:name=".screenshot.MediaProjectionService"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
 
         <!-- Floating Agent Bubble — foreground service to prevent system kill -->
         <service

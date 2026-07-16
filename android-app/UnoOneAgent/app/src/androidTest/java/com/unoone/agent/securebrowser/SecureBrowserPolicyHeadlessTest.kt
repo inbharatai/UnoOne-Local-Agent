@@ -20,7 +20,7 @@ import org.junit.Test
  *    takeover, final submit / file → confirm, ordinary input → allow (device ART).
  *  - The PageAgent runtime asset is packaged and byte-authentic in the INSTALLED app: reads
  *    `page-agent/unoone-page-agent.js` from the app's AssetManager, asserts non-blank, exact size
- *    193488, exact SHA-256 d434912a…, and the `UnoOnePageAgentRuntime` entry symbol — i.e. the
+ *    exact checked-in size/hash and the `UnoOnePageAgentRuntime` entry symbol — i.e. the
  *    runtime the WebView would inject is present and intact (§4 "PageAgent runtime initializes from
  *    the packaged asset", asset-level).
  *
@@ -63,6 +63,20 @@ class SecureBrowserPolicyHeadlessTest {
     }
 
     @Test
+    fun prototypeNavigationAllowsPublicHttpsButRetainsTransportBoundaries() {
+        val policy = BrowserDomainPolicy(allowed)
+        val mode = BrowserNavigationMode.PROTOTYPE_PUBLIC_HTTPS
+
+        assertTrue(policy.evaluate("https://example.org/a-form", mode) is NavigationDecision.Allow)
+        assertTrue(policy.evaluate("https://forms.example.net/step/2", mode) is NavigationDecision.Allow)
+        assertTrue(policy.evaluate("http://example.org", mode) is NavigationDecision.Block)
+        assertTrue(policy.evaluate("javascript:alert(1)", mode) is NavigationDecision.Block)
+        assertTrue(policy.evaluate("https://user:pass@example.org", mode) is NavigationDecision.Block)
+        assertTrue(policy.evaluate("https://localhost", mode) is NavigationDecision.Block)
+        assertTrue(policy.evaluate("https://192.168.0.1", mode) is NavigationDecision.Block)
+    }
+
+    @Test
     fun safetyPolicyBlocksPaymentsAndTakesOverCredentialsOtpCaptchaLegal() {
         // payments → Block (never autonomous)
         val pay = BrowserSafetyPolicy.evaluate("make_payment", "pay now with card")
@@ -100,13 +114,13 @@ class SecureBrowserPolicyHeadlessTest {
         val bytes = context.assets.open("page-agent/unoone-page-agent.js").use { it.readBytes() }
 
         assertTrue("PageAgent runtime asset must be non-blank", bytes.isNotEmpty())
-        assertEquals("PageAgent asset exact size", 193472, bytes.size)
+        assertEquals("PageAgent asset exact size", 195069, bytes.size)
 
         val sha = MessageDigest.getInstance("SHA-256").digest(bytes)
             .joinToString("") { "%02x".format(it) }
         assertEquals(
             "PageAgent asset SHA-256 must match the laptop-built bundle (Phase 2)",
-            "54bc79fb8d57a73fac6c269c9b211b6c63ab801a634f324921024e65ce8d55b9",
+            "0a4e066da152be3eef0da48877272c46caca87442a9f86e2a1b0aeb0e290d4b1",
             sha
         )
 

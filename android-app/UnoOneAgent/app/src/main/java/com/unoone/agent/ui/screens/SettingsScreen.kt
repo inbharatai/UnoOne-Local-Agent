@@ -145,7 +145,7 @@ fun SettingsScreen(
                     SecurityLevel.RELAXED ->
                         "Safety judge off and confirmations auto-approved, so benign commands like \"add a calendar event\" are not over-blocked. Payments / credentials / install stay blocked."
                     SecurityLevel.OFF ->
-                        "Prototype mode: agent and PageAgent browser confirmations, takeover gates and blocks are bypassed. Browser pages may submit forms, files, credentials and payment actions. Exact-origin WebView isolation remains enforced. Switch back to Standard for real use."
+                        "Prototype mode: agent and PageAgent confirmations, takeover gates and blocks are bypassed. Secure Browser may automate any public HTTPS page and submit forms, files, credentials and payment actions. HTTP, executable URLs, embedded credentials, localhost and IP-literal targets remain blocked. Switch back to Standard for real use."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),

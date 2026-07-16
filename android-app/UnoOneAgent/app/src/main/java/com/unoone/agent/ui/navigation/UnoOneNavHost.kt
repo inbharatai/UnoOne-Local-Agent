@@ -106,11 +106,14 @@ fun UnoOneNavHost(
         ) {
             composable(Screen.Agent.route) {
                 val voiceLanguage by settingsViewModel.voiceLanguage.collectAsState()
+                val skills by skillsViewModel.skills.collectAsState()
                 AgentScreen(
                     viewModel = agentViewModel,
                     voiceLanguage = voiceLanguage,
                     onVoiceLanguageSelected = settingsViewModel::setVoiceLanguage,
-                    onNavigateToSecureBrowser = { navController.navigate(Screen.SecureBrowser.route) }
+                    onNavigateToSecureBrowser = { navController.navigate(Screen.SecureBrowser.route) },
+                    skillCount = skills.size,
+                    onNavigateToSkills = { navController.navigate(Screen.Skills.route) }
                 )
             }
             composable(Screen.Notes.route) { NotesScreen(viewModel = notesViewModel) }

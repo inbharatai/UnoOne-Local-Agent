@@ -26,11 +26,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,7 +45,16 @@ import com.unoone.agent.ui.viewmodel.SkillsViewModel
 @Composable
 fun SkillsScreen(viewModel: SkillsViewModel) {
     val skills by viewModel.skills.collectAsState()
+    val message by viewModel.message.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(message) {
+        message?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearMessage()
+        }
+    }
 
     // 5I: Replace nested Scaffold with Box + positioned FAB to avoid nested scrolling conflicts
     Box(modifier = Modifier.fillMaxSize()) {
@@ -55,6 +67,12 @@ fun SkillsScreen(viewModel: SkillsViewModel) {
                 text = "Skills",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Skills are local, reusable voice routines. Built-ins are ready now; learned suggestions stay off until you review and enable them. Every step still passes permissions, safety, confirmation, execution, and verification.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -84,6 +102,9 @@ fun SkillsScreen(viewModel: SkillsViewModel) {
                     items(skills, key = { it.id }) { skill ->
                         SkillCard(
                             skill = skill,
+                            steps = viewModel.stepsFor(skill),
+                            isBuiltIn = viewModel.isBuiltIn(skill),
+                            isSuggestion = viewModel.isSuggestion(skill),
                             onToggle = { viewModel.toggleSkill(skill) },
                             onDelete = { viewModel.deleteSkill(skill) }
                         )
@@ -102,13 +123,17 @@ fun SkillsScreen(viewModel: SkillsViewModel) {
         ) {
             Icon(Icons.Default.Add, contentDescription = "Create Skill")
         }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp)
+        )
     }
 
     if (showCreateDialog) {
         CreateSkillDialog(
             onDismiss = { showCreateDialog = false },
-            onCreate = { name, steps ->
-                viewModel.createSkill(name, listOf(name), steps)
+            onCreate = { name, triggers, steps ->
+                viewModel.createSkill(name, triggers, steps)
                 showCreateDialog = false
             }
         )
@@ -118,6 +143,9 @@ fun SkillsScreen(viewModel: SkillsViewModel) {
 @Composable
 private fun SkillCard(
     skill: SkillEntity,
+    steps: List<String>,
+    isBuiltIn: Boolean,
+    isSuggestion: Boolean,
     onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -140,26 +168,35 @@ private fun SkillCard(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
+                    text = when {
+                        isBuiltIn -> "BUILT-IN"
+                        isSuggestion -> "LEARNED SUGGESTION · REVIEW BEFORE ENABLING"
+                        else -> "CUSTOM"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isSuggestion) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
                     text = "Triggers: ${skill.triggerPhrases}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
-                val stepCount = try {
-                    skill.stepsJson.split(",").size
-                } catch (_: Exception) { 0 }
                 Text(
-                    text = "$stepCount step${if (stepCount != 1) "s" else ""}",
+                    text = steps.mapIndexed { index, step -> "${index + 1}. $step" }.joinToString("  ·  "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                 )
             }
             Switch(checked = skill.enabled, onCheckedChange = { onToggle() })
-            IconButton(onClick = onDelete) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error
-                )
+            if (!isBuiltIn) {
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }
@@ -168,9 +205,10 @@ private fun SkillCard(
 @Composable
 private fun CreateSkillDialog(
     onDismiss: () -> Unit,
-    onCreate: (name: String, steps: List<String>) -> Unit
+    onCreate: (name: String, triggers: List<String>, steps: List<String>) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
+    var triggersText by remember { mutableStateOf("") }
     var stepsText by remember { mutableStateOf("") }
 
     AlertDialog(
@@ -187,6 +225,15 @@ private fun CreateSkillDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
+                    value = triggersText,
+                    onValueChange = { triggersText = it },
+                    label = { Text("Voice triggers (one per line)") },
+                    placeholder = { Text("start my morning\nrun morning routine") },
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
                     value = stepsText,
                     onValueChange = { stepsText = it },
                     label = { Text("Steps (one per line)") },
@@ -200,12 +247,13 @@ private fun CreateSkillDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    if (name.isNotBlank() && stepsText.isNotBlank()) {
+                    if (name.isNotBlank() && triggersText.isNotBlank() && stepsText.isNotBlank()) {
+                        val triggers = triggersText.lines().map { it.trim() }.filter { it.isNotBlank() }
                         val steps = stepsText.lines().filter { it.isNotBlank() }
-                        onCreate(name.trim(), steps)
+                        onCreate(name.trim(), triggers, steps)
                     }
                 },
-                enabled = name.isNotBlank() && stepsText.isNotBlank()
+                enabled = name.isNotBlank() && triggersText.isNotBlank() && stepsText.isNotBlank()
             ) {
                 Text("Create")
             }

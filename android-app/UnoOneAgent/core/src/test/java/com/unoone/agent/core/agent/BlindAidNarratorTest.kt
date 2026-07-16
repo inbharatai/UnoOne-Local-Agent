@@ -51,7 +51,7 @@ class BlindAidNarratorTest {
     fun shouldNarrateFiresImmediatelyOnLabelChangeAfterChangeInterval() {
         assertTrue(
             BlindAidNarrator.shouldNarrateScene(
-                nowMs = 3_000, lastNarrationMs = 0, lastLabels = setOf("chair"),
+                nowMs = 10_500, lastNarrationMs = 0, lastLabels = setOf("chair"),
                 currentLabels = setOf("desk"), quietMode = false
             )
         )
@@ -59,10 +59,10 @@ class BlindAidNarratorTest {
 
     @Test
     fun shouldNarrateRespectsChangeIntervalToAbsorbFlicker() {
-        // Same "now", label set changed but only 1s since last narration (< 2s change interval).
+        // Label set changed but only 9s since last narration (< 10s change interval).
         assertFalse(
             BlindAidNarrator.shouldNarrateScene(
-                nowMs = 1_000, lastNarrationMs = 0, lastLabels = setOf("chair"),
+                nowMs = 9_000, lastNarrationMs = 0, lastLabels = setOf("chair"),
                 currentLabels = setOf("desk"), quietMode = false
             )
         )
@@ -70,16 +70,16 @@ class BlindAidNarratorTest {
 
     @Test
     fun shouldNarrateReFiresForSteadySceneAtSteadyInterval() {
-        // Unchanged scene: not at 5s (< 6s steady), yes at 6s+.
+        // Unchanged scene: do not repeat a cached observation every few seconds; remind at 30s.
         assertFalse(
             BlindAidNarrator.shouldNarrateScene(
-                nowMs = 5_000, lastNarrationMs = 0, lastLabels = setOf("chair"),
+                nowMs = 29_000, lastNarrationMs = 0, lastLabels = setOf("chair"),
                 currentLabels = setOf("chair"), quietMode = false
             )
         )
         assertTrue(
             BlindAidNarrator.shouldNarrateScene(
-                nowMs = 6_500, lastNarrationMs = 0, lastLabels = setOf("chair"),
+                nowMs = 30_500, lastNarrationMs = 0, lastLabels = setOf("chair"),
                 currentLabels = setOf("chair"), quietMode = false
             )
         )

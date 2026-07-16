@@ -15,6 +15,8 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -28,8 +30,10 @@ fun interface PageAgentRequestHandler {
 /**
  * Hardened WebView host for Alibaba PageAgent.
  *
- * The bridge is exposed only through AndroidX WebKit's origin-scoped web-message listener. Web pages
- * never receive a Java object and cannot invoke arbitrary native methods. The compiled PageAgent
+ * The bridge is exposed only through AndroidX WebKit's web-message listener. Standard registers
+ * exact origin rules; explicit Prototype/Off registers AndroidX's wildcard rule but still validates
+ * the main frame, session id, nonce, source/declared/active origins and public HTTPS before native
+ * handling. Web pages never receive a Java object and cannot invoke arbitrary native methods. The compiled PageAgent
  * bundle is loaded from the APK asset `page-agent/unoone-page-agent.js`; missing assets are surfaced
  * explicitly rather than silently falling back to unsafe generic WebView automation.
  */
@@ -37,6 +41,7 @@ class SecureWebViewController(
     context: Context,
     private val webView: WebView,
     private val domainPolicy: BrowserDomainPolicy,
+    private val navigationMode: BrowserNavigationMode = BrowserNavigationMode.APPROVED_ONLY,
     private val scope: CoroutineScope,
     private val requestHandler: PageAgentRequestHandler,
     private val onBlockedNavigation: (String) -> Unit = {},
@@ -60,6 +65,9 @@ class SecureWebViewController(
     private val runtimeBundle: String? by lazy { readRuntimeBundle() }
 
     @Volatile private var runtimeInjected = false
+    private val taskGate = PageAgentTaskGate()
+    @Volatile private var taskTimeoutJob: Job? = null
+    @Volatile private var pendingTaskCallback: ((Boolean, String) -> Unit)? = null
 
     /**
      * C9: the synthetic origin of a locally-loaded offline form, or null when browsing a remote
@@ -80,7 +88,7 @@ class SecureWebViewController(
     fun goBack() = webView.goBack()
 
     fun load(rawUrl: String): NavigationDecision {
-        val decision = domainPolicy.evaluate(rawUrl)
+        val decision = evaluateNavigation(rawUrl)
         when (decision) {
             is NavigationDecision.Allow -> webView.loadUrl(decision.normalizedUrl)
             is NavigationDecision.Block -> onBlockedNavigation(decision.reason)
@@ -123,25 +131,55 @@ class SecureWebViewController(
             callback(false, "Browser task is empty")
             return
         }
+        val taskId = taskGate.begin()
+        if (taskId == null) {
+            callback(false, "Another browser task is already running. Stop it before starting a new one.")
+            return
+        }
+        pendingTaskCallback = callback
+        taskTimeoutJob?.cancel()
+        taskTimeoutJob = scope.launch(Dispatchers.Main) {
+            delay(TASK_TIMEOUT_MS)
+            if (taskGate.tryComplete(taskId)) {
+                webView.evaluateJavascript("window.UnoOnePageAgentRuntime?.stop?.()", null)
+                val cb = pendingTaskCallback
+                pendingTaskCallback = null
+                cb?.invoke(false, "Browser task timed out after two minutes and was stopped.")
+            }
+        }
         val script = """
-            (async () => {
-              if (!window.UnoOnePageAgentRuntime) throw new Error('UnoOne PageAgent runtime unavailable');
-              return await window.UnoOnePageAgentRuntime.execute(${json.encodeToString(clean)});
+            (() => {
+              const runtime = window.UnoOnePageAgentRuntime;
+              if (!runtime) return false;
+              void runtime.execute(${json.encodeToString(clean)}, $taskId);
+              return true;
             })();
         """.trimIndent()
         webView.evaluateJavascript(script) { raw ->
-            val decoded = runCatching {
-                if (raw == null || raw == "null") "No result returned"
-                else json.decodeFromString<String>(raw)
-            }.getOrElse { raw ?: "Unknown JavaScript result" }
-            val failed = decoded.contains("Error", ignoreCase = true) || decoded.contains("exception", ignoreCase = true)
-            callback(!failed, decoded)
+            // Android WebView does not await a JavaScript Promise returned by evaluateJavascript.
+            // This callback only proves that execution was launched. The authenticated TASK_RESULT
+            // bridge message completes the task with its per-run id.
+            if (raw != "true" && taskGate.tryComplete(taskId)) {
+                taskTimeoutJob?.cancel()
+                taskTimeoutJob = null
+                pendingTaskCallback = null
+                callback(false, "PageAgent runtime could not start the browser task")
+            }
         }
     }
 
     fun stopTask() {
-        if (!runtimeInjected) return
-        webView.evaluateJavascript("window.UnoOnePageAgentRuntime?.stop?.()", null)
+        taskTimeoutJob?.cancel()
+        taskTimeoutJob = null
+        val cancelled = taskGate.cancelActive()
+        if (cancelled != null) {
+            val cb = pendingTaskCallback
+            pendingTaskCallback = null
+            cb?.invoke(false, "Browser task stopped.")
+        }
+        if (runtimeInjected) {
+            webView.evaluateJavascript("window.UnoOnePageAgentRuntime?.stop?.()", null)
+        }
     }
 
     /**
@@ -162,17 +200,7 @@ class SecureWebViewController(
             })();
         """.trimIndent()
         webView.evaluateJavascript(script) { raw ->
-            val out = runCatching {
-                if (raw == null || raw == "null" || raw == "\"\"") ""
-                else {
-                    val page = json.decodeFromString(PageText.serializer(), raw)
-                    buildString {
-                        if (page.title.isNotBlank()) { append(page.title); append(". ") }
-                        append(page.text)
-                    }.take(4_000)
-                }
-            }.getOrElse { "" }
-            callback(out)
+            callback(PageTextResultDecoder.decode(raw))
         }
     }
 
@@ -210,7 +238,7 @@ class SecureWebViewController(
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return true
-                return when (val decision = domainPolicy.evaluate(url)) {
+                return when (val decision = evaluateNavigation(url)) {
                     is NavigationDecision.Allow -> false
                     is NavigationDecision.Block -> {
                         onBlockedNavigation(decision.reason)
@@ -221,6 +249,8 @@ class SecureWebViewController(
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
+                // Navigation invalidates every indexed DOM reference from the previous page.
+                stopTask()
                 runtimeInjected = false
             }
 
@@ -239,7 +269,7 @@ class SecureWebViewController(
                     }
                     return
                 }
-                val decision = domainPolicy.evaluate(target)
+                val decision = evaluateNavigation(target)
                 if (decision is NavigationDecision.Allow && session.active) {
                     session.activeOrigin = decision.origin
                     injectRuntime(decision.origin)
@@ -270,7 +300,14 @@ class SecureWebViewController(
         WebViewCompat.addWebMessageListener(
             webView,
             BRIDGE_NAME,
-            session.allowedOrigins,
+            if (navigationMode == BrowserNavigationMode.PROTOTYPE_PUBLIC_HTTPS) {
+                // AndroidX documents "*" as the only all-origin listener rule. Requests remain
+                // untrusted: main-frame, session id, 256-bit nonce, exact source/declared origin,
+                // active page and public-HTTPS validation all run below before native handling.
+                setOf("*")
+            } else {
+                session.allowedOrigins
+            },
             object : WebViewCompat.WebMessageListener {
                 override fun onPostMessage(
                     view: WebView,
@@ -313,7 +350,12 @@ class SecureWebViewController(
                             )
                         }
                         val encoded = json.encodeToString(response)
-                        withContext(Dispatchers.Main) { replyProxy.postMessage(encoded) }
+                        withContext(Dispatchers.Main) {
+                            replyProxy.postMessage(encoded)
+                            if (request.type == PageAgentRequestType.TASK_RESULT && response.success) {
+                                completeTaskFromBridge(request.payload)
+                            }
+                        }
                     }
                 }
             }
@@ -339,8 +381,38 @@ class SecureWebViewController(
     /** Approved remote origins plus, when set, the synthetic local-form origin. */
     private fun isAdmittedOrigin(origin: String): Boolean {
         if (domainPolicy.isAllowedOrigin(origin)) return true
+        if (
+            navigationMode == BrowserNavigationMode.PROTOTYPE_PUBLIC_HTTPS &&
+            domainPolicy.isPublicHttpsOrigin(origin)
+        ) return true
         val local = localFormOrigin ?: return false
         return normalizeOrigin(origin) == normalizeOrigin(local)
+    }
+
+    private fun evaluateNavigation(url: String): NavigationDecision =
+        domainPolicy.evaluate(url, navigationMode)
+
+    private fun completeTaskFromBridge(payload: String) {
+        val decoded = PageAgentTaskResultDecoder.decode(payload)
+        val activeId = taskGate.activeId() ?: return
+        val result = decoded.getOrElse {
+            if (taskGate.tryComplete(activeId)) {
+                taskTimeoutJob?.cancel()
+                taskTimeoutJob = null
+                val callback = pendingTaskCallback
+                pendingTaskCallback = null
+                callback?.invoke(false, "Invalid PageAgent completion: ${it.message}")
+            }
+            return
+        }
+        // A stopped older run may finish after a new one starts. Never let that stale completion
+        // consume the new task's callback.
+        if (result.taskId != activeId || !taskGate.tryComplete(activeId)) return
+        taskTimeoutJob?.cancel()
+        taskTimeoutJob = null
+        val callback = pendingTaskCallback
+        pendingTaskCallback = null
+        callback?.invoke(result.success, result.data)
     }
 
     private fun injectRuntime(origin: String) {
@@ -397,6 +469,7 @@ class SecureWebViewController(
     private fun normalizeOrigin(value: String): String = value.trim().removeSuffix("/").lowercase()
 
     companion object {
+        private const val TASK_TIMEOUT_MS = 120_000L
         const val BRIDGE_NAME = "UnoOnePageAgent"
         const val RUNTIME_ASSET = "page-agent/unoone-page-agent.js"
         /** C9: synthetic https origin a local/offline HTML form is loaded at (via loadDataWithBaseURL). */
@@ -406,4 +479,25 @@ class SecureWebViewController(
 
 /** Title + visible body text extracted from the current page for the spoken "read this page" path. */
 @Serializable
-private data class PageText(val title: String = "", val text: String = "")
+internal data class PageText(val title: String = "", val text: String = "")
+
+/** Decodes WebView's JSON-encoded JavaScript string result without treating valid text as empty. */
+internal object PageTextResultDecoder {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    fun decode(raw: String?): String = runCatching {
+        if (raw == null || raw == "null" || raw == "\"\"") return ""
+        // The JS intentionally returns JSON.stringify(...). evaluateJavascript then JSON-encodes
+        // that returned string for ValueCallback, so unwrap the outer string before decoding the
+        // page object. Accept a direct object as a defensive fallback for WebView variants.
+        val payload = runCatching { json.decodeFromString<String>(raw) }.getOrDefault(raw)
+        val page = json.decodeFromString(PageText.serializer(), payload)
+        buildString {
+            if (page.title.isNotBlank()) {
+                append(page.title)
+                append(". ")
+            }
+            append(page.text)
+        }.take(4_000)
+    }.getOrDefault("")
+}

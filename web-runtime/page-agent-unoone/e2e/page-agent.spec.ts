@@ -13,6 +13,7 @@ interface Decision {
   nextGoal: string
   actionName: string
   actionArgumentsJson: string
+  targetPattern?: string
 }
 
 interface ModelInvocation {
@@ -50,8 +51,13 @@ async function installMockNativeBridge(
         if (argumentsValue.index !== autoIndex) return decision
 
         const invocation = JSON.parse(requestPayload) as ModelInvocation
-        const tagPattern = decision.actionName === 'input_text' ? '(?:input|textarea)' : '(?:button|input|a)'
-        const indexedElement = new RegExp(`\\[(\\d+)\\]<${tagPattern}\\b[^\\n>]*>`, 'i').exec(
+        const tagPattern = decision.actionName === 'select_dropdown_option'
+          ? 'select'
+          : decision.actionName === 'input_text' || decision.actionName === 'pick_date'
+            ? '(?:input|textarea)'
+            : '(?:button|input|a)'
+        const tailPattern = decision.targetPattern ? `[^\\n]*${decision.targetPattern}[^\\n]*` : '[^\\n>]*'
+        const indexedElement = new RegExp(`\\[(\\d+)\\]<${tagPattern}\\b${tailPattern}>`, 'i').exec(
           invocation.userPrompt
         )
         if (!indexedElement) {
@@ -249,4 +255,99 @@ test('authorized upload clicks the real file input and completes selection', asy
 
   expect(result.success).toBe(true)
   expect(await page.locator('#resume').evaluate((input: HTMLInputElement) => input.files?.[0]?.name)).toBe('resume.txt')
+})
+
+test('fills a complete form with select, checkbox, radio, date, and explicit submit', async ({ page }) => {
+  await installMockNativeBridge(
+    page,
+    [
+      {
+        evaluationPreviousGoal: 'No previous action', memory: 'Country is empty', nextGoal: 'Select India',
+        actionName: 'select_dropdown_option', actionArgumentsJson: JSON.stringify({ index: AUTO_INDEX, text: 'India' })
+      },
+      {
+        evaluationPreviousGoal: 'Country selected', memory: 'Terms are unchecked', nextGoal: 'Accept terms',
+        actionName: 'toggle_checkbox', targetPattern: 'checkbox', actionArgumentsJson: JSON.stringify({ index: AUTO_INDEX })
+      },
+      {
+        evaluationPreviousGoal: 'Terms accepted', memory: 'Plan is unselected', nextGoal: 'Choose Pro',
+        actionName: 'choose_radio', targetPattern: 'radio', actionArgumentsJson: JSON.stringify({ index: AUTO_INDEX })
+      },
+      {
+        evaluationPreviousGoal: 'Plan chosen', memory: 'Date is empty', nextGoal: 'Set the date',
+        actionName: 'pick_date', targetPattern: 'date', actionArgumentsJson: JSON.stringify({ index: AUTO_INDEX, date: '2026-08-01' })
+      },
+      {
+        evaluationPreviousGoal: 'All fields are ready', memory: 'Form is not submitted', nextGoal: 'Submit after confirmation',
+        actionName: 'submit_form', targetPattern: 'submit', actionArgumentsJson: JSON.stringify({ index: AUTO_INDEX, purpose: 'Submit profile' })
+      },
+      {
+        evaluationPreviousGoal: 'Form submitted', memory: 'Task complete', nextGoal: 'Finish',
+        actionName: 'done', actionArgumentsJson: JSON.stringify({ text: 'Profile form completed', success: true })
+      }
+    ],
+    () => ({ allowed: true, actionClass: 'FORM_ACTION', message: 'Allowed for test' })
+  )
+
+  await loadFixture(page, `<!doctype html><html><body><form id="profile" onsubmit="event.preventDefault();window.submitted=true">
+    <label>Country<select name="country"><option value="">Choose</option><option>India</option></select></label>
+    <label><input name="terms" type="checkbox">Accept terms</label>
+    <label><input name="plan" type="radio" value="pro">Pro</label>
+    <label>Date<input name="start" type="date"></label>
+    <button type="submit">Submit profile</button>
+  </form><script>window.submitted=false</script></body></html>`)
+
+  const result = await page.evaluate(() =>
+    window.UnoOnePageAgentRuntime!.execute('Complete the profile form and submit it')
+  )
+
+  expect(result.success).toBe(true)
+  await expect(page.locator('select[name=country]')).toHaveValue('India')
+  await expect(page.locator('input[name=terms]')).toBeChecked()
+  await expect(page.locator('input[name=plan]')).toBeChecked()
+  await expect(page.locator('input[name=start]')).toHaveValue('2026-08-01')
+  expect(await page.evaluate(() => (window as any).submitted)).toBe(true)
+})
+
+test('fills email, numeric, and multiline textarea controls', async ({ page }) => {
+  await installMockNativeBridge(
+    page,
+    [
+      {
+        evaluationPreviousGoal: 'No previous action', memory: 'Email is empty', nextGoal: 'Enter email',
+        actionName: 'input_text', targetPattern: 'email',
+        actionArgumentsJson: JSON.stringify({ index: AUTO_INDEX, text: 'reeturaj@example.com' })
+      },
+      {
+        evaluationPreviousGoal: 'Email entered', memory: 'Experience is empty', nextGoal: 'Enter experience',
+        actionName: 'input_text', targetPattern: 'experience',
+        actionArgumentsJson: JSON.stringify({ index: AUTO_INDEX, text: '7' })
+      },
+      {
+        evaluationPreviousGoal: 'Experience entered', memory: 'Message is empty', nextGoal: 'Enter message',
+        actionName: 'input_text', targetPattern: 'message',
+        actionArgumentsJson: JSON.stringify({ index: AUTO_INDEX, text: 'Please review my application.' })
+      },
+      {
+        evaluationPreviousGoal: 'All requested fields are filled', memory: 'Task complete', nextGoal: 'Finish',
+        actionName: 'done', actionArgumentsJson: JSON.stringify({ text: 'Contact details completed', success: true })
+      }
+    ],
+    () => ({ allowed: true, actionClass: 'ORDINARY_INPUT', message: 'Allowed' })
+  )
+
+  await loadFixture(page, `<!doctype html><html><body><form>
+    <label>Email<input name="email" type="email"></label>
+    <label>Years of experience<input name="experience" type="number" min="0" max="60"></label>
+    <label>Message<textarea name="message"></textarea></label>
+  </form></body></html>`)
+
+  const result = await page.evaluate(() =>
+    window.UnoOnePageAgentRuntime!.execute('Fill my email, experience, and message')
+  )
+
+  expect(result.success, result.data).toBe(true)
+  await expect(page.locator('input[name=email]')).toHaveValue('reeturaj@example.com')
+  await expect(page.locator('input[name=experience]')).toHaveValue('7')
+  await expect(page.locator('textarea[name=message]')).toHaveValue('Please review my application.')
 })

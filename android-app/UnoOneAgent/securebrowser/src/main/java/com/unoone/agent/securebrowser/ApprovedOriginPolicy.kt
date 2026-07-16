@@ -83,6 +83,25 @@ object ApprovedOriginPolicy {
      */
     fun originFor(raw: String): String? = resolveFriendly(raw)
 
+    /**
+     * Resolve a public HTTPS target for the explicit Prototype/Off mode. Friendly production names
+     * still work, while a full URL keeps its path/query so a spoken command can open a particular
+     * form rather than being collapsed to the site root. Cleartext, credentials, localhost,
+     * `.local`, the synthetic local-form host and IP literals remain rejected by BrowserDomainPolicy.
+     */
+    fun prototypeUrlFor(raw: String): String? {
+        val trimmed = raw.trim().removeSuffix("/")
+        if (trimmed.isBlank()) return null
+        FRIENDLY_NAMES[trimmed.lowercase()]?.let { return it }
+        val candidate = if (trimmed.contains("://")) trimmed else "https://$trimmed"
+        return when (
+            val decision = policy.evaluate(candidate, BrowserNavigationMode.PROTOTYPE_PUBLIC_HTTPS)
+        ) {
+            is NavigationDecision.Allow -> decision.normalizedUrl
+            is NavigationDecision.Block -> null
+        }
+    }
+
     /** True iff [raw] resolves to an approved origin. Convenience for safety/audit checks. */
     fun isApproved(raw: String): Boolean = originFor(raw) != null
 }
