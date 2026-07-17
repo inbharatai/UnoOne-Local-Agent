@@ -8,11 +8,13 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unoone.agent.AgentOrchestrator
+import com.unoone.agent.UnoOneApplication
 import com.unoone.agent.core.model.AgentStatus
 import com.unoone.agent.core.model.InputType
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.TimelineStep
 import com.unoone.agent.core.util.Logger
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.ui.components.ConfirmationLevel
 import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceRuntimeState
@@ -38,7 +40,8 @@ enum class OfflineMode { OFFLINE, LIMITED, NO_MODEL }
 
 class AgentViewModel(
     private val orchestrator: AgentOrchestrator,
-    voiceModule: VoiceModule
+    voiceModule: VoiceModule,
+    private val runtimeController: UnoOneApplication? = null
 ) : ViewModel() {
 
     companion object {
@@ -68,6 +71,9 @@ class AgentViewModel(
     val timelineSteps: StateFlow<List<TimelineStep>> = orchestrator.timelineSteps
     val isProcessing: StateFlow<Boolean> = orchestrator.isProcessing
     val isBlindAidActive: StateFlow<Boolean> = orchestrator.isBlindAidActive
+    private val fallbackEnabled = MutableStateFlow(AgentRuntimeGate.isEnabled())
+    val isAgentEnabled: StateFlow<Boolean> =
+        runtimeController?.isAgentEnabled ?: fallbackEnabled.asStateFlow()
 
     // Single shared VoiceModule instance — also used by the orchestrator for speak()
     val voiceModuleInstance: VoiceModule = voiceModule
@@ -139,9 +145,18 @@ class AgentViewModel(
         orchestrator.onDocumentFillRequest = { format ->
             _documentFillPickerRequest.value = format.lowercase()
         }
+
+        runtimeController?.let { app ->
+            viewModelScope.launch {
+                app.isAgentEnabled.collect { enabled ->
+                    if (!enabled) clearTransientStateForDisable()
+                }
+            }
+        }
     }
 
     fun startListening(context: Context) {
+        if (!AgentRuntimeGate.isEnabled()) return
         if (_isListening.value || isProcessing.value) return
         viewModelScope.launch {
             val result = voiceModuleInstance.startRecording(context, viewModelScope)
@@ -210,6 +225,7 @@ class AgentViewModel(
      * `read_screen` tool stays available for cross-app reading when Accessibility is enabled.
      */
     fun readScreenViaMediaProjection(context: Context) {
+        if (!AgentRuntimeGate.isEnabled()) return
         // One-shot consent listener. ScreenshotPermissionActivity writes the granted MediaProjection
         // into ScreenshotCapture.mediaProjection and fires this callback on grant/deny.
         com.unoone.agent.phonecontrol.ScreenshotCapture.permissionListener = { granted ->
@@ -272,6 +288,7 @@ class AgentViewModel(
     }
 
     fun inspectDocumentForFilling(uri: Uri, mimeType: String?) {
+        if (!AgentRuntimeGate.isEnabled()) return
         if (_isFillingDocument.value) return
         _isFillingDocument.value = true
         _documentFillMessage.value = "Inspecting document fields offline…"
@@ -300,6 +317,7 @@ class AgentViewModel(
     }
 
     fun fillDocumentCopy(outputUri: Uri, values: Map<String, String>) {
+        if (!AgentRuntimeGate.isEnabled()) return
         val source = documentFillSourceUri ?: return
         val template = _editableDocument.value ?: return
         if (_isFillingDocument.value) return
@@ -344,6 +362,7 @@ class AgentViewModel(
      * UTF-8), and stash it. Speaks a confirmation with the char count so a blind user knows it loaded.
      */
     fun loadDocument(context: Context, uri: Uri, mimeType: String?) {
+        if (!AgentRuntimeGate.isEnabled()) return
         if (_isLoadingDocument.value) return
         _isLoadingDocument.value = true
         viewModelScope.launch(Dispatchers.IO) {
@@ -386,6 +405,7 @@ class AgentViewModel(
      * defaults to "Summarize this document."
      */
     fun askAboutDocument(question: String) {
+        if (!AgentRuntimeGate.isEnabled()) return
         val doc = _loadedDocument.value ?: return
         val q = question.trim().ifBlank { "Summarize this document." }
         val prompt = buildString {
@@ -420,6 +440,7 @@ class AgentViewModel(
     }
 
     fun startHandsFreeSession(context: Context) {
+        if (!AgentRuntimeGate.isEnabled()) return
         if (_isHandsFree.value) return
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
@@ -476,7 +497,7 @@ class AgentViewModel(
         }
     }
 
-    fun stopHandsFreeSession() {
+    fun stopHandsFreeSession(announce: Boolean = true) {
         if (!_isHandsFree.value) return
         _isHandsFree.value = false
         sessionJob?.cancel()
@@ -486,7 +507,7 @@ class AgentViewModel(
         _amplitude.value = 0f
         // Release the mic back to the background KWS loop.
         VoiceService.foregroundSessionActive = false
-        viewModelScope.launch {
+        if (announce && AgentRuntimeGate.isEnabled()) viewModelScope.launch {
             // Offline synthesis is CPU-heavy; keep it off the UI thread and wait for playback so a
             // rapid start/stop cannot trigger a watchdog stall or overlap the next recording.
             runCatching { voiceModuleInstance.speakAwait("Stopped listening.") }
@@ -529,6 +550,7 @@ class AgentViewModel(
     }
 
     fun setBlindAidActive(active: Boolean) {
+        if (active && !AgentRuntimeGate.isEnabled()) return
         // Direct toggle when the user explicitly presses the UI button — no safety
         // confirmation needed because the user initiated this action deliberately.
         // Voice/text commands like "activate blind aid" still go through the full
@@ -537,6 +559,7 @@ class AgentViewModel(
     }
 
     fun onTextCommand(text: String) {
+        if (!AgentRuntimeGate.isEnabled()) return
         viewModelScope.launch {
             orchestrator.processCommand(text, InputType.TEXT)
         }
@@ -549,6 +572,7 @@ class AgentViewModel(
      * pipeline (permissions, risk, confirmation) still applies — this only sets the input type.
      */
     fun onVoiceCommand(text: String) {
+        if (!AgentRuntimeGate.isEnabled()) return
         viewModelScope.launch {
             orchestrator.processCommand(text, InputType.VOICE)
         }
@@ -565,6 +589,7 @@ class AgentViewModel(
     }
 
     fun onQuickAction(label: String) {
+        if (!AgentRuntimeGate.isEnabled()) return
         viewModelScope.launch {
             val command = when (label) {
                 "Create Note" -> "Create a note"
@@ -580,6 +605,31 @@ class AgentViewModel(
     fun respondToConfirmation(allowed: Boolean) {
         confirmationCallback.getAndSet(null)?.invoke(allowed)
         _pendingConfirmation.value = null
+    }
+
+    fun disableAgent() {
+        clearTransientStateForDisable()
+        runtimeController?.disableAgent()
+        fallbackEnabled.value = false
+    }
+
+    private fun clearTransientStateForDisable() {
+        stopHandsFreeSession(announce = false)
+        if (_isListening.value) {
+            runCatching { voiceModuleInstance.stopRecording() }
+            _isListening.value = false
+        }
+        _loadedDocument.value = null
+        documentFillSourceUri = null
+        _editableDocument.value = null
+        _documentFillPickerRequest.value = null
+        _documentFillMessage.value = ""
+        _lastReadScreenText.value = null
+    }
+
+    fun enableAgent() {
+        runtimeController?.enableAgent()
+        fallbackEnabled.value = true
     }
 
     override fun onCleared() {

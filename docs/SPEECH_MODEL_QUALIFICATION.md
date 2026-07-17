@@ -50,12 +50,11 @@ Every speech artifact must have:
 
 ### Shared Indic STT
 
-- Current runtime: Sherpa-ONNX Whisper Tiny INT8
-- Status: integrity-verified baseline artifact
-- Current configured languages: Hindi, Bengali, Tamil, Telugu, Kannada and Malayalam
-- Whisper's tokenizer includes Assamese (`as`), Marathi (`mr`), Punjabi (`pa`), Gujarati (`gu`) and Urdu (`ur`), but tokenizer support does not establish acceptable recognition quality.
-- Role: compact shared fallback and benchmark baseline
-- Limitation: the smallest Whisper model is unlikely to be the final high-accuracy choice for regional accents, code-mixing, Indian names and noisy field use.
+- Current runtime: Sherpa-ONNX Omnilingual ASR 300M CTC INT8 (2025-11-12 artifact)
+- Manifest id/path: `sherpa-asr-indic` / `speech/shared/sherpa-asr-indic`
+- Status: archive size and SHA-256 are pinned; the Android runtime loaded the model and the primary Xiaomi 14 passed native-script MMS-TTS→STT round trips for Hindi, Bengali, Tamil, Telugu, Kannada and Malayalam.
+- Role: shared offline recognizer for the six enabled Indian-language profiles.
+- Limitation: automatic script identification can be ambiguous for very short or code-mixed speech. The committed round-trip is a functional gate, not a WER/CER or field-noise benchmark.
 
 ### Current Indic TTS
 
@@ -117,14 +116,13 @@ Every speech artifact must have:
 
 ## Assamese plan
 
-Assamese must not be enabled merely because Whisper has an `as` language token.
+Assamese must not be enabled merely because the shared recognizer advertises broad language coverage.
 
 ### STT candidates
 
-1. Shared Whisper Tiny INT8 — compact fallback benchmark
-2. Whisper Base/Small quantized — quality/size comparison
-3. IndicConformer Assamese checkpoint — teacher/reference and export feasibility
-4. Distilled/streaming Assamese transducer — preferred long-term mobile target if measurements justify training
+1. Shared Omnilingual CTC — Android-compatible baseline candidate
+2. IndicConformer Assamese checkpoint — teacher/reference and export feasibility
+3. Distilled/streaming Assamese transducer — preferred long-term mobile target if measurements justify training
 
 ### TTS candidates
 

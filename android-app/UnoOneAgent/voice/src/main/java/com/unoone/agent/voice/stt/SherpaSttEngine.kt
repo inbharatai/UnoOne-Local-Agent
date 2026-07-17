@@ -3,6 +3,7 @@ package com.unoone.agent.voice.stt
 import android.content.Context
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OfflineModelConfig
+import com.k2fsa.sherpa.onnx.OfflineOmnilingualAsrCtcModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OfflineStream
@@ -25,24 +26,24 @@ import java.nio.ByteOrder
  *   English — the only public, ungated Indic-relevant transducer is the English streaming one, which
  *   the wake-word [KeywordSpotterEngine] also shares. Decoded in streaming mode (drained with
  *   `while (isReady) decode`) which behaves as single-shot for a whole captured clip.
- * - [WHISPER]: OpenAI whisper (encoder/decoder + tokens) via Sherpa's offline-Whisper path. Used for
- *   the Indian languages (Hindi/Bengali/Tamil/Telugu/Kannada/Malayalam) — no Sherpa transducer
- *   exists for those, so the multilingual `whisper-tiny` int8 covers all of them with its `language`
- *   field. Decoded one-shot (`acceptWaveform` → `decode` → `getResult`).
+ * - [WHISPER]: supported for compatibility and model evaluation.
+ * - [OMNILINGUAL]: Sherpa Omnilingual CTC (model + tokens). Used for the enabled Indian languages
+ *   after native-script TTS→STT qualification on the primary device.
  */
-enum class SttMode { TRANSDUCER, WHISPER }
+enum class SttMode { TRANSDUCER, WHISPER, OMNILINGUAL }
 
 /**
- * Production offline STT using Sherpa-ONNX. Supports two model families via [mode]:
+ * Production offline STT using Sherpa-ONNX. Supports three model families via [mode]:
  *
  * - **TRANSDUCER** (streaming zipformer, English): `OnlineRecognizer` fed a whole utterance and
  *   drained with `while (isReady) decode`. The only public, ungated English transducer on Hugging
  *   Face is the streaming zipformer int8 (`csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26`)
  *   — the offline repos are gated. The wake-word [KeywordSpotterEngine] uses the same Online family,
  *   so STT and KWS share one model install.
- * - **WHISPER** (multilingual tiny, Indian languages): `OfflineRecognizer` with
- *   `OfflineWhisperModelConfig(encoder, decoder, language, task = "transcribe")`. One-shot decode.
- *   The model tarball extracts to a `sherpa-onnx-whisper-tiny/` top directory inside [modelDir].
+ * - **WHISPER**: compatibility/evaluation path using `OfflineWhisperModelConfig`.
+ * - **OMNILINGUAL** (enabled Indian languages): `OfflineRecognizer` with
+ *   `OfflineOmnilingualAsrCtcModelConfig`. One-shot decode with automatic spoken-language/script
+ *   recognition; the selected UnoOne language still controls routing, replies, and TTS.
  *
  * Real direct-API implementation (no reflection). The native AAR is pulled in via the
  * `com.github.k2-fsa:sherpa-onnx` Maven coordinate declared in :voice/build.gradle.kts, or a
@@ -50,7 +51,7 @@ enum class SttMode { TRANSDUCER, WHISPER }
  * initialization degrades gracefully (returns Result.Error) so the caller can fall back to the
  * emergency Android SpeechRecognizer path — it never crashes.
  *
- * @param language the whisper `language` code (e.g. "hi", "ta"). Ignored in TRANSDUCER mode.
+ * @param language the Whisper language code. Ignored in TRANSDUCER and OMNILINGUAL modes.
  */
 class SherpaSttEngine(
     private val context: Context,
@@ -81,6 +82,7 @@ class SherpaSttEngine(
             when (mode) {
                 SttMode.TRANSDUCER -> initializeTransducer()
                 SttMode.WHISPER -> initializeWhisper()
+                SttMode.OMNILINGUAL -> initializeOmnilingual()
             }
         } catch (e: Throwable) {
             // UnsatisfiedLinkError (native .so missing/incompatible) is an Error, not Exception.
@@ -129,25 +131,21 @@ class SherpaSttEngine(
     }
 
     private fun initializeWhisper(): Result<Unit> {
-        // The whisper-tiny tarball extracts to a `sherpa-onnx-whisper-tiny/` top directory.
-        val whisperDir = whisperModelDir(modelDir)
-        Logger.i("SherpaSttEngine: Checking whisper files in $whisperDir (lang=$language)")
-        val encoder = File(whisperDir, "tiny-encoder.int8.onnx")
-        val decoder = File(whisperDir, "tiny-decoder.int8.onnx")
-        val tokens = File(whisperDir, "tiny-tokens.txt")
-        if (!encoder.exists() || !decoder.exists() || !tokens.exists()) {
+        val files = resolveWhisperFiles(modelDir)
+        Logger.i("SherpaSttEngine: Checking whisper files in $modelDir (lang=$language)")
+        if (files == null) {
             return Result.Error("Sherpa STT (whisper) model files missing. Please download the whisper model to: $modelDir")
         }
 
         val whisperConfig = OfflineWhisperModelConfig(
-            encoder.absolutePath,
-            decoder.absolutePath,
+            files.encoder.absolutePath,
+            files.decoder.absolutePath,
             language,
             "transcribe"
         )
         val modelConfig = OfflineModelConfig().apply {
             this.whisper = whisperConfig
-            this.tokens = tokens.absolutePath
+            this.tokens = files.tokens.absolutePath
             numThreads = 4
         }
         val config = OfflineRecognizerConfig().apply {
@@ -158,7 +156,31 @@ class SherpaSttEngine(
         // uses newFromFile(); a non-null AssetManager fatally aborts (k2-fsa/sherpa-onnx#2562).
         offlineRecognizer = OfflineRecognizer(null, config)
         initialized = true
-        Logger.i("SherpaSttEngine: Offline STT initialized (whisper-tiny, lang=$language, 4 threads)")
+        Logger.i("SherpaSttEngine: Offline STT initialized (${files.family}, lang=$language, 4 threads)")
+        return Result.Success(Unit)
+    }
+
+    private fun initializeOmnilingual(): Result<Unit> {
+        val files = resolveOmnilingualFiles(modelDir)
+        Logger.i("SherpaSttEngine: Checking omnilingual files in $modelDir")
+        if (files == null) {
+            return Result.Error(
+                "Sherpa STT (omnilingual) model files missing. Please download the omnilingual model to: $modelDir"
+            )
+        }
+
+        val modelConfig = OfflineModelConfig().apply {
+            omnilingual = OfflineOmnilingualAsrCtcModelConfig(files.model.absolutePath)
+            tokens = files.tokens.absolutePath
+            numThreads = 4
+        }
+        val config = OfflineRecognizerConfig().apply {
+            featConfig = FeatureConfig(16000, 80, 0f)
+            this.modelConfig = modelConfig
+        }
+        offlineRecognizer = OfflineRecognizer(null, config)
+        initialized = true
+        Logger.i("SherpaSttEngine: Offline STT initialized (omnilingual CTC, 4 threads)")
         return Result.Success(Unit)
     }
 
@@ -175,6 +197,7 @@ class SherpaSttEngine(
             when (mode) {
                 SttMode.TRANSDUCER -> transcribeTransducer(samples)
                 SttMode.WHISPER -> transcribeWhisper(samples)
+                SttMode.OMNILINGUAL -> transcribeOffline(samples, "omnilingual")
             }
         } catch (e: Throwable) {
             Logger.e("SherpaSttEngine: Transcription failed (${mode}): ${e::class.java.simpleName}: ${e.message}")
@@ -197,7 +220,7 @@ class SherpaSttEngine(
             }
             val text = rec.getResult(stream).text.trim()
             lastConfidence = if (text.isNotBlank()) 1f else 0f
-            Logger.i("SherpaSttEngine: Transcribed (transducer): '$text'")
+            Logger.i("SherpaSttEngine: Transcribed (transducer, chars=${text.length})")
             Result.Success(text)
         } finally {
             try { stream?.release() } catch (_: Throwable) {}
@@ -205,7 +228,11 @@ class SherpaSttEngine(
     }
 
     private fun transcribeWhisper(samples: FloatArray): Result<String> {
-        val rec = offlineRecognizer ?: return Result.Error("Sherpa STT (whisper) not initialized")
+        return transcribeOffline(samples, "whisper/$language")
+    }
+
+    private fun transcribeOffline(samples: FloatArray, family: String): Result<String> {
+        val rec = offlineRecognizer ?: return Result.Error("Sherpa STT (offline) not initialized")
         var stream: OfflineStream? = null
         return try {
             stream = rec.createStream()
@@ -215,7 +242,7 @@ class SherpaSttEngine(
             rec.decode(stream)
             val text = rec.getResult(stream).text.trim()
             lastConfidence = if (text.isNotBlank()) 1f else 0f
-            Logger.i("SherpaSttEngine: Transcribed (whisper/$language): '$text'")
+            Logger.i("SherpaSttEngine: Transcribed ($family, chars=${text.length})")
             Result.Success(text)
         } finally {
             try { stream?.release() } catch (_: Throwable) {}
@@ -245,6 +272,76 @@ class SherpaSttEngine(
     companion object {
         /** The top directory the whisper-tiny tarball extracts to inside a model folder. */
         const val WHISPER_TOP_DIR = "sherpa-onnx-whisper-tiny"
+
+        data class WhisperFiles(
+            val encoder: File,
+            val decoder: File,
+            val tokens: File,
+            val family: String
+        )
+
+        data class OmnilingualFiles(
+            val model: File,
+            val tokens: File
+        )
+
+        /**
+         * Resolves any official sherpa-onnx multilingual Whisper family (tiny/base/small/medium).
+         * Int8 files are preferred for a mobile CPU; all three files must share the same prefix.
+         */
+        fun resolveWhisperFiles(modelDir: String): WhisperFiles? {
+            val root = File(modelDir)
+            val directories = buildList {
+                add(root)
+                root.listFiles()
+                    ?.asSequence()
+                    ?.filter { it.isDirectory && it.name.startsWith("sherpa-onnx-whisper-") }
+                    ?.sortedBy { it.name }
+                    ?.forEach(::add)
+            }
+            for (directory in directories) {
+                val tokenFiles = directory.listFiles()
+                    ?.filter { it.isFile && it.name.endsWith("-tokens.txt") }
+                    ?.sortedBy { it.name }
+                    .orEmpty()
+                for (tokens in tokenFiles) {
+                    val prefix = tokens.name.removeSuffix("-tokens.txt")
+                    val encoder = listOf(
+                        File(directory, "$prefix-encoder.int8.onnx"),
+                        File(directory, "$prefix-encoder.onnx")
+                    ).firstOrNull(File::isFile)
+                    val decoder = listOf(
+                        File(directory, "$prefix-decoder.int8.onnx"),
+                        File(directory, "$prefix-decoder.onnx")
+                    ).firstOrNull(File::isFile)
+                    if (encoder != null && decoder != null) {
+                        return WhisperFiles(encoder, decoder, tokens, prefix)
+                    }
+                }
+            }
+            return null
+        }
+
+        /** Resolves the official Sherpa Omnilingual CTC archive or a flattened install. */
+        fun resolveOmnilingualFiles(modelDir: String): OmnilingualFiles? {
+            val root = File(modelDir)
+            val directories = buildList {
+                add(root)
+                root.listFiles()
+                    ?.asSequence()
+                    ?.filter { it.isDirectory && it.name.startsWith("sherpa-onnx-omnilingual-asr-") }
+                    ?.sortedBy { it.name }
+                    ?.forEach(::add)
+            }
+            return directories.firstNotNullOfOrNull { directory ->
+                val model = listOf(
+                    File(directory, "model.int8.onnx"),
+                    File(directory, "model.onnx")
+                ).firstOrNull(File::isFile)
+                val tokens = File(directory, "tokens.txt").takeIf(File::isFile)
+                if (model != null && tokens != null) OmnilingualFiles(model, tokens) else null
+            }
+        }
 
         /**
          * Resolves the whisper model directory (the tarball's extracted top dir) inside [modelDir].

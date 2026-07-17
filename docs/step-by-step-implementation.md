@@ -43,10 +43,10 @@
 
 ### Option B: Add Sherpa-ONNX models for real STT/TTS
 
-1. Download Sherpa-ONNX ASR model (e.g., Whisper tiny) from:
+1. Use the exact Sherpa-ONNX ASR artifacts pinned in `models_manifest.json`:
    `https://github.com/k2-fsa/sherpa-onnx/releases`
 2. Download Sherpa-ONNX TTS model (e.g., Coqui en-ljspeech VITS for English, or MMS VITS for Indic languages).
-3. Place them in the per-language model folders: `models/sherpa-asr-en/` (English ASR) or `models/sherpa-asr-whisper/` (Indic ASR), and `models/sherpa-tts-en/` (English TTS) or `models/sherpa-tts-hin/` (Indic TTS — also `-ben`/`-tam`/`-tel`/`-kan`/`-mal`). See `models_manifest.json` for the exact files each folder expects.
+3. Install them through the app into the normalized folders: `speech/shared/sherpa-asr-en/` (English ASR), `speech/shared/sherpa-asr-indic/` (shared Indic Omnilingual ASR), and `speech/languages/<locale>/tts/` (one TTS voice per language). See `models_manifest.json` for exact artifacts and hashes.
 4. Run `scripts/adb-push-models/push-models.bat`.
 5. Add Sherpa-ONNX AAR to `voice/build.gradle.kts`:
    ```kotlin

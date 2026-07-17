@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
 import com.unoone.agent.accessibilitycontrol.UnoOneAccessibilityService
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.di.DatabaseProvider
 import com.unoone.agent.ui.navigation.UnoOneNavHost
 import com.unoone.agent.ui.theme.UnoOneTheme
@@ -104,7 +105,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val agentViewModel = AgentViewModel(agentOrchestrator, voiceModule)
+        val agentViewModel = AgentViewModel(agentOrchestrator, voiceModule, app)
         val notesViewModel = NotesViewModel(database.noteDao())
         val logsViewModel = LogsViewModel(database.actionLogDao())
         val skillsViewModel = SkillsViewModel(agentOrchestrator.skillsModule)
@@ -218,14 +219,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (Settings.canDrawOverlays(this)) {
+        if (AgentRuntimeGate.isEnabled() && Settings.canDrawOverlays(this)) {
             startService(Intent(this, FloatingAgentService::class.java))
         }
-        (application as? UnoOneApplication)?.reloadLlmIfUnloaded()
+        if (AgentRuntimeGate.isEnabled()) {
+            (application as? UnoOneApplication)?.reloadLlmIfUnloaded()
+        }
         // Resume a command that was paused on a missing system permission once the user returns
         // from the settings/consent screen. No-op when nothing is pending; the orchestrator re-checks
         // access and re-surfaces only whatever is still missing.
-        agentOrchestrator.clearPendingAndReExecute()
+        if (AgentRuntimeGate.isEnabled()) agentOrchestrator.clearPendingAndReExecute()
     }
 }
 

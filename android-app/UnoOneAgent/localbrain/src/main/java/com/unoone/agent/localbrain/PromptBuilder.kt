@@ -52,7 +52,7 @@ object PromptBuilder {
         appendLine("Email and WhatsApp tools only prepare drafts that the user must review and send.")
         appendLine("If the request is genuinely ambiguous, use speak_response to ask one short clarifying question.")
         appendLine("Keep spoken responses concise because UnoOne reads them aloud.")
-        appendLine("Reply in the same language as the user's current command, unless the user explicitly asks for another language. Do not infer the response language only from the selected TTS voice or from previous turns.")
+        appendLine("Reply in the same language as the user language in current context. If it is absent, use the language of the current command. Do not infer language from the TTS voice or previous turns.")
         appendLine()
         appendLine("Available tools:")
         appendLine("- create_note(title, content, tags?)")
@@ -159,10 +159,26 @@ object PromptBuilder {
      * or earlier turns (the "English question → Hindi answer" regression). The command is sanitized
      * like any untrusted context.
      */
-    fun buildChatUserMessage(command: String): String = buildString {
-        appendLine("Reply in the same language as the user's current message, unless they explicitly ask for a different language. Do not infer the reply language from the voice/TTS setting or from earlier turns.")
+    fun buildChatUserMessage(command: String, responseLanguage: String = ""): String = buildString {
+        val languageName = responseLanguageName(responseLanguage)
+        if (languageName != null) {
+            appendLine("Reply in $languageName (${sanitizeContext(responseLanguage)}) because that is the user's active voice language. Use its native script unless the user explicitly requests transliteration or a different language.")
+        } else {
+            appendLine("Reply in the same language as the user's current message, unless they explicitly ask for a different language. Do not infer the reply language from the voice/TTS setting or from earlier turns.")
+        }
         append("User: ")
         append(sanitizeContext(command))
+    }
+
+    private fun responseLanguageName(code: String): String? = when (code.lowercase()) {
+        "en", "en-in" -> "English"
+        "hi", "hi-in" -> "Hindi"
+        "bn", "bn-in" -> "Bengali"
+        "ta", "ta-in" -> "Tamil"
+        "te", "te-in" -> "Telugu"
+        "kn", "kn-in" -> "Kannada"
+        "ml", "ml-in" -> "Malayalam"
+        else -> null
     }
 
     fun sanitizeContext(text: String): String {

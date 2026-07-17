@@ -13,7 +13,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Exclusive ownership of the Gemma 4 model while Alibaba PageAgent is active.
+ * Exclusive ownership of the Gemma 4 model while the local Page Agent is active.
  *
  * Mobile memory cannot safely hold separate phone-agent and browser-agent copies of Gemma. Acquiring
  * this lease closes the main UnoOne brain, loads the same qualified artifact into a browser-only

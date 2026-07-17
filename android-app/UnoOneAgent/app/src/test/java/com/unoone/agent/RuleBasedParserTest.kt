@@ -413,4 +413,38 @@ class RuleBasedParserTest {
         assertEquals("example.org/application", toolCall.args["origin"]?.jsonPrimitive?.content)
         assertEquals("fill the contact form", toolCall.args["task"]?.jsonPrimitive?.content)
     }
+
+    @Test
+    fun nativeBlindAidCommandsRouteDeterministicallyInEveryIndicLanguage() {
+        val starts = listOf(
+            "ब्लाइंड एड चालू करो", "ব্লাইন্ড এইড চালু করো", "பிளைண்ட் எய்டை தொடங்கு",
+            "బ్లైండ్ ఎయిడ్ ప్రారంభించు", "ಬ್ಲೈಂಡ್ ಏಡ್ ಪ್ರಾರಂಭಿಸು", "ബ്ലൈൻഡ് എയ്ഡ് തുടങ്ങുക"
+        )
+        val stops = listOf(
+            "ब्लाइंड एड बंद करो", "ব্লাইন্ড এইড বন্ধ করো", "பிளைண்ட் எய்டை நிறுத்து",
+            "బ్లైండ్ ఎయిడ్ ఆపు", "ಬ್ಲೈಂಡ್ ಏಡ್ ನಿಲ್ಲಿಸು", "ബ്ലൈൻഡ് എയ്ഡ് നിർത്തുക"
+        )
+        starts.forEach { assertEquals(it, "detect_objects", RuleBasedParser.parse(it)?.tool) }
+        stops.forEach { assertEquals(it, "deactivate_blind_aid", RuleBasedParser.parse(it)?.tool) }
+    }
+
+    @Test
+    fun nativeCoreHandsFreeCommandsCoverAllSupportedIndicLanguages() {
+        val cases = mapOf(
+            "स्क्रीन पढ़ो" to "read_screen",
+            "ক্যামেরা খোলো" to "open_camera",
+            "காலெண்டரை திற" to "open_calendar",
+            "వాట్సాప్ తెరువు" to "open_app",
+            "ಕ್ರೋಮ್ ತೆರೆಯಿರಿ" to "open_chrome",
+            "സുരക്ഷിത ബ്രൗസർ തുറക്കുക" to "secure_browser_task"
+        )
+        cases.forEach { (command, expectedTool) ->
+            assertEquals(command, expectedTool, RuleBasedParser.parse(command)?.tool)
+        }
+    }
+
+    @Test
+    fun commonStreamingAsrFinalConsonantLossStillOpensCalendar() {
+        assertEquals("open_calendar", RuleBasedParser.parse("open calenda")?.tool)
+    }
 }

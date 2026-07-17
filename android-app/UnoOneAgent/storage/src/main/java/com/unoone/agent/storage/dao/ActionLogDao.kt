@@ -20,6 +20,13 @@ interface ActionLogDao {
     @Query("DELETE FROM action_logs")
     suspend fun clearAll()
 
+    /** One-time privacy migration for releases that previously persisted raw prompts/tool values. */
+    @Query(
+        "UPDATE action_logs SET inputText = '[legacy private content removed]', " +
+            "toolArgsJson = '{\"legacyPrivateArgsRemoved\":true}'"
+    )
+    suspend fun redactLegacyPrivateContent()
+
     /** Synchronous query for export — not a Flow, returns List directly */
     @Query("SELECT * FROM action_logs ORDER BY createdAt DESC LIMIT :limit")
     fun getRecentSync(limit: Int = 1000): List<ActionLogEntity>

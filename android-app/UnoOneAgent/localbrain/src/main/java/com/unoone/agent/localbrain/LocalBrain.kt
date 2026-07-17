@@ -93,7 +93,8 @@ class LocalBrain {
      * question-shaped, action-free input ([com.unoone.agent.core.agent.IntentClassifier] CHAT);
      * on any Error/blank answer the caller falls back to the agent pipeline. Device-time verified.
      */
-    suspend fun chat(command: String): Result<String> = planner.chat(command)
+    suspend fun chat(command: String, responseLanguage: String = ""): Result<String> =
+        planner.chat(command, responseLanguage)
 
     /**
      * Multimodal vision description of a screenshot. INACTIVE with the shipped text-only models

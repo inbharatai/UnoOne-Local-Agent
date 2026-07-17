@@ -15,6 +15,21 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 
+data class SynthesizedSpeech(
+    val samples: FloatArray,
+    val sampleRate: Int
+) {
+    fun toPcm16(): ByteArray {
+        val pcm = ByteArray(samples.size * 2)
+        samples.forEachIndexed { index, sample ->
+            val value = (sample.coerceIn(-1f, 1f) * 32767f).toInt()
+            pcm[index * 2] = (value and 0xFF).toByte()
+            pcm[index * 2 + 1] = ((value ushr 8) and 0xFF).toByte()
+        }
+        return pcm
+    }
+}
+
 /**
  * Production offline TTS using Sherpa-ONNX VITS models: `model.onnx` + `tokens.txt`.
  *
@@ -96,22 +111,16 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
 
     @Synchronized
     private fun speakAtEpoch(text: String, requestEpoch: Long): Result<Unit> {
-        val engine = tts
-        if (!initialized || engine == null) {
-            return Result.Error("SherpaTtsEngine not initialized")
-        }
         if (text.isBlank()) return Result.Success(Unit)
         if (requestEpoch != speechEpoch.get()) return Result.Success(Unit)
 
-        return try {
-            // generate(text, speakerId=0, speed=1.0f)
-            val audio = engine.generate(text, 0, 1.0f)
-            if (audio.samples.isEmpty()) {
-                return Result.Error("TTS produced no audio")
-            }
+        return when (val synthesis = synthesizeInternal(text)) {
+            is Result.Error -> synthesis
+            is Result.Success -> {
+                val audio = synthesis.data
             // stop() may have run while the native, non-cancellable generate() call was active.
             if (requestEpoch != speechEpoch.get()) return Result.Success(Unit)
-            player.playPcm(audio.samples, audio.sampleRate)
+                player.playPcm(audio.samples, audio.sampleRate)
             if (requestEpoch != speechEpoch.get()) {
                 player.stop()
                 return Result.Success(Unit)
@@ -119,6 +128,30 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
             lastPlaybackDurationMs = audio.samples.size.toLong() * 1_000L / audio.sampleRate
             Logger.i("SherpaTtsEngine: Generated ${audio.samples.size} samples @ ${audio.sampleRate}Hz")
             Result.Success(Unit)
+            }
+        }
+    }
+
+    /**
+     * Generates offline speech without playing it. Used by the on-device speech round-trip gate and
+     * future save/share-audio features; it exercises the exact same native synthesis path as speak.
+     */
+    @Synchronized
+    fun synthesize(text: String): Result<SynthesizedSpeech> = synthesizeInternal(text)
+
+    private fun synthesizeInternal(text: String): Result<SynthesizedSpeech> {
+        val engine = tts
+        if (!initialized || engine == null) {
+            return Result.Error("SherpaTtsEngine not initialized")
+        }
+        if (text.isBlank()) return Result.Error("Text is empty")
+        return try {
+            val audio = engine.generate(text, 0, 1.0f)
+            if (audio.samples.isEmpty()) {
+                Result.Error("TTS produced no audio")
+            } else {
+                Result.Success(SynthesizedSpeech(audio.samples, audio.sampleRate))
+            }
         } catch (e: Throwable) {
             Logger.e("SherpaTtsEngine: Speech generation failed: ${e::class.java.simpleName}: ${e.message}")
             Result.Error("TTS synthesis failed: ${e.message}")

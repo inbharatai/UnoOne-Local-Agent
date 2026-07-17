@@ -45,6 +45,17 @@ class SpeechNoCloudFallbackTest {
     }
 
     @Test
+    fun sttOmnilingualRejectsMissingModelsNotCloudFallback() {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val r = SherpaSttEngine(ctx, missingDir, SttMode.OMNILINGUAL, "hi").initialize()
+        assertTrue("omnilingual STT must return Error (not Success/cloud fallback): $r", r is Result.Error)
+        assertTrue(
+            "error must cite missing model files: ${(r as Result.Error).message}",
+            (r as Result.Error).message!!.lowercase().contains("missing")
+        )
+    }
+
+    @Test
     fun ttsRejectsMissingModelsNotCloudFallback() {
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
         val r = SherpaTtsEngine(ctx, missingDir).initialize()

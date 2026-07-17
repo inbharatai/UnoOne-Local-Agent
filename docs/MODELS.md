@@ -32,7 +32,7 @@ and add them to the manifest entry. Do not call the LLM production-ready until t
 
 ### Sherpa voice models — verified
 
-English STT (`sherpa-asr-en`), the shared Indic whisper STT (`sherpa-asr-whisper`), English TTS
+English STT (`sherpa-asr-en`), the shared Indic Omnilingual STT (`sherpa-asr-indic`), English TTS
 (`sherpa-tts-en`), per-language Indic MMS TTS (`sherpa-tts-{hin,ben,tam,tel,kan,mal}`), and the
 wake-word (`vad`) all carry stream-computed sha256 + sizeBytes and are integrity-checked on
 install. `punctuation` carries URL only.
@@ -44,7 +44,7 @@ install. `punctuation` carries URL only.
 | `gemma-3n-e4b.litertlm` | llm | any (GPU→CPU) | ~2–5 GB | **none (manual import)** | planning (multilingual) — **default brain** |
 | `gemma-4-e2b-it.litertlm` | llm | any (GPU→CPU) | ~2.58 GB | **none (manual import)** | planning (128K ctx) — **Experimental, not device-verified** |
 | `sherpa-asr-en` | asr | cpu | ~70 MB | ✅ | English |
-| `sherpa-asr-whisper` | asr | cpu | ~111 MB (.tar.bz2) | ✅ | hi/bn/ta/te/kn/ml (shared, runtime language select) |
+| `sherpa-asr-indic` | asr | cpu | ~279 MB archive / ~348 MB extracted | ✅ | hi/bn/ta/te/kn/ml (shared Omnilingual CTC) |
 | `sherpa-tts-en` | tts | cpu | ~110 MB | ✅ | English (Coqui VITS + espeak-ng-data) |
 | `sherpa-tts-<lang>` | tts | cpu | ~109 MB each | ✅ | hi/bn/ta/te/kn/ml (MMS VITS) |
 | `vad` | vad | cpu | ~70 MB | ✅ | English wake word |

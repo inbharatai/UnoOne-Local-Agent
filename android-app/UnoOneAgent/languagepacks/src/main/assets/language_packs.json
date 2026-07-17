@@ -36,11 +36,11 @@
       "nativeName": "हिन्दी",
       "version": "1.0.0-baseline",
       "status": "baseline",
-      "requiredModelIds": ["sherpa-asr-whisper", "sherpa-tts-hin"],
+      "requiredModelIds": ["sherpa-asr-indic", "sherpa-tts-hin"],
       "optionalModelIds": ["vad"],
       "downloadable": true,
       "minimumRamMb": 3072,
-      "notes": "Whisper Tiny and MMS VITS integrity-verified baseline; device accuracy remains unqualified."
+      "notes": "Omnilingual CTC and MMS VITS passed native-script offline round-trip tests on the primary device; broader accent and noise qualification remains."
     },
     {
       "id": "bn-IN-standard",
@@ -49,11 +49,11 @@
       "nativeName": "বাংলা",
       "version": "1.0.0-baseline",
       "status": "baseline",
-      "requiredModelIds": ["sherpa-asr-whisper", "sherpa-tts-ben"],
+      "requiredModelIds": ["sherpa-asr-indic", "sherpa-tts-ben"],
       "optionalModelIds": ["vad"],
       "downloadable": true,
       "minimumRamMb": 3072,
-      "notes": "Whisper Tiny and MMS VITS integrity-verified baseline; device accuracy remains unqualified."
+      "notes": "Omnilingual CTC and MMS VITS passed native-script offline round-trip tests on the primary device; broader accent and noise qualification remains."
     },
     {
       "id": "mr-IN-standard",
@@ -106,11 +106,11 @@
       "nativeName": "தமிழ்",
       "version": "1.0.0-baseline",
       "status": "baseline",
-      "requiredModelIds": ["sherpa-asr-whisper", "sherpa-tts-tam"],
+      "requiredModelIds": ["sherpa-asr-indic", "sherpa-tts-tam"],
       "optionalModelIds": ["vad"],
       "downloadable": true,
       "minimumRamMb": 3072,
-      "notes": "Whisper Tiny and MMS VITS integrity-verified baseline; device accuracy remains unqualified."
+      "notes": "Omnilingual CTC and MMS VITS passed native-script offline round-trip tests on the primary device; broader accent and noise qualification remains."
     },
     {
       "id": "te-IN-standard",
@@ -119,11 +119,11 @@
       "nativeName": "తెలుగు",
       "version": "1.0.0-baseline",
       "status": "baseline",
-      "requiredModelIds": ["sherpa-asr-whisper", "sherpa-tts-tel"],
+      "requiredModelIds": ["sherpa-asr-indic", "sherpa-tts-tel"],
       "optionalModelIds": ["vad"],
       "downloadable": true,
       "minimumRamMb": 3072,
-      "notes": "Whisper Tiny and MMS VITS integrity-verified baseline; device accuracy remains unqualified."
+      "notes": "Omnilingual CTC and MMS VITS passed native-script offline round-trip tests on the primary device; broader accent and noise qualification remains."
     },
     {
       "id": "kn-IN-standard",
@@ -132,11 +132,11 @@
       "nativeName": "ಕನ್ನಡ",
       "version": "1.0.0-baseline",
       "status": "baseline",
-      "requiredModelIds": ["sherpa-asr-whisper", "sherpa-tts-kan"],
+      "requiredModelIds": ["sherpa-asr-indic", "sherpa-tts-kan"],
       "optionalModelIds": ["vad"],
       "downloadable": true,
       "minimumRamMb": 3072,
-      "notes": "Whisper Tiny and MMS VITS integrity-verified baseline; device accuracy remains unqualified."
+      "notes": "Omnilingual CTC and MMS VITS passed native-script offline round-trip tests on the primary device; broader accent and noise qualification remains."
     },
     {
       "id": "ml-IN-standard",
@@ -145,11 +145,11 @@
       "nativeName": "മലയാളം",
       "version": "1.0.0-baseline",
       "status": "baseline",
-      "requiredModelIds": ["sherpa-asr-whisper", "sherpa-tts-mal"],
+      "requiredModelIds": ["sherpa-asr-indic", "sherpa-tts-mal"],
       "optionalModelIds": ["vad"],
       "downloadable": true,
       "minimumRamMb": 3072,
-      "notes": "Whisper Tiny and MMS VITS integrity-verified baseline; device accuracy remains unqualified."
+      "notes": "Omnilingual CTC and MMS VITS passed native-script offline round-trip tests on the primary device; broader accent and noise qualification remains."
     },
     {
       "id": "ur-IN-standard",

@@ -40,11 +40,11 @@ Before any model is downloaded or distributed with UnoOne, the following must be
 
 | Field | Value |
 |-------|-------|
-| **Model** | Whisper tiny / small OR Zipformer model from sherpa-onnx releases |
+| **Model** | English Zipformer transducer and Omnilingual ASR 300M CTC INT8 |
 | **Source** | https://github.com/k2-fsa/sherpa-onnx |
 | **License** | Apache-2.0 |
-| **File Size** | ~150 MB (small) or ~39 MB (tiny) |
-| **RAM** | ~500 MB |
+| **File Size** | ~70 MB English; 292,571,207-byte Omnilingual archive |
+| **RAM** | Device qualification required; Indic pack declares a 2 GB minimum |
 | **Android Path** | sherpa-onnx Android AAR / JNI |
 | **Verified Example** | sherpa-onnx Android examples |
 | **Status** | APPROVED |
@@ -53,8 +53,9 @@ Before any model is downloaded or distributed with UnoOne, the following must be
 > Speech recognition powered by sherpa-onnx (Apache-2.0).
 
 **Next Steps:**
-- [ ] Integrate sherpa-onnx AAR into `voice` module.
-- [ ] Verify Hindi + English transcription.
+- [x] Integrate sherpa-onnx AAR into `voice` module.
+- [x] Run native-script functional speech gates on the primary device.
+- [ ] Complete controlled WER/CER, noise, accent and second-device qualification.
 
 ---
 

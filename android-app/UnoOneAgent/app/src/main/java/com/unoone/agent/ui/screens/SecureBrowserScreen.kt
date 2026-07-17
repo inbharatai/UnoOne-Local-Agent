@@ -54,7 +54,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** UnoOne-controlled WebView running Alibaba PageAgent with local Gemma 4 planning. */
+/** UnoOne-controlled WebView running the local Page Agent with Gemma 4 planning. */
 @Composable
 fun SecureBrowserScreen(
     viewModel: SecureBrowserViewModel,
@@ -124,7 +124,7 @@ fun SecureBrowserScreen(
             Column(modifier = Modifier.weight(1f)) {
                 Text("UnoOne Secure Browser", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
-                    "Gemma 4 + Alibaba PageAgent · local planning",
+                    "Gemma 4 + Page Agent · local planning",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                 )

@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.unoone.agent.core.util.Logger
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 
 class UnoOneAccessibilityService : AccessibilityService() {
 
@@ -16,6 +17,7 @@ class UnoOneAccessibilityService : AccessibilityService() {
         private set
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        if (!AgentRuntimeGate.isEnabled()) return
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             currentPackage = event.packageName?.toString()
             currentActivity = event.className?.toString()
@@ -194,7 +196,8 @@ class UnoOneAccessibilityService : AccessibilityService() {
     companion object {
         @Volatile
         private var instance: UnoOneAccessibilityService? = null
-        fun getInstance(): UnoOneAccessibilityService? = instance
-        fun isEnabled(): Boolean = instance != null
+        fun getInstance(): UnoOneAccessibilityService? =
+            instance?.takeIf { AgentRuntimeGate.isEnabled() }
+        fun isEnabled(): Boolean = instance != null && AgentRuntimeGate.isEnabled()
     }
 }

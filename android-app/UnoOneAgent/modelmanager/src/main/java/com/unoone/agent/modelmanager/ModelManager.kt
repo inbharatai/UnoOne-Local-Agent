@@ -219,6 +219,76 @@ class ModelManager(
         (manifestFolders + RUNTIME_DIRECTORIES).distinct().forEach { File(base, it).mkdirs() }
     }
 
+    /**
+     * Materializes the optional wake/VAD folder from the verified English ASR files when the
+     * manifest declares both models as the exact same artifacts. This avoids a redundant network
+     * download while still leaving the dedicated model folder independently verifiable.
+     */
+    suspend fun repairVadFromVerifiedEnglishAsr(): Boolean = withContext(Dispatchers.IO) {
+        val source = findModel("sherpa-asr-en") ?: return@withContext false
+        val target = findModel("vad") ?: return@withContext false
+        val sourceFiles = source.files.filterNot { it.archive }.associateBy { it.name }
+        val targetFiles = target.files.filterNot { it.archive }.associateBy { it.name }
+        val manifestsIdentical =
+            sourceFiles.keys == targetFiles.keys &&
+                sourceFiles.all { (name, file) ->
+                    val other = targetFiles[name]
+                    other != null &&
+                        file.sizeBytes == other.sizeBytes &&
+                        file.sha256.equals(other.sha256, ignoreCase = true)
+                }
+        if (!manifestsIdentical) {
+            Logger.w("ModelManager: refusing VAD alias repair because manifests differ")
+            return@withContext false
+        }
+        if (modelHealth(target.id).verified) return@withContext true
+        if (!modelHealth(source.id).verified) {
+            Logger.w("ModelManager: cannot repair VAD; English ASR source is not verified")
+            return@withContext false
+        }
+
+        val base = File(appPrivateModelPath)
+        val sourceFolder = File(base, source.folder)
+        val targetFolder = File(base, target.folder)
+        if (!targetFolder.exists() && !targetFolder.mkdirs()) return@withContext false
+        for ((name, descriptor) in targetFiles) {
+            val sourceFile = File(sourceFolder, name)
+            val destination = File(targetFolder, name)
+            if (destination.exists() &&
+                destination.length() == descriptor.sizeBytes &&
+                computeSha256(destination.absolutePath) == descriptor.sha256.lowercase()
+            ) continue
+
+            val part = File(targetFolder, "$name.part")
+            runCatching { part.delete() }
+            try {
+                sourceFile.copyTo(part, overwrite = true)
+                val verified =
+                    part.length() == descriptor.sizeBytes &&
+                        computeSha256(part.absolutePath) == descriptor.sha256.lowercase()
+                if (!verified) {
+                    part.delete()
+                    return@withContext false
+                }
+                if (destination.exists() && !destination.delete()) {
+                    part.delete()
+                    return@withContext false
+                }
+                if (!part.renameTo(destination)) {
+                    part.delete()
+                    return@withContext false
+                }
+            } catch (e: Exception) {
+                part.delete()
+                Logger.e("ModelManager: VAD alias repair failed for $name", e)
+                return@withContext false
+            }
+        }
+        val repaired = modelHealth(target.id).verified
+        if (repaired) Logger.i("ModelManager: installed verified VAD wake pack from English ASR")
+        repaired
+    }
+
     fun getLlmModelPath(): String? = getLlmModelPath(BrainModelRegistry.defaultProfile)
 
     fun getLlmModelPath(spec: BrainModelSpec): String? {

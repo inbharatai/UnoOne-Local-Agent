@@ -1,5 +1,6 @@
 package com.unoone.agent.securebrowser
 
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -7,10 +8,41 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.After
 
 class SecureBrowserNativeHandlerTest {
 
     private val json = Json { encodeDefaults = true }
+
+    @After
+    fun restoreRuntime() {
+        AgentRuntimeGate.setEnabled(true)
+    }
+
+    @Test
+    fun `master disable rejects model and action bridge calls without invoking dependencies`() = runBlocking {
+        AgentRuntimeGate.setEnabled(false)
+        var modelCalls = 0
+        val interaction = FakeInteraction(confirmResult = true)
+        val handler = SecureBrowserNativeHandler(
+            BrowserModelPort {
+                modelCalls++
+                Result.failure(Exception("must not run"))
+            },
+            interaction
+        )
+        val response = handler.handle(
+            request(
+                PageAgentRequestType.MODEL_INVOKE,
+                json.encodeToString(PageAgentModelInvocation("system", "user", "[]"))
+            )
+        )
+
+        assertFalse(response.success)
+        assertEquals("AGENT_DISABLED", response.errorCode)
+        assertEquals(0, modelCalls)
+        assertEquals(0, interaction.confirmCalls)
+    }
 
     private fun request(type: PageAgentRequestType, payload: String) = PageAgentBridgeRequest(
         requestId = "req-1",

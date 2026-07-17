@@ -6,6 +6,7 @@ import com.unoone.agent.agentrouter.AgentRouter
 import com.unoone.agent.core.interfaces.IActionExecutor
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.core.safety.ToolPermissionRegistry
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.core.util.TextSummarizer
@@ -47,6 +48,9 @@ class ActionExecutor(
     private val screenshotCapture = ScreenshotCapture(context)
 
     override suspend fun executeTool(toolCall: ToolCall): Result<String> {
+        if (!AgentRuntimeGate.isEnabled()) {
+            return Result.Error("UnoOne is disabled. Enable it before running an action.")
+        }
         return try {
             when (toolCall.tool) {
                 "create_note" -> {
@@ -227,7 +231,7 @@ class ActionExecutor(
                     }
                 }
                 "secure_browser_task" -> {
-                    // Eyes-free (WS4): drive the Secure Browser (Alibaba PageAgent on a hardened
+                    // Eyes-free (WS4): drive the Secure Browser (local Page Agent on a hardened
                     // WebView) to an APPROVED origin and run a task. The origin is resolved + approved
                     // gated BEFORE the session opens, so the model cannot drive an arbitrary site.
                     // In-browser sensitivity (passwords/OTP/payments/legal) stays gated by the

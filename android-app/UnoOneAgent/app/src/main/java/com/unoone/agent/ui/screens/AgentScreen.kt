@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -67,6 +68,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -133,6 +135,8 @@ fun AgentScreen(
     val isListening by viewModel.isListening.collectAsState()
     val isHandsFree by viewModel.isHandsFree.collectAsState()
     val offlineMode by viewModel.offlineMode.collectAsState()
+    val isAgentEnabled by viewModel.isAgentEnabled.collectAsState()
+    var showDisabledDialog by remember { mutableStateOf(false) }
     // C8: loaded document + loading flag.
     val loadedDocument by viewModel.loadedDocument.collectAsState()
     val isLoadingDocument by viewModel.isLoadingDocument.collectAsState()
@@ -227,6 +231,23 @@ fun AgentScreen(
         )
     }
 
+    if (showDisabledDialog) {
+        AlertDialog(
+            onDismissRequest = { showDisabledDialog = false },
+            title = { Text("UnoOne is disabled") },
+            text = { Text("Enable UnoOne before listening, observing, processing, speaking or automating.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.enableAgent()
+                    showDisabledDialog = false
+                }) { Text("Enable") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisabledDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -246,13 +267,50 @@ fun AgentScreen(
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
         )
 
+        if (!isAgentEnabled) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+                    .semantics {
+                        liveRegion = LiveRegionMode.Assertive
+                        contentDescription = "UnoOne is disabled. All agent activity is inactive."
+                    }
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        "UnoOne is disabled",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Text(
+                        "Mic · Speech · TTS · Model · Accessibility · Browser · Network: inactive",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Button(
+                        onClick = viewModel::enableAgent,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                    ) { Text("Enable UnoOne") }
+                }
+            }
+        }
+
         // Offline badge — dynamic: OFFLINE (green) / LIMITED (amber) / NO MODEL (red)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val (badgeText, badgeColor) = when (offlineMode) {
+            val (badgeText, badgeColor) = if (!isAgentEnabled) {
+                "APP OFF" to FailedRed
+            } else when (offlineMode) {
                 com.unoone.agent.ui.viewmodel.OfflineMode.OFFLINE -> "OFFLINE" to DoneGreen
                 com.unoone.agent.ui.viewmodel.OfflineMode.LIMITED -> "LIMITED" to SafetyOrange
                 com.unoone.agent.ui.viewmodel.OfflineMode.NO_MODEL -> "NO MODEL" to FailedRed
@@ -365,6 +423,9 @@ fun AgentScreen(
             isHandsFree = isHandsFree,
             isBlindAidActive = isBlindAidActive,
             onListen = {
+                if (!isAgentEnabled) {
+                    showDisabledDialog = true
+                } else {
                 // C3/C5: the big LISTEN button is the always-listening hands-free session toggle.
                 // During an in-flight command it instead CANCELS (never bricked — a blind user can
                 // always interrupt). One tap starts the session: speak → voice reply → re-listen
@@ -380,9 +441,12 @@ fun AgentScreen(
                 } else {
                     micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 }
+                }
             },
             onBlindAid = {
-                if (isBlindAidActive) {
+                if (!isAgentEnabled) {
+                    showDisabledDialog = true
+                } else if (isBlindAidActive) {
                     viewModel.setBlindAidActive(false)
                 } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
                     == PackageManager.PERMISSION_GRANTED
@@ -396,9 +460,13 @@ fun AgentScreen(
                 // C4: MediaProjection + on-device OCR path — in-app one-tap consent, no bounce to MIUI
                 // Accessibility settings, and the result is SPOKEN (eyes-free). The Accessibility-based
                 // read_screen tool stays for cross-app reading when Accessibility is enabled.
-                viewModel.readScreenViaMediaProjection(context)
+                if (!isAgentEnabled) showDisabledDialog = true
+                else viewModel.readScreenViaMediaProjection(context)
             },
-            onSecureBrowser = onNavigateToSecureBrowser
+            onSecureBrowser = {
+                if (!isAgentEnabled) showDisabledDialog = true
+                else onNavigateToSecureBrowser()
+            }
         )
         }
 
@@ -441,6 +509,7 @@ fun AgentScreen(
             FloatingActionButton(
                 onClick = {
                     when {
+                        !isAgentEnabled -> showDisabledDialog = true
                         // C3: during an in-flight command the mic FAB cancels (never bricked).
                         isProcessing -> viewModel.cancelCommand()
                         // C5: ends the hands-free session if active.
@@ -497,7 +566,9 @@ fun AgentScreen(
             )
             Button(
                 onClick = {
-                    if (textInput.isNotBlank()) {
+                    if (!isAgentEnabled) {
+                        showDisabledDialog = true
+                    } else if (textInput.isNotBlank()) {
                         viewModel.onTextCommand(textInput)
                         textInput = ""
                     }
@@ -516,13 +587,13 @@ fun AgentScreen(
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             QuickActionButton("Create Note", Icons.Default.EditNote, enabled = !isProcessing) {
-                viewModel.onQuickAction("Create Note")
+                if (!isAgentEnabled) showDisabledDialog = true else viewModel.onQuickAction("Create Note")
             }
             QuickActionButton("Open Chrome", Icons.Default.OpenInBrowser, enabled = !isProcessing) {
-                viewModel.onQuickAction("Open Chrome")
+                if (!isAgentEnabled) showDisabledDialog = true else viewModel.onQuickAction("Open Chrome")
             }
             QuickActionButton("Calendar", Icons.Default.CalendarMonth, enabled = !isProcessing) {
-                viewModel.onQuickAction("Calendar")
+                if (!isAgentEnabled) showDisabledDialog = true else viewModel.onQuickAction("Calendar")
             }
         }
 
@@ -532,7 +603,9 @@ fun AgentScreen(
         // on. Tapping opens the system file picker; the extracted text is fed as context to the brain.
         Button(
             onClick = {
-                documentPickerLauncher.launch(
+                if (!isAgentEnabled) {
+                    showDisabledDialog = true
+                } else documentPickerLauncher.launch(
                     arrayOf(
                         "application/pdf",
                         "image/*",

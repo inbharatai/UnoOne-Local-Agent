@@ -37,8 +37,11 @@ class AudioRecorder {
                 PackageManager.PERMISSION_GRANTED
     }
 
-    fun start(): Result<Unit> {
+    fun start(context: Context): Result<Unit> {
         if (isRecording) return Result.Success(Unit)
+        if (!hasPermission(context)) {
+            return Result.Error("Microphone permission not granted")
+        }
 
         return try {
             val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
@@ -96,6 +99,12 @@ class AudioRecorder {
 
             Logger.i("AudioRecorder started")
             Result.Success(Unit)
+        } catch (e: SecurityException) {
+            Logger.e("Microphone permission was revoked while starting recording", e)
+            isRecording = false
+            runCatching { audioRecord?.release() }
+            audioRecord = null
+            Result.Error("Microphone permission not granted", e)
         } catch (e: Exception) {
             Logger.e("Failed to start recording", e)
             // Reset half-initialized state so a subsequent start() doesn't silently no-op

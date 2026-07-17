@@ -33,7 +33,7 @@ class KeywordSpotterEngine(
     private var stream: OnlineStream? = null
     private var keywordFilePath: String? = null
 
-    fun initialize(keywords: List<String>): Result<Unit> {
+    fun initialize(keywordEntries: List<String>): Result<Unit> {
         return try {
             Logger.i("KeywordSpotterEngine: Checking model files in $modelDir")
             val encoder = File("$modelDir/encoder.onnx")
@@ -45,7 +45,15 @@ class KeywordSpotterEngine(
                 return Result.Error("Sherpa KWS model files missing. Please download models to: $modelDir")
             }
 
-            val keywordFile = createKeywordFile(keywords)
+            // Sherpa's native constructor aborts the entire process (not a catchable exception)
+            // when a keyword file contains a token absent from tokens.txt. Validate on the Kotlin
+            // side first so a bad phrase can only disable KWS, never crash-loop UnoOne.
+            val missingTokens = missingKeywordTokens(keywordEntries, tokens.readLines())
+            if (missingTokens.isNotEmpty()) {
+                return Result.Error("Sherpa KWS keyword tokens missing from model: ${missingTokens.joinToString()}")
+            }
+
+            val keywordFile = createKeywordFile(keywordEntries)
 
             val modelConfig = OnlineModelConfig().apply {
                 transducer = OnlineTransducerModelConfig(
@@ -75,7 +83,7 @@ class KeywordSpotterEngine(
             spotter = kws
             stream = kws.createStream()
             initialized = true
-            Logger.i("KeywordSpotterEngine: Offline KWS initialized for: $keywords")
+            Logger.i("KeywordSpotterEngine: Offline KWS initialized (${keywordEntries.size} phrases)")
             Result.Success(Unit)
         } catch (e: Throwable) {
             Logger.e("KeywordSpotterEngine: Initialization failed: ${e::class.java.simpleName}: ${e.message}")
@@ -115,13 +123,13 @@ class KeywordSpotterEngine(
         }
     }
 
-    private fun createKeywordFile(keywords: List<String>): String {
+    private fun createKeywordFile(keywordEntries: List<String>): String {
         // Use cacheDir (caller-provided, usually context.cacheDir) — deleteOnExit is unreliable on
         // Android (only runs on clean JVM shutdown). We delete in release() instead.
         val dir = if (cacheDir != null) File(cacheDir) else File(System.getProperty("java.io.tmpdir") ?: "/tmp")
         dir.mkdirs()
         val file = File(dir, "unoone_keywords.txt")
-        file.writeText(keywords.joinToString("\n"))
+        file.writeText(keywordEntries.joinToString("\n"))
         keywordFilePath = file.absolutePath
         return file.absolutePath
     }
@@ -157,4 +165,19 @@ class KeywordSpotterEngine(
         }
         return samples
     }
+}
+
+/** Returns keyword-file tokens that are absent from a Sherpa `tokens.txt` file. */
+internal fun missingKeywordTokens(
+    keywordEntries: List<String>,
+    tokenLines: List<String>
+): Set<String> {
+    val modelTokens = tokenLines.mapNotNull { line ->
+        line.substringBeforeLast(' ', "").takeIf { it.isNotEmpty() }
+    }.toHashSet()
+    return keywordEntries.asSequence()
+        .flatMap { it.trim().split(Regex("\\s+")).asSequence() }
+        .filterNot { it.startsWith(":") || it.startsWith("#") || it.startsWith("@") }
+        .filterNot { it in modelTokens }
+        .toSortedSet()
 }

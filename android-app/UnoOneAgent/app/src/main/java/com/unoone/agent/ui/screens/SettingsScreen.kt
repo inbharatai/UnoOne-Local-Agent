@@ -66,7 +66,9 @@ fun SettingsScreen(
     val darkMode by viewModel.darkMode.collectAsState()
     val voiceLanguage by viewModel.voiceLanguage.collectAsState()
     val securityLevel by viewModel.securityLevel.collectAsState()
+    val isAgentEnabled by viewModel.isAgentEnabled.collectAsState()
     var showClearConfirmation by remember { mutableStateOf(false) }
+    var showDisableConfirmation by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     Column(
@@ -78,6 +80,33 @@ fun SettingsScreen(
         Text("Settings", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
 
+        SettingsSection(title = "UnoOne status") {
+            Text(
+                if (isAgentEnabled) "UnoOne is enabled" else "UnoOne is disabled",
+                style = MaterialTheme.typography.titleMedium,
+                color = if (isAgentEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                if (isAgentEnabled) {
+                    "Local microphone, speech, model inference and approved automation are available."
+                } else {
+                    "Privacy confirmed: microphone, speech recognition, TTS, model inference, accessibility actions, browser automation and network activity are inactive."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+            Button(
+                onClick = {
+                    if (isAgentEnabled) showDisableConfirmation = true else viewModel.enableAgent()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isAgentEnabled) "Disable UnoOne" else "Enable UnoOne")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
         SettingsSection(
             title = "Model Status",
             action = {
@@ -100,7 +129,7 @@ fun SettingsScreen(
             ManageButton("Model Status & Install", Icons.Default.Memory, onNavigateToModels)
             ManageButton("Offline Languages", Icons.Default.Language, onNavigateToLanguagePacks)
             ManageButton("Voice Test (STT / TTS)", Icons.Default.Mic, onNavigateToVoiceTest)
-            ManageButton("Secure Browser (PageAgent)", Icons.Default.Language, onNavigateToSecureBrowser)
+            ManageButton("Secure Browser (Page Agent)", Icons.Default.Language, onNavigateToSecureBrowser)
             ManageButton("Audit Log", Icons.AutoMirrored.Filled.ReceiptLong, onNavigateToAudit)
             // Voice language picker — sets the offline STT/TTS language live (rebuilds the Sherpa
             // engines without a restart). Speak in the language you pick here, or STT transcribes
@@ -114,7 +143,7 @@ fun SettingsScreen(
                 onSelect = { code -> viewModel.setVoiceLanguage(code) }
             )
             Text(
-                "Secure Browser reserves Gemma 4 exclusively, automates approved HTTPS pages through Alibaba PageAgent, and requires manual control for credentials, OTP, CAPTCHA, payments and legal declarations.",
+                "Secure Browser reserves Gemma 4 exclusively, automates approved HTTPS pages through the local Page Agent, and requires manual control for credentials, OTP, CAPTCHA, payments and legal declarations.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 4.dp)
@@ -241,6 +270,27 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showClearConfirmation = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showDisableConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDisableConfirmation = false },
+            title = { Text("Disable UnoOne?") },
+            text = {
+                Text("All listening, speech, inference, Blind Aid, screen reading, browser automation and pending agent work will stop immediately.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.disableAgent()
+                        showDisableConfirmation = false
+                    }
+                ) { Text("Disable", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisableConfirmation = false }) { Text("Cancel") }
             }
         )
     }

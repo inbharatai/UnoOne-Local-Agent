@@ -3,6 +3,7 @@ package com.unoone.agent.voice
 import android.content.Context
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.errorOrNull
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.voice.recorder.AudioRecorder
 import com.unoone.agent.voice.stt.AndroidSttEngine
@@ -112,7 +113,7 @@ class VoiceModule(private val context: Context) {
         runCatching { ttsEngine?.release() }
         ttsEngine = null
         val asr = VoiceLanguage.asrSpec(lang)
-        val sttResult = initStt("$modelBaseDir/${asr.folder}", asr.mode, asr.whisperLanguage)
+        val sttResult = initStt("$modelBaseDir/${asr.folder}", asr.mode, asr.language)
         val ttsResult = initTts("$modelBaseDir/${VoiceLanguage.ttsFolder(lang)}")
         return sttResult to ttsResult
     }
@@ -143,6 +144,9 @@ class VoiceModule(private val context: Context) {
     }
 
     fun startRecording(context: Context, scope: CoroutineScope): Result<Unit> {
+        if (!AgentRuntimeGate.isEnabled()) {
+            return Result.Error("UnoOne is disabled. Enable it before using the microphone.")
+        }
         if (!isRecordingFlag.compareAndSet(false, true)) return Result.Success(Unit)
 
         // Sherpa path (offline): record PCM, transcribe on stop.
@@ -160,7 +164,10 @@ class VoiceModule(private val context: Context) {
             }
 
             activeSttJob.set(scope.async(Dispatchers.Main) {
-                engine.transcribeOnce(onAmplitude = onAmplitude)
+                engine.transcribeOnce(
+                    locale = Locale.forLanguageTag(VoiceLanguage.localeTag(currentLanguage())),
+                    onAmplitude = onAmplitude
+                )
             })
             Result.Success(Unit)
         } else {
@@ -175,7 +182,7 @@ class VoiceModule(private val context: Context) {
                 isRecordingFlag.set(false)
                 return Result.Error("Microphone permission not granted")
             }
-            val result = recorder.start()
+            val result = recorder.start(context)
             if (result is Result.Error) {
                 isRecordingFlag.set(false)
             }
@@ -236,7 +243,11 @@ class VoiceModule(private val context: Context) {
     /**
      * Speak text. Uses Sherpa offline TTS when available; otherwise the emergency Android TTS.
      */
-    fun speak(text: String, languageCode: String = "en-IN"): Result<Unit> {
+    fun speak(
+        text: String,
+        languageCode: String = VoiceLanguage.localeTag(currentLanguage())
+    ): Result<Unit> {
+        if (!AgentRuntimeGate.isEnabled()) return Result.Error("UnoOne is disabled")
         val engine = ttsEngine
         if (engine != null && engine.isInitialized()) {
             val ttsStart = System.currentTimeMillis()
@@ -245,12 +256,16 @@ class VoiceModule(private val context: Context) {
             return res
         }
         // Emergency Android TTS fallback — explicitly logged, not the default production path.
-        Logger.i("VoiceModule: Sherpa TTS not available, synthesizing via Android TTS fallback: '$text'")
+        Logger.i("VoiceModule: Sherpa TTS unavailable; using Android TTS fallback")
         return ttsPlayer.speak(text, languageCode)
     }
 
     /** Speaks and suspends until playback completes, preventing hands-free self-capture. */
-    suspend fun speakAwait(text: String, languageCode: String = "en-IN"): Result<Unit> {
+    suspend fun speakAwait(
+        text: String,
+        languageCode: String = VoiceLanguage.localeTag(currentLanguage())
+    ): Result<Unit> {
+        if (!AgentRuntimeGate.isEnabled()) return Result.Error("UnoOne is disabled")
         val engine = ttsEngine
         return if (engine != null && engine.isInitialized()) {
             engine.speakAwait(text)

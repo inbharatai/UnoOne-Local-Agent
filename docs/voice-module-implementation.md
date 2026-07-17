@@ -103,7 +103,7 @@ class SherpaSttEngine(modelPath: String) {
 - `sherpa-asr-en/decoder.onnx`
 - `sherpa-asr-en/joiner.onnx`
 
-> Indic languages (hi/bn/ta/te/kn/ml) use `sherpa-asr-whisper/` instead — a shared multilingual whisper-tiny int8 model extracted to `sherpa-asr-whisper/sherpa-onnx-whisper-tiny/tiny-{encoder,decoder}.int8.onnx` + `tiny-tokens.txt`, decoded one-shot via Sherpa's offline-Whisper path with the `language` field selecting the language. See `SherpaSttEngine.kt` (`SttMode.WHISPER`).
+> Indic languages (hi/bn/ta/te/kn/ml) use `speech/shared/sherpa-asr-indic/` — the official Omnilingual 300M CTC int8 archive containing `model.int8.onnx` and `tokens.txt`, decoded one-shot through `SttMode.OMNILINGUAL`. The selected language controls reply/TTS routing; the recognizer detects the spoken language and script.
 
 **Testing:**
 - Push model via ADB.

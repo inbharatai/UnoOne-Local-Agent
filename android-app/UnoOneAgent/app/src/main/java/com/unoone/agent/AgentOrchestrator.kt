@@ -6,6 +6,7 @@ import com.unoone.agent.core.model.AgentStatus
 import com.unoone.agent.core.model.InputType
 import com.unoone.agent.core.model.RiskLevel
 import com.unoone.agent.core.model.Result
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.core.model.TimelineStep
 import com.unoone.agent.core.model.onError
 import com.unoone.agent.core.model.ToolCall
@@ -20,6 +21,7 @@ import com.unoone.agent.core.agent.NarrationPolicy
 import com.unoone.agent.core.agent.StopReason
 import com.unoone.agent.core.agent.ToolHealthTracker
 import com.unoone.agent.core.agent.BrainHealthPolicy
+import com.unoone.agent.core.agent.VoiceResponseLocalizer
 import com.unoone.agent.core.safety.PermissionRequirement
 import com.unoone.agent.core.util.CallbackMulticast
 import com.unoone.agent.core.util.ConfirmationListener
@@ -356,6 +358,7 @@ class AgentOrchestrator(
         modelPath: String,
         spec: com.unoone.agent.core.model.BrainModelSpec
     ): com.unoone.agent.core.model.Result<Unit> {
+        if (!AgentRuntimeGate.isEnabled()) return Result.Error("UnoOne is disabled")
         val result = commandParser.loadModel(modelPath, spec)
         if (result is Result.Success) {
             lastLoadedPath = modelPath
@@ -381,11 +384,16 @@ class AgentOrchestrator(
      * the ReAct loop's inference-failure check via [BrainHealthPolicy]).
      */
     private suspend fun selfHealReloadBrain(): Boolean {
+        if (!AgentRuntimeGate.isEnabled()) return false
         val path = lastLoadedPath ?: return false
         addStep(AgentStatus.EXECUTING, "Recovering", "Brain dropped — reloading…")
         val result = if (lastLoadedSpec != null) commandParser.loadModel(path, lastLoadedSpec!!)
                      else commandParser.loadModel(path)
         val ok = result is Result.Success
+        if (!AgentRuntimeGate.isEnabled()) {
+            commandParser.unloadModel()
+            return false
+        }
         if (ok) {
             consecutiveInferenceFailures = 0
             AuditLogger.log("brain_reload", RiskLevel.DIRECT, "recovered", "self-heal")
@@ -423,6 +431,7 @@ class AgentOrchestrator(
     }
 
     fun setBlindAidActive(active: Boolean, bringToForeground: Boolean = false) {
+        if (active && !AgentRuntimeGate.isEnabled()) return
         if (active) {
             if (!blindAidActivationInFlight.compareAndSet(false, true)) return
             brainLoadCancelCallback?.invoke()
@@ -512,6 +521,10 @@ class AgentOrchestrator(
     }
 
     suspend fun processCommand(text: String, inputType: InputType = InputType.TEXT) {
+        if (!AgentRuntimeGate.isEnabled()) {
+            Logger.i("Orchestrator: command rejected because UnoOne is disabled")
+            return
+        }
         // Atomic check-and-set to prevent concurrent command execution
         if (!processingLock.compareAndSet(false, true)) return
         _isProcessing.value = true
@@ -544,7 +557,10 @@ class AgentOrchestrator(
         }
 
         val startTime = System.currentTimeMillis()
-        val log = ActionLogEntity(inputText = sanitizedText, inputType = inputType.name.lowercase())
+        val log = ActionLogEntity(
+            inputText = "[private command: ${sanitizedText.length} chars]",
+            inputType = inputType.name.lowercase()
+        )
 
         try {
             addStep(AgentStatus.UNDERSTANDING, "Understanding Command", sanitizedText)
@@ -656,21 +672,26 @@ class AgentOrchestrator(
             // the agent flow; specific orders do not).
             val ruleMatch = commandParser.parse(sanitizedText)
             val intent = IntentClassifier.classify(sanitizedText, ruleMatch)
-            Logger.i("Orchestrator: intent=$intent ruleMatch=${ruleMatch?.tool} text=\"${sanitizedText.take(60)}\"")
-            if (intent == IntentType.CHAT && commandParser.isModelLoaded()) {
+            Logger.i("Orchestrator: intent=$intent ruleMatch=${ruleMatch?.tool}")
+            if (intent == IntentType.CHAT) {
                 if (isCancelled(myRun)) { releaseProcessingLock(); return }
                 val chatStart = System.currentTimeMillis()
                 addStep(AgentStatus.UNDERSTANDING, "Thinking", sanitizedText)
-                val chatResult = commandParser.chat(sanitizedText)
+                val chatResult = if (commandParser.isModelLoaded()) {
+                    commandParser.chat(sanitizedText)
+                } else {
+                    Result.Error("Local model unavailable")
+                }
+                if (isCancelled(myRun) || !AgentRuntimeGate.isEnabled()) {
+                    releaseProcessingLock()
+                    return
+                }
                 val answer = (chatResult as? Result.Success)?.data
                 com.unoone.agent.observability.Diagnostics.recordStage("chat_inference", System.currentTimeMillis() - chatStart)
                 if (!answer.isNullOrBlank()) {
-                    if (inputType == InputType.VOICE) {
-                        addStep(AgentStatus.SPEAKING, "Response", answer)
-                        speakAnswer(answer)
-                    } else {
-                        addStep(AgentStatus.DONE, "Done", answer)
-                    }
+                    addStep(AgentStatus.SPEAKING, "Response", answer)
+                    speakAnswer(answer)
+                    addStep(AgentStatus.DONE, "Done", answer)
                     lastToolResult = answer
                     saveLog(log.copy(
                         selectedTool = "chat",
@@ -680,9 +701,22 @@ class AgentOrchestrator(
                     releaseProcessingLock()
                     return
                 }
-                // Chat produced no answer (brain not loaded, conversation unavailable, timed out, or
-                // blank) — fall through to the agent pipeline so the user still gets a response.
-                Logger.w("Orchestrator: CHAT lane produced no answer; falling back to agent pipeline")
+                // A conversational question must never be sent to tool extraction: that produced
+                // the red "Extraction failed" shown for romanized Hindi. Preserve the question in
+                // the UI and surface a recoverable local-model status without inventing an answer.
+                val retryMessage =
+                    "I couldn't answer that with the local model just now. Your question is still visible; please try again."
+                Logger.w("Orchestrator: CHAT lane unavailable after local recovery attempt")
+                addStep(AgentStatus.DONE, "Local model unavailable", retryMessage)
+                if (inputType == InputType.VOICE) speakAnswer(retryMessage)
+                saveLog(log.copy(
+                    selectedTool = "chat",
+                    status = "deferred",
+                    errorMessage = "Local chat unavailable",
+                    modelLatencyMs = System.currentTimeMillis() - chatStart
+                ))
+                releaseProcessingLock()
+                return
             }
 
             // Step 2: Planning / Intent Extraction — delegate to CommandParser.
@@ -776,6 +810,9 @@ class AgentOrchestrator(
                     val result = outcome.result
                     if (result is Result.Error) {
                         lastToolResult = result.message
+                        val spokenFailure = VoiceResponseLocalizer.failure(currentVoiceLanguageCode())
+                        addStep(AgentStatus.FAILED, "Action failed", result.message)
+                        speakAnswer(spokenFailure)
                         saveLog(log.copy(selectedTool = toolCall.tool, status = "failed", errorMessage = result.message))
                         releaseProcessingLock()
                         return
@@ -811,16 +848,24 @@ class AgentOrchestrator(
                     // speak_response already produced audio via ActionExecutor._speak; don't double-speak.
                     if (toolCall.tool == "speak_response") {
                         addStep(AgentStatus.DONE, "Done", observation)
-                    } else if (inputType == InputType.VOICE) {
-                        addStep(AgentStatus.SPEAKING, "Response", observation)
-                        speakAnswer(observation)
                     } else {
-                        addStep(AgentStatus.DONE, "Done", observation)
+                        val spokenObservation = VoiceResponseLocalizer.toolResult(
+                            toolCall.tool,
+                            observation,
+                            currentVoiceLanguageCode()
+                        )
+                        addStep(AgentStatus.SPEAKING, "Response", spokenObservation)
+                        speakAnswer(spokenObservation)
+                        addStep(AgentStatus.DONE, "Done", spokenObservation)
                     }
 
                     saveLog(log.copy(
                         selectedTool = toolCall.tool,
-                        toolArgsJson = toolCall.args.toString(),
+                        toolArgsJson = toolCall.args.keys.sorted().joinToString(
+                            prefix = "{\"privateArgKeys\":[\"",
+                            separator = "\",\"",
+                            postfix = "\"]}"
+                        ),
                         status = "success",
                         modelLatencyMs = System.currentTimeMillis() - startTime
                     ))
@@ -843,6 +888,12 @@ class AgentOrchestrator(
     }
 
     fun clearPendingAndReExecute() {
+        if (!AgentRuntimeGate.isEnabled()) {
+            pendingCommand.set(null)
+            pendingInputType.set(null)
+            pendingRequiredPermission.set(null)
+            return
+        }
         val cmd = pendingCommand.getAndSet(null)
         val type = pendingInputType.getAndSet(null)
         val req = pendingRequiredPermission.getAndSet(null)
@@ -1338,12 +1389,16 @@ class AgentOrchestrator(
     private fun narrateMilestone(status: AgentStatus, label: String, detail: String) {
         if (currentInputType != InputType.VOICE && !narrateTextCommands) return
         val phrase = NarrationPolicy.narrationFor(status, label, detail) ?: return
+        val localizedPhrase = VoiceResponseLocalizer.milestone(
+            phrase,
+            currentVoiceLanguageCode()
+        )
         val now = System.currentTimeMillis()
         if (now - lastNarrationAt.get() < NARRATION_MIN_INTERVAL_MS) return
         lastNarrationAt.set(now)
         scope.launch {
             speakMutex.withLock {
-                voiceModule.speakAwait(phrase)
+                voiceModule.speakAwait(localizedPhrase)
                     .onError { msg: String, _: Throwable? -> Logger.w("Orchestrator: milestone narration failed: $msg") }
             }
         }
@@ -1394,7 +1449,7 @@ class AgentOrchestrator(
      * bails at its next checkpoint; releases the lock + clears the timeline + speaks "Stopped."
      * Safe to call when nothing is running (no-op besides clearing a stale pending command).
      */
-    fun cancelCurrentCommand() {
+    fun cancelCurrentCommand(speak: Boolean = true) {
         val wasActive = _isProcessing.value || pendingCommand.get() != null
         pendingCommand.set(null)
         pendingInputType.set(null)
@@ -1403,12 +1458,21 @@ class AgentOrchestrator(
         _timelineSteps.value = emptyList()
         _isProcessing.value = false
         processingLock.set(false)
-        if (wasActive) {
+        if (wasActive && speak && AgentRuntimeGate.isEnabled()) {
             scope.launch {
                 runCatching { voiceModule.speak("Stopped.") }
                     .onFailure { Logger.w("Orchestrator: cancel speak failed: ${it.message}") }
             }
         }
+    }
+
+    /** Silent, non-recovering teardown used only by the persistent master disable control. */
+    fun shutdownForDisable() {
+        cancelCurrentCommand(speak = false)
+        blindAidActivationInFlight.set(false)
+        _isBlindAidActive.value = false
+        runCatching { voiceModule.stopRecording() }
+        runCatching { voiceModule.stopSpeaking() }
     }
 
     private suspend fun saveLog(log: ActionLogEntity) {

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.unoone.agent.core.model.Result
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.voice.recorder.AudioRecorder
 import com.unoone.agent.voice.stt.AndroidSttEngine
@@ -24,6 +25,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.Locale
 
 class VoiceService : Service() {
 
@@ -95,6 +97,7 @@ class VoiceService : Service() {
         var foregroundSessionActive: Boolean = false
 
         fun start(context: Context) {
+            if (!AgentRuntimeGate.isEnabled()) return
             val intent = Intent(context, VoiceService::class.java)
             context.startForegroundService(intent)
         }
@@ -106,6 +109,7 @@ class VoiceService : Service() {
 
         /** Ask a running VoiceService to rebuild STT/TTS for the current voice language pref. */
         fun reinitLanguage(context: Context) {
+            if (!AgentRuntimeGate.isEnabled()) return
             val intent = Intent(context, VoiceService::class.java).setAction(ACTION_REINIT_LANG)
             runCatching { context.startService(intent) }
         }
@@ -114,11 +118,20 @@ class VoiceService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        if (!AgentRuntimeGate.isEnabled()) {
+            stopSelf()
+            return
+        }
         startForeground(NOTIFICATION_ID, createNotification("Listening locally — Mic active. Say 'UnoOne' or 'Listen' to give a command."))
         Logger.i("VoiceService: Created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!AgentRuntimeGate.isEnabled()) {
+            if (recorder.isRecording()) recorder.stop()
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_REINIT_LANG) {
             // Language changed at runtime: rebuild STT/TTS only, keep the wake-word loop running.
             // MUST run off the main thread — Sherpa model load (especially the larger Indic Whisper
@@ -133,7 +146,7 @@ class VoiceService : Service() {
             // apply identically. Declared since launch but previously unhandled.
             val command = intent.getStringExtra(EXTRA_COMMAND)
             if (!command.isNullOrBlank()) {
-                Logger.i("VoiceService: injected voice command: '$command'")
+                Logger.i("VoiceService: received injected voice command")
                 voiceCommandCallback?.invoke(command)
             }
             return START_STICKY
@@ -192,7 +205,7 @@ class VoiceService : Service() {
     /** Builds STT + TTS for [lang]. Sherpa is the offline default; Android STT is emergency-only. */
     private fun initSttTts(modelDir: String, lang: String) {
         val asr = VoiceLanguage.asrSpec(lang)
-        val stt = SherpaSttEngine(this, "$modelDir/${asr.folder}", asr.mode, asr.whisperLanguage)
+        val stt = SherpaSttEngine(this, "$modelDir/${asr.folder}", asr.mode, asr.language)
         if (stt.initialize() is Result.Success) {
             sttEngine = stt
             useAndroidStt = false
@@ -213,13 +226,20 @@ class VoiceService : Service() {
 
     /** Wake-word (KWS) — always English (vad). No Indic keyword-spotter model exists. */
     private fun initKeywordSpotter(modelDir: String) {
-        val kws = KeywordSpotterEngine(this, "$modelDir/${VoiceLanguage.KWS_FOLDER}", cacheDir?.absolutePath)
-        if (kws.initialize(WakePhrases.LIST) is Result.Success) {
-            keywordSpotter = kws
-            Logger.i("VoiceService: Keyword spotter ready (English wake words: ${WakePhrases.LIST})")
-        } else {
-            Logger.w("VoiceService: Keyword spotter unavailable, using continuous listen mode")
+        for ((index, folder) in VoiceLanguage.kwsFolders().withIndex()) {
+            val kws = KeywordSpotterEngine(this, "$modelDir/$folder", cacheDir?.absolutePath)
+            if (kws.initialize(WakePhrases.KWS_ENTRIES) is Result.Success) {
+                keywordSpotter = kws
+                if (index > 0) {
+                    Logger.i("VoiceService: using installed English ASR files for wake-word fallback")
+                }
+                Logger.i("VoiceService: Keyword spotter ready (English wake words: ${WakePhrases.LIST})")
+                return
+            }
+            kws.release()
         }
+        keywordSpotter = null
+        Logger.w("VoiceService: Keyword spotter unavailable; wake phrases are disabled until a compatible English transducer is installed")
     }
 
     /** Releases and rebuilds STT/TTS for the current language pref; keeps KWS running. */
@@ -239,12 +259,10 @@ class VoiceService : Service() {
         monitoringJob?.cancel()
         monitoringJob = serviceScope.launch {
             try {
-                if (keywordSpotter != null) {
+                if (keywordSpotter != null || sttEngine != null) {
                     startKeywordSpottingLoop()
                 } else {
-                    Logger.i("VoiceService: No keyword spotter, listening for manual activation only")
-                    // Without a keyword spotter, the service stays alive for manual mic activation
-                    // The FloatingAgentService or AgentScreen will trigger recording directly
+                    Logger.i("VoiceService: No offline wake or speech model; manual activation only")
                 }
             } catch (e: Exception) {
                 Logger.e("VoiceService: Monitoring failed", e)
@@ -253,25 +271,30 @@ class VoiceService : Service() {
     }
 
     private suspend fun startKeywordSpottingLoop() {
-        Logger.i("VoiceService: Starting keyword spotting loop")
-        val kws = keywordSpotter ?: return
+        Logger.i("VoiceService: Starting hybrid offline wake loop")
+        val kws = keywordSpotter
+        val sttWakeFallbackAvailable = sttEngine != null
+        if (kws == null && !sttWakeFallbackAvailable) return
         val chunkSizeMs = 1000L // Process 1-second chunks
 
         var consecutiveSilenceChunks = 0
         val maxSilenceChunks = 3 // 3 seconds of silence = end of command
         val commandAudio = PcmChunkAccumulator()
+        val passiveWakeAudio = PcmChunkAccumulator(maxBytes = 16_000 * 2 * 8)
+        var passiveSpeechActive = false
+        var passiveSilenceChunks = 0
 
         // 0C-7: Keep recorder running continuously instead of start/stop every second.
         // Start recording ONCE and use readChunk() to drain accumulated audio incrementally.
         if (!recorder.isRecording() && recorder.hasPermission(this@VoiceService)) {
-            val startResult = recorder.start()
+            val startResult = recorder.start(this@VoiceService)
             if (startResult is Result.Error) {
                 Logger.e("VoiceService: Cannot start recorder: ${startResult.message}")
                 return
             }
         }
 
-        while (serviceScope.isActive) {
+        while (serviceScope.isActive && AgentRuntimeGate.isEnabled()) {
             try {
                 // C5: single mic owner — when the in-app hands-free session is active, release our
                 // recorder and skip spotting so it doesn't contend for the mic. Resume when it ends.
@@ -288,7 +311,7 @@ class VoiceService : Service() {
 
                 // If recorder stopped (e.g., after command capture), restart it
                 if (!recorder.isRecording()) {
-                    val startResult = recorder.start()
+                    val startResult = recorder.start(this@VoiceService)
                     if (startResult is Result.Error) {
                         delay(500)
                         continue
@@ -305,16 +328,27 @@ class VoiceService : Service() {
                 }
 
                 if (!isListeningForCommand) {
-                    // Check for wake word
-                    val keyword = kws.processChunk(pcmData)
+                    val hasSpeech = hasSpeechActivity(pcmData)
+                    if (sttWakeFallbackAvailable && (passiveSpeechActive || hasSpeech)) {
+                        passiveSpeechActive = true
+                        passiveWakeAudio.add(pcmData)
+                        passiveSilenceChunks = if (hasSpeech) 0 else passiveSilenceChunks + 1
+                    }
+
+                    // Low-latency native KWS remains the first path.
+                    val keyword = kws?.processChunk(pcmData)
                     if (keyword != null) {
-                        Logger.i("VoiceService: Wake word detected: '$keyword'")
+                        Logger.i("VoiceService: wake phrase detected by keyword spotter")
                         isListeningForCommand = true
                         consecutiveSilenceChunks = 0
-                        // Retain the trigger chunk because users often say "UnoOne, open Chrome" in
-                        // one breath. The leading wake phrase is removed from the final transcript.
+                        // Retain the whole speech burst because the command may follow the wake phrase
+                        // in one breath and may have begun before the one-second KWS chunk completed.
                         commandAudio.clear()
-                        commandAudio.add(pcmData)
+                        commandAudio.add(passiveWakeAudio.toByteArray())
+                        if (commandAudio.size == 0) commandAudio.add(pcmData)
+                        passiveWakeAudio.clear()
+                        passiveSpeechActive = false
+                        passiveSilenceChunks = 0
                         onWakeWordDetected?.invoke()
                         // Eyes-free (WS2): speak the "I'm listening" cue. Invoked via the static
                         // callback so the Application can route it to the shared VoiceModule without
@@ -324,6 +358,37 @@ class VoiceService : Service() {
 
                         // Update notification
                         updateNotification("Listening for command...")
+                    } else if (
+                        passiveSpeechActive &&
+                        (passiveSilenceChunks >= 2 || passiveWakeAudio.isFull)
+                    ) {
+                        // Some supported transducer/KWS combinations initialize but have poor live
+                        // phrase recall. Decode the bounded speech burst locally and accept it only
+                        // when it begins with an explicit wake phrase.
+                        val wakePcm = passiveWakeAudio.toByteArray()
+                        passiveWakeAudio.clear()
+                        passiveSpeechActive = false
+                        passiveSilenceChunks = 0
+                        val transcript = transcribeAudio(wakePcm)
+                        val command = (transcript as? Result.Success)
+                            ?.data
+                            ?.let(WakePhrases::commandAfterWakePhrase)
+                        if (command != null) {
+                            Logger.i("VoiceService: wake phrase detected by offline speech fallback")
+                            onWakeWordDetected?.invoke()
+                            onWakeWord?.invoke()
+                            if (command.isBlank()) {
+                                isListeningForCommand = true
+                                consecutiveSilenceChunks = 0
+                                commandAudio.clear()
+                                updateNotification("Listening for command...")
+                            } else {
+                                Logger.i("VoiceService: received one-breath wake command")
+                                onCommandReceived?.invoke(command)
+                                voiceCommandCallback?.invoke(command)
+                                updateNotification("UnoOne is listening")
+                            }
+                        }
                     }
                 } else {
                     // Retain every post-wake chunk. Previously only the final (usually silent)
@@ -356,7 +421,7 @@ class VoiceService : Service() {
                                 updateNotification("UnoOne is listening")
                                 continue
                             }
-                            Logger.i("VoiceService: Command: '$command'")
+                            Logger.i("VoiceService: received wake command")
                             onCommandReceived?.invoke(command)
 
                             // SECURITY: Use static callback instead of broadcast Intent.
@@ -406,7 +471,9 @@ class VoiceService : Service() {
         val engine = androidStt ?: AndroidSttEngine(this).also { androidStt = it }
         val initResult = engine.initialize()
         if (initResult is Result.Error) return initResult
-        return engine.transcribeOnce()
+        return engine.transcribeOnce(
+            Locale.forLanguageTag(VoiceLanguage.localeTag(currentLanguage()))
+        )
     }
 
     private fun sqrt(x: Double): Double = kotlin.math.sqrt(x)
@@ -462,8 +529,10 @@ class VoiceService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Restart service if killed by aggressive battery optimization (Xiaomi, Huawei, Oppo, etc.)
-        val restartIntent = Intent(this, VoiceService::class.java)
-        startForegroundService(restartIntent)
+        if (AgentRuntimeGate.isEnabled()) {
+            val restartIntent = Intent(this, VoiceService::class.java)
+            startForegroundService(restartIntent)
+        }
         super.onTaskRemoved(rootIntent)
     }
 }

@@ -194,7 +194,7 @@ UnoOne is a local-first Android AI agent. Every core capability runs on the devi
 
 | Capability            | On-Device Technology                      | Fallback           |
 |----------------------|------------------------------------------|--------------------|
-| Speech-to-Text       | Sherpa-ONNX (English transducer; Indic whisper-tiny) | Android SpeechRecognizer (internet) |
+| Speech-to-Text       | Sherpa-ONNX (English transducer; Indic Omnilingual CTC) | Locale-pinned Android SpeechRecognizer when explicitly enabled |
 | Text-to-Speech       | Sherpa-ONNX VITS (English Coqui; Indic MMS) | Silent (no output) |
 | Command Parsing       | RuleBasedParser (20+ patterns)          | Same (primary)     |
 | LLM Inference        | LiteRT-LM with Gemma 3n E4B            | CPU inference / Rule-based parser |

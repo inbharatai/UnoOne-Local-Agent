@@ -68,7 +68,7 @@
 2. Place them in (per-language folders):
    ```
    models/sherpa-asr-en/        # English ASR (streaming zipformer transducer int8)
-   models/sherpa-asr-whisper/   # Indic ASR (multilingual whisper-tiny int8; shared by hi/bn/ta/te/kn/ml)
+   models/speech/shared/sherpa-asr-indic/ # Indic ASR (Omnilingual 300M CTC int8; shared)
    models/sherpa-tts-en/        # English TTS (Coqui VITS + espeak-ng-data)
    models/sherpa-tts-hin/       # Hindi TTS (MMS VITS) — also -ben/-tam/-tel/-kan/-mal
    models/vad/                  # English wake-word (keyword spotter)

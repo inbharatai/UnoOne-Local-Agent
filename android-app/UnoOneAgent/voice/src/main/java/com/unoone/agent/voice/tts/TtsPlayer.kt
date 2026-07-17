@@ -83,15 +83,25 @@ class TtsPlayer : TextToSpeech.OnInitListener {
         }
 
         return try {
-            val locale = when (languageCode.lowercase()) {
-                "hi", "hi-in" -> Locale("hi", "IN")
-                "ta", "ta-in" -> Locale("ta", "IN")
-                "te", "te-in" -> Locale("te", "IN")
-                else -> Locale("en", "IN")
+            val locale = Locale.forLanguageTag(languageCode)
+            val languageResult = t.setLanguage(locale)
+            if (
+                languageResult == TextToSpeech.LANG_MISSING_DATA ||
+                languageResult == TextToSpeech.LANG_NOT_SUPPORTED
+            ) {
+                return Result.Error("System TTS does not support ${locale.toLanguageTag()}")
             }
-            t.setLanguage(locale)
-            t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "UnoOne_TTS_Playback")
-            Result.Success(Unit)
+            val speakResult = t.speak(
+                text,
+                TextToSpeech.QUEUE_FLUSH,
+                null,
+                "UnoOne_TTS_Playback"
+            )
+            if (speakResult == TextToSpeech.ERROR) {
+                Result.Error("System TTS rejected the utterance")
+            } else {
+                Result.Success(Unit)
+            }
         } catch (e: Exception) {
             Logger.e("TTS Player: Speak failed", e)
             Result.Error("Speak failed: ${e.message}")

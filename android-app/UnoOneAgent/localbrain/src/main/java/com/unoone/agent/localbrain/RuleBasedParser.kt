@@ -54,6 +54,7 @@ object RuleBasedParser {
 
     fun parse(command: String): ToolCall? {
         val lowered = command.lowercase().trim()
+        parseLocalizedCoreCommand(lowered)?.let { return it }
 
         return when {
             // === DOMAIN-SPECIFIC RULES (use "and" internally — must be checked FIRST) ===
@@ -370,6 +371,84 @@ object RuleBasedParser {
                 val appName = Regex("^(open|launch) ", RegexOption.IGNORE_CASE).replace(lowered, "").trim()
                 ToolCall("open_app", JsonObject(mapOf("app_name" to JsonPrimitive(appName))))
             }
+
+            else -> null
+        }
+    }
+
+    /**
+     * Offline deterministic paths for the core eyes-free actions in every language exposed by the
+     * voice chooser. These run before Gemma so a blind user does not depend on a long inference for
+     * navigation, camera, screen reading or app launch. Complex free-form content (message bodies,
+     * email recipients and form values) still goes through the normal validated planner.
+     */
+    private fun parseLocalizedCoreCommand(command: String): ToolCall? {
+        fun hasAny(vararg phrases: String) = phrases.any(command::contains)
+        fun openApp(name: String, packageName: String) = ToolCall(
+            "open_app",
+            JsonObject(mapOf(
+                "app_name" to JsonPrimitive(name),
+                "package_name" to JsonPrimitive(packageName)
+            ))
+        )
+
+        return when {
+            hasAny(
+                "ब्लाइंड एड बंद करो", "ব্লাইন্ড এইড বন্ধ করো", "பிளைண்ட் எய்டை நிறுத்து",
+                "బ్లైండ్ ఎయిడ్ ఆపు", "ಬ್ಲೈಂಡ್ ಏಡ್ ನಿಲ್ಲಿಸು", "ബ്ലൈൻഡ് എയ്ഡ് നിർത്തുക"
+            ) -> ToolCall("deactivate_blind_aid", JsonObject(emptyMap()))
+
+            hasAny(
+                "ब्लाइंड एड चालू करो", "सामने क्या है", "वस्तुओं का पता लगाओ",
+                "ব্লাইন্ড এইড চালু করো", "সামনে কী আছে",
+                "பிளைண்ட் எய்டை தொடங்கு", "எனக்கு முன்னால் என்ன இருக்கிறது",
+                "బ్లైండ్ ఎయిడ్ ప్రారంభించు", "నా ముందు ఏముంది",
+                "ಬ್ಲೈಂಡ್ ಏಡ್ ಪ್ರಾರಂಭಿಸು", "ನನ್ನ ಮುಂದೆ ಏನಿದೆ",
+                "ബ്ലൈൻഡ് എയ്ഡ് തുടങ്ങുക", "എന്റെ മുന്നിൽ എന്താണ്"
+            ) -> ToolCall("detect_objects", JsonObject(emptyMap()))
+
+            hasAny(
+                "स्क्रीन पढ़ो", "स्क्रीन का टेक्स्ट पढ़ो", "স্ক্রিন পড়ো",
+                "திரையை படி", "ஸ்கிரீனை படி", "స్క్రీన్ చదువు", "ಪರದೆಯನ್ನು ಓದು",
+                "ಸ್ಕ್ರೀನ್ ಓದು", "സ്ക്രീൻ വായിക്കുക"
+            ) -> ToolCall("read_screen", JsonObject(emptyMap()))
+
+            hasAny(
+                "कैमरा खोलो", "ক্যামেরা খোলো", "கேமராவை திற", "కెమెరా తెరువు",
+                "ಕ್ಯಾಮೆರಾ ತೆರೆಯಿರಿ", "ക്യാമറ തുറക്കുക"
+            ) -> ToolCall("open_camera", JsonObject(emptyMap()))
+
+            hasAny(
+                "कैलेंडर खोलो", "ক্যালেন্ডার খোলো", "காலெண்டரை திற", "క్యాలెండర్ తెరువు",
+                "ಕ್ಯಾಲೆಂಡರ್ ತೆರೆಯಿರಿ", "കലണ്ടർ തുറക്കുക"
+            ) -> ToolCall("open_calendar", JsonObject(emptyMap()))
+
+            hasAny(
+                "व्हाट्सऐप खोलो", "व्हाट्सएप खोलो", "হোয়াটসঅ্যাপ খোলো",
+                "வாட்ஸ்அப்பை திற", "వాట్సాప్ తెరువు", "ವಾಟ್ಸಾಪ್ ತೆರೆಯಿರಿ",
+                "വാട്സ്ആപ്പ് തുറക്കുക"
+            ) -> openApp("whatsapp", "com.whatsapp")
+
+            hasAny(
+                "क्रोम खोलो", "ক্রোম খোলো", "குரோமை திற", "క్రోమ్ తెరువు",
+                "ಕ್ರೋಮ್ ತೆರೆಯಿರಿ", "ക്രോം തുറക്കുക"
+            ) -> ToolCall("open_chrome", JsonObject(emptyMap()))
+
+            hasAny(
+                "सिक्योर ब्राउज़र खोलो", "সিকিউর ব্রাউজার খোলো",
+                "பாதுகாப்பான உலாவியை திற", "సెక్యూర్ బ్రౌజర్ తెరువు",
+                "ಸುರಕ್ಷಿತ ಬ್ರೌಸರ್ ತೆರೆಯಿರಿ", "സുരക്ഷിത ബ്രൗസർ തുറക്കുക"
+            ) -> ToolCall(
+                "secure_browser_task",
+                JsonObject(mapOf(
+                    "origin" to JsonPrimitive("https://unigurus.com"),
+                    "task" to JsonPrimitive("")
+                ))
+            )
+
+            // Common final-consonant loss from streaming English ASR.
+            command in setOf("open calenda", "launch calenda") ->
+                ToolCall("open_calendar", JsonObject(emptyMap()))
 
             else -> null
         }

@@ -97,7 +97,8 @@ class CommandParser(
      * ([com.unoone.agent.AgentOrchestrator]) only invokes this for question-shaped, action-free
      * input; on any Error/blank answer it falls back to the agent pipeline. Device-time verified.
      */
-    suspend fun chat(text: String): Result<String> = localBrain.chat(text)
+    suspend fun chat(text: String): Result<String> =
+        localBrain.chat(text, voiceLanguageProvider())
 
     suspend fun describeSceneWithVision(imageBytes: ByteArray, aspect: String): Result<String> =
         localBrain.describeSceneWithVision(imageBytes, aspect)

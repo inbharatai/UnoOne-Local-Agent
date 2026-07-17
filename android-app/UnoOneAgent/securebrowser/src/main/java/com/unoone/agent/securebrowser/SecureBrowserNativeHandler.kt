@@ -1,5 +1,6 @@
 package com.unoone.agent.securebrowser
 
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -34,6 +35,9 @@ class SecureBrowserNativeHandler(
     private val json = Json { ignoreUnknownKeys = false; encodeDefaults = true }
 
     override suspend fun handle(request: PageAgentBridgeRequest): PageAgentBridgeResponse {
+        if (!AgentRuntimeGate.isEnabled()) {
+            return failure(request, "AGENT_DISABLED", "UnoOne is disabled")
+        }
         return when (request.type) {
             PageAgentRequestType.MODEL_INVOKE -> handleModel(request)
             PageAgentRequestType.AUTHORIZE_ACTION -> handleAuthorization(request)
@@ -55,7 +59,10 @@ class SecureBrowserNativeHandler(
             return failure(request, "INVALID_MODEL_REQUEST", e.message ?: "Invalid model request")
         }
         return modelPort.plan(invocation).fold(
-            onSuccess = { success(request, json.encodeToString(it)) },
+            onSuccess = {
+                if (AgentRuntimeGate.isEnabled()) success(request, json.encodeToString(it))
+                else failure(request, "AGENT_DISABLED", "UnoOne is disabled")
+            },
             onFailure = { failure(request, "MODEL_ERROR", it.message ?: "Local model failed") }
         )
     }

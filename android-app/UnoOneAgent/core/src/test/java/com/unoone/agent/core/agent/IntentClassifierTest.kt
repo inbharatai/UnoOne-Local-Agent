@@ -13,6 +13,27 @@ import org.junit.Test
  * conservative classification that keeps action orders out of the chat lane.
  */
 class IntentClassifierTest {
+    @Test
+    fun romanizedHindiQuestionRoutesToChat() {
+        assertEquals(IntentType.CHAT, IntentClassifier.classify("india kya hey", null))
+        assertEquals(IntentType.CHAT, IntentClassifier.classify("bharat kya hai", null))
+    }
+
+    @Test
+    fun supportedIndianScriptQuestionsRouteToChat() {
+        val questions = listOf(
+            "भारत क्या है",
+            "ভারত কী",
+            "இந்தியா என்ன",
+            "భారతదేశం ఏమి",
+            "ಭಾರತ ಏನು",
+            "ഇന്ത്യ എന്ത്",
+            "অসম ক'ত"
+        )
+        questions.forEach { text ->
+            assertEquals(text, IntentType.CHAT, IntentClassifier.classify(text, null))
+        }
+    }
 
     private fun tc(tool: String): ToolCall = ToolCall(tool, JsonObject(emptyMap()))
 

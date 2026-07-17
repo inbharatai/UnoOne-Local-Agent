@@ -185,7 +185,7 @@ class ScreenshotCapture(private val context: Context) {
             DisplayMetrics().apply {
                 widthPixels = bounds.width()
                 heightPixels = bounds.height()
-                densityDpi = DisplayMetrics.DENSITY_DEFAULT
+                densityDpi = DisplayMetrics.DENSITY_MEDIUM
             }
         } else {
             val displayMetrics = DisplayMetrics()

@@ -6,6 +6,8 @@ import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unoone.agent.core.model.Result
+import com.unoone.agent.UnoOneApplication
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.modelmanager.ModelManager
 import com.unoone.agent.safety.SecurityLevel
@@ -28,6 +30,10 @@ class SettingsViewModel(context: Context) : ViewModel() {
 
     // 5D: Dark mode state persisted in SharedPreferences
     private val prefs = context.getSharedPreferences("unoone_settings", Context.MODE_PRIVATE)
+    private val runtimeController = appContext as? UnoOneApplication
+    private val fallbackAgentEnabled = MutableStateFlow(AgentRuntimeGate.isEnabled())
+    val isAgentEnabled: StateFlow<Boolean> =
+        runtimeController?.isAgentEnabled ?: fallbackAgentEnabled.asStateFlow()
 
     private val _modelStatuses = MutableStateFlow<List<ModelManager.ModelStatus>>(emptyList())
     val modelStatuses: StateFlow<List<ModelManager.ModelStatus>> = _modelStatuses.asStateFlow()
@@ -67,6 +73,16 @@ class SettingsViewModel(context: Context) : ViewModel() {
     fun setDarkMode(enabled: Boolean) {
         _darkMode.value = enabled
         prefs.edit().putBoolean("dark_mode", enabled).apply()
+    }
+
+    fun disableAgent() {
+        runtimeController?.disableAgent()
+        fallbackAgentEnabled.value = false
+    }
+
+    fun enableAgent() {
+        runtimeController?.enableAgent()
+        fallbackAgentEnabled.value = true
     }
 
     /**
@@ -129,9 +145,20 @@ class SettingsViewModel(context: Context) : ViewModel() {
 
     /** 5E: Test TTS by speaking a test phrase */
     fun testTts(context: Context) {
-        val voiceModule = VoiceModule(context)
+        val voiceModule = (context.applicationContext as? UnoOneApplication)?.sharedVoiceModule
+            ?: VoiceModule(context)
+        val language = VoiceLanguage.normalize(prefs.getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT))
         viewModelScope.launch {
-            voiceModule.speakAwait("UnoOne is online and ready. Voice synthesis is working correctly.")
+            if (!voiceModule.isTtsInitialized()) {
+                val base = context.getExternalFilesDir(null)?.absolutePath + "/models"
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    voiceModule.reinitForLanguage(base, language)
+                }
+            }
+            voiceModule.speakAwait(
+                VoiceLanguage.testPhrase(language),
+                VoiceLanguage.localeTag(language)
+            )
         }
     }
 

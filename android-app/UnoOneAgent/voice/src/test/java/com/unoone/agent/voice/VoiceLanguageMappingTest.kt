@@ -14,17 +14,17 @@ class VoiceLanguageMappingTest {
         val asr = VoiceLanguage.asrSpec("en")
         assertEquals("speech/shared/sherpa-asr-en", asr.folder)
         assertEquals(SttMode.TRANSDUCER, asr.mode)
-        assertEquals("en", asr.whisperLanguage)
+        assertEquals("en", asr.language)
         assertEquals("speech/languages/en-IN/tts", VoiceLanguage.ttsFolder("en"))
     }
 
     @Test
-    fun indicLanguagesUseSharedWhisperAsrAndPerLanguageMmsTts() {
+    fun indicLanguagesUseSharedOmnilingualAsrAndPerLanguageMmsTts() {
         listOf("hi", "bn", "ta", "te", "kn", "ml").forEach { lang ->
             val asr = VoiceLanguage.asrSpec(lang)
-            assertEquals("speech/shared/sherpa-asr-whisper", asr.folder)
-            assertEquals(SttMode.WHISPER, asr.mode)
-            assertEquals(lang, asr.whisperLanguage)
+            assertEquals("speech/shared/sherpa-asr-indic", asr.folder)
+            assertEquals(SttMode.OMNILINGUAL, asr.mode)
+            assertEquals(lang, asr.language)
         }
     }
 
@@ -43,6 +43,14 @@ class VoiceLanguageMappingTest {
     @Test
     fun kwsFolderUsesSharedVadPath() {
         assertEquals("speech/shared/vad", VoiceLanguage.KWS_FOLDER)
+    }
+
+    @Test
+    fun kwsFallsBackToInstalledEnglishTransducer() {
+        assertEquals(
+            listOf("speech/shared/vad", "speech/shared/sherpa-asr-en"),
+            VoiceLanguage.kwsFolders()
+        )
     }
 
     @Test
@@ -71,8 +79,35 @@ class VoiceLanguageMappingTest {
     }
 
     @Test
+    fun everySupportedLanguageHasAnIndianLocaleAndNativeTestPhrase() {
+        val expected = mapOf(
+            "en" to "en-IN",
+            "hi" to "hi-IN",
+            "bn" to "bn-IN",
+            "ta" to "ta-IN",
+            "te" to "te-IN",
+            "kn" to "kn-IN",
+            "ml" to "ml-IN"
+        )
+        VoiceLanguage.SUPPORTED.forEach { language ->
+            assertEquals(expected.getValue(language.code), VoiceLanguage.localeTag(language.code))
+            assertTrue(VoiceLanguage.testPhrase(language.code).isNotBlank())
+        }
+    }
+
+    @Test
     fun englishAsrDiffersFromIndicAsrMode() {
         assertNotEquals(VoiceLanguage.asrSpec("en").mode, VoiceLanguage.asrSpec("hi").mode)
         assertTrue(VoiceLanguage.isSupported("ta"))
+    }
+
+    @Test
+    fun everyLanguageHasANonEnglishNativeWakeCue() {
+        assertEquals("Yes, I'm listening.", VoiceLanguage.wakeCue("en"))
+        listOf("hi", "bn", "ta", "te", "kn", "ml").forEach { language ->
+            val cue = VoiceLanguage.wakeCue(language)
+            assertTrue("$language wake cue must not be blank", cue.isNotBlank())
+            assertNotEquals("Indic wake cue must not fall back to English", VoiceLanguage.wakeCue("en"), cue)
+        }
     }
 }

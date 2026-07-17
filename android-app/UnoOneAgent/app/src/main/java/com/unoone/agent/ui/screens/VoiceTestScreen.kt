@@ -44,6 +44,7 @@ import com.unoone.agent.ui.theme.FailedRed
 import com.unoone.agent.ui.theme.SafetyOrange
 import com.unoone.agent.ui.viewmodel.VoiceTestViewModel
 import com.unoone.agent.voice.VoiceRuntimeState
+import com.unoone.agent.voice.VoiceLanguage
 
 /**
  * STT/TTS test screen: verifies offline voice works before relying on it. Records 3s → transcribes
@@ -59,7 +60,11 @@ fun VoiceTestScreen(viewModel: VoiceTestViewModel, onBack: () -> Unit) {
     val isRecording by viewModel.isRecording.collectAsState()
     val message by viewModel.message.collectAsState()
     val context = LocalContext.current
-    var ttsText by remember { mutableStateOf("UnoOne is online and ready. Voice synthesis is working.") }
+    var ttsText by remember { mutableStateOf(VoiceLanguage.testPhrase(engine.language)) }
+
+    LaunchedEffect(engine.language) {
+        ttsText = VoiceLanguage.testPhrase(engine.language)
+    }
 
     // Poll the @Volatile engine state on a 1s cadence — VoiceModule does not expose a Flow.
     LaunchedEffect(Unit) {
@@ -96,6 +101,10 @@ fun VoiceTestScreen(viewModel: VoiceTestViewModel, onBack: () -> Unit) {
                 Spacer(modifier = Modifier.height(8.dp))
                 EngineLine("STT", engine.stt, engine.sttReady)
                 EngineLine("TTS", engine.tts, engine.ttsReady)
+                Text(
+                    "Language: ${VoiceLanguage.displayName(engine.language)} (${VoiceLanguage.localeTag(engine.language)})",
+                    style = MaterialTheme.typography.bodySmall
+                )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "System STT fallback: ${if (engine.systemFallbackAllowed) "allowed" else "off (offline-first)"}",

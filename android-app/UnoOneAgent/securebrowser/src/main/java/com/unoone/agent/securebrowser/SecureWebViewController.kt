@@ -13,6 +13,7 @@ import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,13 +23,16 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.util.Collections
+import java.util.WeakHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 fun interface PageAgentRequestHandler {
     suspend fun handle(request: PageAgentBridgeRequest): PageAgentBridgeResponse
 }
 
 /**
- * Hardened WebView host for Alibaba PageAgent.
+ * Hardened WebView host for UnoOne's local Page Agent.
  *
  * The bridge is exposed only through AndroidX WebKit's web-message listener. Standard registers
  * exact origin rules; explicit Prototype/Off registers AndroidX's wildcard rule but still validates
@@ -59,6 +63,7 @@ class SecureWebViewController(
         allowedOrigins = domainPolicy.origins() + LOCAL_FORM_ORIGIN
     )
 ) {
+    private val stopped = AtomicBoolean(false)
 
     private val appContext = context.applicationContext
     private val json = Json { ignoreUnknownKeys = false; encodeDefaults = true }
@@ -78,6 +83,7 @@ class SecureWebViewController(
     @Volatile private var localFormOrigin: String? = null
 
     init {
+        activeControllers.add(this)
         configureWebView()
         installBridge()
     }
@@ -88,6 +94,9 @@ class SecureWebViewController(
     fun goBack() = webView.goBack()
 
     fun load(rawUrl: String): NavigationDecision {
+        if (!AgentRuntimeGate.isEnabled()) {
+            return NavigationDecision.Block("UnoOne is disabled")
+        }
         val decision = evaluateNavigation(rawUrl)
         when (decision) {
             is NavigationDecision.Allow -> webView.loadUrl(decision.normalizedUrl)
@@ -109,6 +118,7 @@ class SecureWebViewController(
      * load http resources; it is sandboxed to its synthetic origin.
      */
     fun loadLocalHtml(html: String, displayName: String) {
+        if (!AgentRuntimeGate.isEnabled()) return
         if (html.isBlank()) {
             onRuntimeError("The local form is empty")
             return
@@ -122,8 +132,12 @@ class SecureWebViewController(
 
     /** Executes one PageAgent task after the bundle has initialized on the current approved page. */
     fun executeTask(task: String, callback: (success: Boolean, result: String) -> Unit) {
+        if (!AgentRuntimeGate.isEnabled()) {
+            callback(false, "UnoOne is disabled")
+            return
+        }
         if (!runtimeInjected) {
-            callback(false, "Alibaba PageAgent runtime is not loaded on this page")
+            callback(false, "Page Agent runtime is not loaded on this page")
             return
         }
         val clean = task.trim()
@@ -190,6 +204,10 @@ class SecureWebViewController(
      * the spoken readback bounded.
      */
     fun readPageText(callback: (String) -> Unit) {
+        if (!AgentRuntimeGate.isEnabled()) {
+            callback("")
+            return
+        }
         val script = """
             (function(){
               try {
@@ -205,6 +223,8 @@ class SecureWebViewController(
     }
 
     fun stop() {
+        if (!stopped.compareAndSet(false, true)) return
+        activeControllers.remove(this)
         session.close()
         stopTask()
         webView.stopLoading()
@@ -469,6 +489,17 @@ class SecureWebViewController(
     private fun normalizeOrigin(value: String): String = value.trim().removeSuffix("/").lowercase()
 
     companion object {
+        private val activeControllers: MutableSet<SecureWebViewController> =
+            Collections.synchronizedSet(
+                Collections.newSetFromMap(WeakHashMap<SecureWebViewController, Boolean>())
+            )
+
+        /** Main-thread emergency teardown for every live WebView session. */
+        fun stopAllForDisable() {
+            val snapshot = synchronized(activeControllers) { activeControllers.toList() }
+            snapshot.forEach { it.stop() }
+            activeControllers.clear()
+        }
         private const val TASK_TIMEOUT_MS = 120_000L
         const val BRIDGE_NAME = "UnoOnePageAgent"
         const val RUNTIME_ASSET = "page-agent/unoone-page-agent.js"

@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.unoone.agent.R
 import com.unoone.agent.core.util.Logger
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.phonecontrol.ScreenshotCapture
 
 /** Owns the MediaProjection token for OCR as required by Android 14+ foreground-service rules. */
@@ -32,6 +33,11 @@ class MediaProjectionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!AgentRuntimeGate.isEnabled()) {
+            notifyPermission(false)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("UnoOne screen reading active")
@@ -108,6 +114,7 @@ class MediaProjectionService : Service() {
         private const val EXTRA_RESULT_DATA = "result_data"
 
         fun start(context: Context, resultCode: Int, data: Intent) {
+            if (!AgentRuntimeGate.isEnabled()) return
             val serviceIntent = Intent(context, MediaProjectionService::class.java).apply {
                 putExtra(EXTRA_RESULT_CODE, resultCode)
                 putExtra(EXTRA_RESULT_DATA, data)

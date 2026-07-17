@@ -19,7 +19,7 @@ import org.junit.Test
  *  - TTS: for every installed language, construct SherpaTtsEngine, initialize(), speak(sample).
  *    speak() returns Success only when the VITS model produces a non-empty PCM buffer — so Success
  *    proves real ONNX synthesis end-to-end (model loads -> inference -> PCM samples generated).
- *  - STT: initialize() the English transducer and the multilingual Whisper recognizer. Success
+ *  - STT: initialize() the English transducer and the multilingual Omnilingual recognizer. Success
  *    proves the ONNX ASR models load on device. Actual transcription needs microphone PCM, which is
  *    a manual/physical gate (noted, not asserted here).
  *
@@ -80,11 +80,11 @@ class SpeechEngineFunctionalTest {
         if (enInit is Result.Error) sttFailures += "en-transducer(${enInit.message})"
         try { /* release if available */ } catch (_: Throwable) {}
 
-        Log.i(tag, ">>> STT Whisper init (multilingual)")
-        val whisperStt = SherpaSttEngine(context, "$base/speech/shared/sherpa-asr-whisper", SttMode.WHISPER, "en")
-        val wInit = whisperStt.initialize()
-        Log.i(tag, "<<< STT whisper init=${wInit.javaClass.simpleName} ${if (wInit is Result.Error) wInit.message else "(offline whisper recognizer loaded)"}")
-        if (wInit is Result.Error) sttFailures += "whisper(${wInit.message})"
+        Log.i(tag, ">>> STT Omnilingual init")
+        val indicStt = SherpaSttEngine(context, "$base/speech/shared/sherpa-asr-indic", SttMode.OMNILINGUAL, "hi")
+        val indicInit = indicStt.initialize()
+        Log.i(tag, "<<< STT omnilingual init=${indicInit.javaClass.simpleName} ${if (indicInit is Result.Error) indicInit.message else "(offline omnilingual recognizer loaded)"}")
+        if (indicInit is Result.Error) sttFailures += "omnilingual(${indicInit.message})"
 
         Log.i(tag, "==== END SPEECH TEST — ttsFailures=${ttsFailures.size} sttFailures=${sttFailures.size} ====")
         if (ttsFailures.isNotEmpty()) ttsFailures.forEach { Log.e(tag, "TTS FAIL: $it") }

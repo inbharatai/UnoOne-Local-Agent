@@ -3,6 +3,7 @@ package com.unoone.agent.ui.viewmodel
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -11,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import com.unoone.agent.browser.SecureBrowserModelLease
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.onError
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.securebrowser.BrowserActionClass
 import com.unoone.agent.securebrowser.BrowserAuditEvent
 import com.unoone.agent.securebrowser.BrowserDomainPolicy
@@ -109,14 +111,54 @@ class SecureBrowserViewModel(
     private val _isListening = MutableStateFlow(false)
     val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
 
+    init {
+        (appContext as? com.unoone.agent.UnoOneApplication)?.let { app ->
+            viewModelScope.launch {
+                app.isAgentEnabled.collect { enabled ->
+                    if (!enabled) shutdownForDisable()
+                }
+            }
+        }
+    }
+
+    private fun shutdownForDisable() {
+        attached = false
+        controller?.stop()
+        controller = null
+        pendingPrompt?.cancel()
+        pendingPrompt = null
+        pendingFileCallback?.onReceiveValue(null)
+        pendingFileCallback = null
+        pendingOrigin = null
+        pendingTask = null
+        _prompt.value = null
+        _isListening.value = false
+        voiceModule?.stopRecording()
+        voiceModule?.stopSpeaking()
+        _state.value = SecureBrowserUiState(
+            phase = "Disabled",
+            status = "UnoOne is disabled",
+            error = "Enable UnoOne before starting Secure Browser."
+        )
+        cleanupScope.launch { modelLease.release(restore = false) }
+    }
+
     fun attachWebView(webView: WebView) {
+        if (!AgentRuntimeGate.isEnabled()) {
+            _state.value = _state.value.copy(
+                phase = "Disabled",
+                status = "UnoOne is disabled",
+                error = "Enable UnoOne before starting Secure Browser."
+            )
+            return
+        }
         if (attached) return
         attached = true
 
         if (!runtimeAssetExists()) {
             _state.value = _state.value.copy(
                 phase = "Not built",
-                status = "Alibaba PageAgent runtime bundle is missing",
+                status = "Page Agent runtime bundle is missing",
                 error = "Run npm run bundle:android in web-runtime/page-agent-unoone before building the APK."
             )
             return
@@ -207,6 +249,10 @@ class SecureBrowserViewModel(
     }
 
     fun navigate(rawUrl: String) {
+        if (!AgentRuntimeGate.isEnabled()) {
+            _state.value = _state.value.copy(error = "UnoOne is disabled")
+            return
+        }
         val entered = rawUrl.trim()
         if (entered.isBlank()) return
         val clean = if (entered.contains("://")) entered else "https://$entered"
@@ -232,20 +278,48 @@ class SecureBrowserViewModel(
     fun completeFileChooser(resultCode: Int, data: Intent?) {
         val callback = pendingFileCallback ?: return
         pendingFileCallback = null
-        callback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
+        if (!AgentRuntimeGate.isEnabled()) {
+            callback.onReceiveValue(null)
+            return
+        }
+        val selected = BrowserFileSelection.uris(resultCode, data)
+        val rejection = selected?.firstNotNullOfOrNull(::validateSelectedFile)
+        if (rejection != null) {
+            _state.value = _state.value.copy(error = rejection)
+            callback.onReceiveValue(null)
+            return
+        }
+        selected?.forEach { uri ->
+            runCatching {
+                appContext.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+        }
+        callback.onReceiveValue(selected)
     }
 
     private fun openFileChooser(
         callback: ValueCallback<Array<Uri>>,
         params: WebChromeClient.FileChooserParams
     ): Boolean {
+        if (!AgentRuntimeGate.isEnabled()) {
+            callback.onReceiveValue(null)
+            return true
+        }
         val launcher = fileChooserLauncher ?: return false
         // WebView permits only one outstanding callback. Cancel the older request explicitly so a
         // page cannot leak it by opening a second picker before the first one returns.
         pendingFileCallback?.onReceiveValue(null)
         return try {
             pendingFileCallback = callback
-            launcher(params.createIntent())
+            launcher(
+                BrowserFileSelection.intent(
+                    acceptTypes = params.acceptTypes ?: emptyArray(),
+                    allowMultiple = params.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE
+                )
+            )
             true
         } catch (e: Exception) {
             pendingFileCallback = null
@@ -253,6 +327,43 @@ class SecureBrowserViewModel(
             _state.value = _state.value.copy(error = "Could not open the file picker: ${e.message}")
             false
         }
+    }
+
+    private fun validateSelectedFile(uri: Uri): String? {
+        if (uri.scheme != "content") return "Only files selected through Android Documents are supported."
+        val type = runCatching { appContext.contentResolver.getType(uri) }.getOrNull()
+        val displayName = runCatching {
+            appContext.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getString(0) else null
+            }
+        }.getOrNull()
+        val extension = displayName?.substringAfterLast('.', "")?.lowercase().orEmpty()
+        if (type !in BrowserFileSelection.SUPPORTED_MIME_TYPES &&
+            extension !in BrowserFileSelection.SUPPORTED_EXTENSIONS
+        ) {
+            return "Unsupported file type${type?.let { ": $it" } ?: ""}."
+        }
+        val size = runCatching {
+            appContext.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.SIZE),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+            }
+        }.getOrNull()
+        if (size != null && size > BrowserFileSelection.MAX_UPLOAD_BYTES) {
+            return "The selected file is larger than 50 MB."
+        }
+        return null
     }
 
     /**
@@ -264,6 +375,10 @@ class SecureBrowserViewModel(
      * origin, which is reachable solely via [SecureWebViewController.loadLocalHtml].
      */
     fun loadLocalFormHtml(html: String, displayName: String) {
+        if (!AgentRuntimeGate.isEnabled()) {
+            _state.value = _state.value.copy(error = "UnoOne is disabled")
+            return
+        }
         if (html.isBlank()) {
             _state.value = _state.value.copy(error = "The selected form is empty")
             narrate("The selected form is empty.")
@@ -286,6 +401,11 @@ class SecureBrowserViewModel(
     }
 
     fun executeTask(task: String) {
+        if (!AgentRuntimeGate.isEnabled()) {
+            stopTask()
+            _state.value = _state.value.copy(error = "UnoOne is disabled")
+            return
+        }
         if (_state.value.taskRunning) return
         if (!_state.value.runtimeReady) {
             _state.value = _state.value.copy(error = "PageAgent is not ready on the current page")
@@ -410,6 +530,7 @@ class SecureBrowserViewModel(
      * before [attachWebView] (the pending pair survives until the runtime is ready).
      */
     fun setPendingTask(origin: String, task: String) {
+        if (!AgentRuntimeGate.isEnabled()) return
         pendingOrigin = origin
         pendingTask = task
         _state.value = _state.value.copy(currentUrl = origin, status = "Opening $origin…", error = "")
@@ -442,6 +563,7 @@ class SecureBrowserViewModel(
      * (it never drives the page); an empty result is spoken as a clear "no readable text" message.
      */
     fun readPageAloud() {
+        if (!AgentRuntimeGate.isEnabled()) return
         val ctrl = controller
         if (ctrl == null || !_state.value.runtimeReady) {
             narrate("The secure browser isn't ready yet.")
@@ -455,6 +577,7 @@ class SecureBrowserViewModel(
 
     /** Speak a narration string through the shared VoiceModule (eyes-free). No-op without a voice module. */
     private fun narrate(text: String) {
+        if (!AgentRuntimeGate.isEnabled()) return
         val vm = voiceModule ?: return
         val toSpeak = text.trim()
         if (toSpeak.isBlank() || toSpeak == lastNarration) return
@@ -470,6 +593,7 @@ class SecureBrowserViewModel(
      * button, not a safety-pipeline-gated tool). Stop with [stopVoiceTask] to transcribe + run.
      */
     fun startVoiceTask(context: Context) {
+        if (!AgentRuntimeGate.isEnabled()) return
         val vm = voiceModule ?: return
         if (_isListening.value || _state.value.taskRunning) return
         viewModelScope.launch {
@@ -516,17 +640,16 @@ class SecureBrowserViewModel(
             put("sessionId", event.sessionId)
             put("actionClass", event.actionClass.name)
             put("decision", event.decision)
-            put("message", event.message.take(300))
         }
         actionLogDao.insert(
             ActionLogEntity(
-                inputText = event.summary.take(500),
+                inputText = "[private browser event]",
                 inputType = "secure_browser",
                 selectedTool = "browser:${event.actionName}",
                 toolArgsJson = json.encodeToString(args),
                 riskLevel = browserRiskLevel(event.actionClass),
                 status = status,
-                errorMessage = event.message.take(300).takeIf { status != "success" },
+                errorMessage = event.decision.take(80).takeIf { status != "success" },
                 createdAt = event.timestampEpochMs
             )
         )

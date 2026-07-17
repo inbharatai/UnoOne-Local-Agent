@@ -35,15 +35,15 @@
       ]
     },
     {
-      "id": "sherpa-asr-whisper",
-      "folder": "speech/shared/sherpa-asr-whisper",
+      "id": "sherpa-asr-indic",
+      "folder": "speech/shared/sherpa-asr-indic",
       "type": "asr",
-      "version": "whisper-tiny-int8-baseline",
-      "minRamMb": 512,
+      "version": "omnilingual-1600-languages-300M-ctc-int8-2025-11-12",
+      "minRamMb": 2048,
       "backend": "cpu",
       "defaultLanguage": "multi",
       "files": [
-        {"name":"sherpa-onnx-whisper-tiny.tar.bz2","url":"https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2","sha256":"c46116994e539aa165266d96b325252728429c12535eb9d8b6a2b10f129e66b1","sizeBytes":116204861,"archive":true,"extractsTo":"sherpa-onnx-whisper-tiny"}
+        {"name":"sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2","url":"https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2","sha256":"cdcd0559c7c73efed54209a926e321afc914d046c5fdbf3665f00dc78180e5ed","sizeBytes":292571207,"archive":true,"extractsTo":"sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12"}
       ]
     },
     {

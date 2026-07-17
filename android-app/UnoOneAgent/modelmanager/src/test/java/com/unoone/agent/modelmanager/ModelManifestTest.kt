@@ -34,21 +34,21 @@ class ModelManifestTest {
               ]
             },
             {
-              "id": "sherpa-asr-whisper",
-              "folder": "speech/shared/sherpa-asr-whisper",
+              "id": "sherpa-asr-indic",
+              "folder": "speech/shared/sherpa-asr-indic",
               "type": "asr",
-              "version": "whisper-tiny-int8-baseline",
-              "minRamMb": 512,
+              "version": "omnilingual-1600-languages-300M-ctc-int8-2025-11-12",
+              "minRamMb": 2048,
               "backend": "cpu",
               "defaultLanguage": "multi",
               "files": [
                 {
-                  "name": "sherpa-onnx-whisper-tiny.tar.bz2",
-                  "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2",
-                  "sha256": "c46116994e539aa165266d96b325252728429c12535eb9d8b6a2b10f129e66b1",
-                  "sizeBytes": 116204861,
+                  "name": "sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2",
+                  "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2",
+                  "sha256": "cdcd0559c7c73efed54209a926e321afc914d046c5fdbf3665f00dc78180e5ed",
+                  "sizeBytes": 292571207,
                   "archive": true,
-                  "extractsTo": "sherpa-onnx-whisper-tiny"
+                  "extractsTo": "sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12"
                 }
               ]
             },
@@ -102,10 +102,13 @@ class ModelManifestTest {
             gemma.files.single().sha256
         )
 
-        val whisper = manifest.find("sherpa-asr-whisper")
-        assertNotNull(whisper)
-        assertTrue(whisper!!.files.single().archive)
-        assertEquals("sherpa-onnx-whisper-tiny", whisper.files.single().extractsTo)
+        val indic = manifest.find("sherpa-asr-indic")
+        assertNotNull(indic)
+        assertTrue(indic!!.files.single().archive)
+        assertEquals(
+            "sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12",
+            indic.files.single().extractsTo
+        )
 
         val englishTts = manifest.find("sherpa-tts-en")
         assertNotNull(englishTts)
@@ -118,7 +121,7 @@ class ModelManifestTest {
     fun findByFolderUsesNormalizedV2Paths() {
         val manifest = loader.parse(sample)
         assertEquals("gemma-4-e2b", manifest.findByFolder("brain/gemma-4-e2b")!!.id)
-        assertEquals("sherpa-asr-whisper", manifest.findByFolder("speech/shared/sherpa-asr-whisper")!!.id)
+        assertEquals("sherpa-asr-indic", manifest.findByFolder("speech/shared/sherpa-asr-indic")!!.id)
         assertEquals("sherpa-tts-en", manifest.findByFolder("speech/languages/en-IN/tts")!!.id)
     }
 
@@ -137,11 +140,14 @@ class ModelManifestTest {
     fun parsesArchiveAndBundledAssetMetadata() {
         val manifest = loader.parse(sample)
 
-        val whisperFile = manifest.find("sherpa-asr-whisper")!!.files.single()
-        assertTrue(whisperFile.archive)
-        assertEquals("sherpa-onnx-whisper-tiny", whisperFile.extractsTo)
-        assertNull(whisperFile.asset)
-        assertEquals(116204861L, whisperFile.sizeBytes)
+        val indicFile = manifest.find("sherpa-asr-indic")!!.files.single()
+        assertTrue(indicFile.archive)
+        assertEquals(
+            "sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12",
+            indicFile.extractsTo
+        )
+        assertNull(indicFile.asset)
+        assertEquals(292571207L, indicFile.sizeBytes)
 
         val ttsFiles = manifest.find("sherpa-tts-en")!!.files
         val networkModel = ttsFiles.first { it.name == "model.onnx" }

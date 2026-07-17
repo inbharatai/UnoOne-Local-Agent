@@ -46,6 +46,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.unoone.agent.di.DatabaseProvider
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.ui.theme.UnoOneTheme
 import com.unoone.agent.voice.VoiceModule
 import kotlinx.coroutines.launch
@@ -84,6 +85,10 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
         // 0C-1: Must start as foreground service to prevent being killed by the system
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification())
+        if (!AgentRuntimeGate.isEnabled()) {
+            stopSelf()
+            return
+        }
 
         val app = application as UnoOneApplication
         orchestrator = app.orchestrator
@@ -115,6 +120,10 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!AgentRuntimeGate.isEnabled()) {
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         // Only dispatch lifecycle events if not already at RESUMED (onStartCommand can be
         // called multiple times with START_STICKY, and RESUMED→STARTED is an invalid transition)
         if (!lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.RESUMED)) {

@@ -1,6 +1,7 @@
 package com.unoone.agent.voice
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,6 +39,18 @@ class WakePhrasesTest {
     }
 
     @Test
+    fun everyWakePhraseHasAnEncodedKwsEntry() {
+        assertEquals(WakePhrases.LIST.size, WakePhrases.KWS_ENTRIES.size)
+        WakePhrases.KWS_ENTRIES.forEach { entry ->
+            assertTrue(entry.contains(" :"))
+            assertTrue(entry.contains(" #"))
+            assertTrue(entry.contains(" @"))
+            assertFalse(entry.startsWith("uno one"))
+            assertFalse(entry.startsWith("listen"))
+        }
+    }
+
+    @Test
     fun stripsWakePhraseFromOneBreathCommand() {
         assertEquals("open Chrome", WakePhrases.stripFromCommand("Uno One, open Chrome"))
         assertEquals("create a note", WakePhrases.stripFromCommand("UnoOne create a note"))
@@ -47,5 +60,28 @@ class WakePhrasesTest {
     @Test
     fun doesNotStripListenInsideCommand() {
         assertEquals("play my listen later playlist", WakePhrases.stripFromCommand("play my listen later playlist"))
+    }
+
+    @Test
+    fun extractsOneBreathCommandOnlyAfterLeadingWakePhrase() {
+        assertEquals("open Blind Aid", WakePhrases.commandAfterWakePhrase("Uno One, open Blind Aid"))
+        assertEquals("read my screen", WakePhrases.commandAfterWakePhrase("Listen to me: read my screen"))
+        assertEquals("", WakePhrases.commandAfterWakePhrase("listen"))
+        assertEquals(null, WakePhrases.commandAfterWakePhrase("please listen and open Blind Aid"))
+    }
+
+    @Test
+    fun extractsNativeOneBreathCommandsForEveryIndicLanguage() {
+        val cases = mapOf(
+            "सुनो, स्क्रीन पढ़ो" to "स्क्रीन पढ़ो",
+            "শোনো: স্ক্রিন পড়ো" to "স্ক্রিন পড়ো",
+            "கேள், திரையை படி" to "திரையை படி",
+            "విను: స్క్రీన్ చదువు" to "స్క్రీన్ చదువు",
+            "ಕೇಳು, ಪರದೆಯನ್ನು ಓದು" to "ಪರದೆಯನ್ನು ಓದು",
+            "കേൾക്കൂ: സ്ക്രീൻ വായിക്കുക" to "സ്ക്രീൻ വായിക്കുക"
+        )
+        cases.forEach { (utterance, command) ->
+            assertEquals(utterance, command, WakePhrases.commandAfterWakePhrase(utterance))
+        }
     }
 }

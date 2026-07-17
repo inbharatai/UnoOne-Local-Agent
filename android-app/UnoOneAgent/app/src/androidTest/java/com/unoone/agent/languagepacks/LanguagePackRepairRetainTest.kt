@@ -11,12 +11,12 @@ import org.junit.Test
  * Real on-device, HEADLESS language-pack repair/retain gate (DEVICE_VERIFICATION §5: "activation is
  * blocked before health passes", "shared ASR is retained while another language depends on it",
  * "remove/reinstall/repair works"). Exercises the app's own [LanguagePackManager] uninstall→state→
- * reinstall cycle on the Malayalam pack, which shares the `sherpa-asr-whisper` model with the other
+ * reinstall cycle on the Malayalam pack, which shares the `sherpa-asr-indic` model with the other
  * five Indic packs.
  *
  * Sequence: assume ml + hi are installed (Phase 6 prerequisite) → uninstall ml → assert ml
  * state.installed=false with its pack-specific `sherpa-tts-mal` missing but the shared
- * `sherpa-asr-whisper` NOT missing (retained) and hi still healthy → reinstall ml → assert
+ * `sherpa-asr-indic` NOT missing (retained) and hi still healthy → reinstall ml → assert
  * healthy+verified. Restores the original installed state; re-downloads the ~114 MB Malayalam TTS
  * over WiFi (allow minutes).
  *
@@ -47,8 +47,8 @@ class LanguagePackRepairRetainTest {
         assertTrue("ml missing list must cite its pack-specific TTS (sherpa-tts-mal): ${afterUn.missingModelIds}",
             afterUn.missingModelIds.contains("sherpa-tts-mal"))
         assertFalse(
-            "ml must NOT list the shared sherpa-asr-whisper as missing (it is retained): ${afterUn.missingModelIds}",
-            afterUn.missingModelIds.contains("sherpa-asr-whisper"))
+            "ml must NOT list the shared sherpa-asr-indic as missing (it is retained): ${afterUn.missingModelIds}",
+            afterUn.missingModelIds.contains("sherpa-asr-indic"))
 
         // shared ASR retained: a still-installed dependent pack stays healthy
         val hi = lpm.state("hi-IN-standard")

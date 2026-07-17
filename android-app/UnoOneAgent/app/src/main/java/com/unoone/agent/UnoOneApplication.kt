@@ -4,15 +4,20 @@ import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.os.Process
+import android.content.Intent
+import androidx.core.content.edit
 import com.unoone.agent.browser.SecureBrowserModelLease
+import com.unoone.agent.securebrowser.SecureWebViewController
 import com.unoone.agent.core.model.BrainModelRegistry
 import com.unoone.agent.core.model.ExclusiveBrainLeaseState
 import com.unoone.agent.core.model.Result
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.di.DatabaseProvider
 import com.unoone.agent.modelmanager.ModelManager
 import com.unoone.agent.safety.AuditLogger
 import com.unoone.agent.voice.VoiceModule
+import com.unoone.agent.voice.VoiceLanguage
 import com.unoone.agent.voice.VoiceService
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -21,8 +26,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 @HiltAndroidApp
@@ -43,6 +51,9 @@ class UnoOneApplication : Application() {
     private val _commandFlow = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val commandFlow: SharedFlow<String> = _commandFlow.asSharedFlow()
 
+    private val _isAgentEnabled = MutableStateFlow(true)
+    val isAgentEnabled: StateFlow<Boolean> = _isAgentEnabled.asStateFlow()
+
     /** Remembered for restoring the main Gemma 4 brain after memory-pressure unload. */
     @Volatile private var lastLlmPath: String? = null
 
@@ -52,18 +63,35 @@ class UnoOneApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        Logger.i("UnoOne V2 starting — Gemma 4 E2B local mode")
         appContext = applicationContext
+        val persistedEnabled = getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AGENT_ENABLED, true)
+        AgentRuntimeGate.setEnabled(persistedEnabled)
+        _isAgentEnabled.value = persistedEnabled
+        Logger.i("UnoOne V2 starting — agent ${if (persistedEnabled) "enabled" else "disabled"}")
 
         val db = DatabaseProvider.getDatabase(this)
+        val settingsPrefs = getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        if (!settingsPrefs.getBoolean(KEY_PRIVATE_LOG_MIGRATION, false)) {
+            appScope.launch(Dispatchers.IO) {
+                runCatching { db.actionLogDao().redactLegacyPrivateContent() }
+                    .onSuccess {
+                        settingsPrefs.edit { putBoolean(KEY_PRIVATE_LOG_MIGRATION, true) }
+                        Logger.i("UnoOneApplication: legacy private log fields removed")
+                    }
+                    .onFailure { Logger.e("UnoOneApplication: private log migration failed", it) }
+            }
+        }
 
         sharedVoiceModule = VoiceModule(this)
         // Sherpa model construction performs file I/O and native initialization. Keep it off the
         // main thread so a cold offline launch cannot freeze Compose while voice models warm up.
-        appScope.launch(Dispatchers.IO) {
-            Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
-            val modelBaseDir = (getExternalFilesDir(null)?.absolutePath ?: filesDir.absolutePath) + "/models"
-            sharedVoiceModule.reinitForLanguage(modelBaseDir)
+        if (persistedEnabled) {
+            appScope.launch(Dispatchers.IO) {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+                val modelBaseDir = (getExternalFilesDir(null)?.absolutePath ?: filesDir.absolutePath) + "/models"
+                sharedVoiceModule.reinitForLanguage(modelBaseDir)
+            }
         }
 
         orchestrator = AgentOrchestrator(
@@ -74,8 +102,10 @@ class UnoOneApplication : Application() {
             db.skillDao()
         )
         orchestrator.setVoiceModule(sharedVoiceModule)
-        appScope.launch(Dispatchers.IO) {
-            orchestrator.skillsModule.ensureBuiltIns()
+        if (persistedEnabled) {
+            appScope.launch(Dispatchers.IO) {
+                orchestrator.skillsModule.ensureBuiltIns()
+            }
         }
         secureBrowserModelLease = SecureBrowserModelLease(this, orchestrator)
 
@@ -100,12 +130,12 @@ class UnoOneApplication : Application() {
         val llmPath = modelManager.getLlmModelPath(brainSpec)
         if (llmPath != null) {
             lastLlmPath = llmPath
-            scheduleLlmLoad(llmPath, brainSpec, "initial")
+            if (persistedEnabled) scheduleLlmLoad(llmPath, brainSpec, "initial")
         }
 
         appScope.launch {
             commandFlow.collect { command ->
-                if (command.isNotBlank()) {
+                if (AgentRuntimeGate.isEnabled() && command.isNotBlank()) {
                     Logger.i("UnoOneApplication: received local voice command")
                     orchestrator.processCommand(command, com.unoone.agent.core.model.InputType.VOICE)
                 }
@@ -117,21 +147,106 @@ class UnoOneApplication : Application() {
         // shared VoiceModule. Dispatched off the audio thread (Dispatchers.IO) so the cue does not
         // block the spotting loop from capturing the command that follows.
         VoiceService.onWakeWord = {
-            appScope.launch(Dispatchers.IO) {
-                runCatching { sharedVoiceModule.speakAwait("Yes, I'm listening.") }
-                    .onFailure { Logger.w("UnoOneApplication: wake cue speak failed: ${it.message}") }
+            if (AgentRuntimeGate.isEnabled()) {
+                appScope.launch(Dispatchers.IO) {
+                    runCatching {
+                        sharedVoiceModule.speakAwait(VoiceLanguage.wakeCue(selectedVoiceLanguage()))
+                    }
+                        .onFailure { Logger.w("UnoOneApplication: wake cue speak failed: ${it.message}") }
+                }
             }
         }
-        try {
-            VoiceService.start(this)
-        } catch (e: Exception) {
-            Logger.e("Failed to auto-start VoiceService", e)
+        if (persistedEnabled) {
+            appScope.launch(Dispatchers.IO) {
+                modelManager.repairVadFromVerifiedEnglishAsr()
+                try {
+                    VoiceService.start(this@UnoOneApplication)
+                } catch (e: Exception) {
+                    Logger.e("Failed to auto-start VoiceService", e)
+                }
+            }
         }
     }
 
     fun postVoiceCommand(command: String) {
-        _commandFlow.tryEmit(command)
+        if (AgentRuntimeGate.isEnabled()) _commandFlow.tryEmit(command)
     }
+
+    /**
+     * Persistent emergency stop. The gate closes synchronously before teardown begins, so racing
+     * callbacks cannot start a new action while resources are being released.
+     */
+    fun disableAgent() {
+        if (!AgentRuntimeGate.isEnabled()) return
+        AgentRuntimeGate.setEnabled(false)
+        getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).edit(commit = true) {
+            putBoolean(KEY_AGENT_ENABLED, false)
+        }
+        _isAgentEnabled.value = false
+
+        modelLoadJob?.cancel()
+        modelLoadJob = null
+        VoiceService.foregroundSessionActive = false
+        VoiceService.voiceCommandCallback = { }
+        VoiceService.onWakeWord = { }
+        VoiceService.stop(this)
+        sharedVoiceModule.stopRecording()
+        sharedVoiceModule.stopSpeaking()
+        orchestrator.shutdownForDisable()
+        val floatingServiceIntent = Intent(this, FloatingAgentService::class.java)
+        val projectionServiceIntent =
+            Intent(this, com.unoone.agent.screenshot.MediaProjectionService::class.java)
+        stopService(floatingServiceIntent)
+        stopService(projectionServiceIntent)
+        SecureWebViewController.stopAllForDisable()
+
+        appScope.launch(Dispatchers.IO) {
+            runCatching { secureBrowserModelLease.release(restore = false) }
+            runCatching { orchestrator.unloadLlmModel() }
+            listOf("voice", "speech", "browser", "document", "uploads").forEach { name ->
+                runCatching { java.io.File(cacheDir, name).deleteRecursively() }
+            }
+        }
+        Logger.i("AgentRuntime: disabled; microphone, inference, speech and automation stopped")
+    }
+
+    /** Explicit user-only re-enable. No old prompt, recording, or browser task is resumed. */
+    fun enableAgent() {
+        if (AgentRuntimeGate.isEnabled()) return
+        getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).edit(commit = true) {
+            putBoolean(KEY_AGENT_ENABLED, true)
+        }
+        AgentRuntimeGate.setEnabled(true)
+        _isAgentEnabled.value = true
+        VoiceService.voiceCommandCallback = { command -> postVoiceCommand(command) }
+        VoiceService.onWakeWord = {
+            if (AgentRuntimeGate.isEnabled()) {
+                appScope.launch(Dispatchers.IO) {
+                    runCatching {
+                        sharedVoiceModule.speakAwait(VoiceLanguage.wakeCue(selectedVoiceLanguage()))
+                    }
+                }
+            }
+        }
+        appScope.launch(Dispatchers.IO) {
+            val modelBaseDir = (getExternalFilesDir(null)?.absolutePath ?: filesDir.absolutePath) + "/models"
+            sharedVoiceModule.reinitForLanguage(modelBaseDir)
+            orchestrator.skillsModule.ensureBuiltIns()
+            val manager = ModelManager(this@UnoOneApplication)
+            manager.ensureModelDirectories()
+            manager.repairVadFromVerifiedEnglishAsr()
+            runCatching { VoiceService.start(this@UnoOneApplication) }
+                .onFailure { Logger.e("AgentRuntime: failed to restart voice service", it) }
+        }
+        reloadLlmIfUnloaded()
+        Logger.i("AgentRuntime: enabled by explicit user action")
+    }
+
+    private fun selectedVoiceLanguage(): String =
+        VoiceLanguage.normalize(
+            getSharedPreferences(VoiceLanguage.PREF_NAME, Context.MODE_PRIVATE)
+                .getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT)
+        )
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
@@ -162,6 +277,7 @@ class UnoOneApplication : Application() {
 
     /** Reloads the main brain only when no exclusive mode currently owns Gemma. */
     fun reloadLlmIfUnloaded() {
+        if (!AgentRuntimeGate.isEnabled()) return
         if (ExclusiveBrainLeaseState.isActive() || secureBrowserModelLease.isActive()) return
         val path = lastLlmPath ?: return
         if (orchestrator.isLlmLoaded()) return
@@ -179,6 +295,7 @@ class UnoOneApplication : Application() {
         spec: com.unoone.agent.core.model.BrainModelSpec,
         reason: String
     ) {
+        if (!AgentRuntimeGate.isEnabled()) return
         if (!modelLoadGate.tryAcquire()) {
             Logger.i("UnoOneApplication: skipped duplicate $reason ${spec.displayName} load; one is already in flight")
             return
@@ -189,6 +306,7 @@ class UnoOneApplication : Application() {
                 // Let the landing screen and direct camera/voice controls become interactive first.
                 // Blind Aid cancels this delay, avoiding contention with a multi-GB native load.
                 if (reason == "initial") delay(8_000L)
+                if (!AgentRuntimeGate.isEnabled()) return@launch
                 Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
                 // A browser/Blind-Aid transition may have completed between scheduling and execution.
                 if (ExclusiveBrainLeaseState.isActive() ||
@@ -204,11 +322,11 @@ class UnoOneApplication : Application() {
                 }
                 val result = orchestrator.loadLlmModel(path, spec)
                 if (result is Result.Success) {
-                    if (orchestrator.isBlindAidActive.value) {
+                    if (!AgentRuntimeGate.isEnabled() || orchestrator.isBlindAidActive.value) {
                         // Native model creation is not cancellable once entered. If Blind Aid was
                         // activated mid-load, release the newly-created brain immediately.
                         orchestrator.unloadLlmModel()
-                        Logger.i("UnoOneApplication: released brain that finished loading during Blind Aid")
+                        Logger.i("UnoOneApplication: released brain that finished loading after its lease was cancelled")
                     } else {
                         Logger.i("UnoOneApplication: ${spec.displayName} loaded from $path ($reason)")
                     }
@@ -226,6 +344,9 @@ class UnoOneApplication : Application() {
     }
 
     companion object {
+        const val SETTINGS_PREFS = "unoone_settings"
+        const val KEY_AGENT_ENABLED = "agent_enabled"
+        private const val KEY_PRIVATE_LOG_MIGRATION = "private_log_migration_v2"
         lateinit var appContext: Context
             private set
     }

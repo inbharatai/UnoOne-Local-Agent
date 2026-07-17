@@ -503,10 +503,10 @@ class GemmaPlanner {
      * unavailable, inference times out, or the answer is blank, the caller falls back to the agent
      * pipeline (fail-safe). Device-time verified (litertlm bytecode > JDK 17 test JVM).
      */
-    suspend fun chat(command: String): Result<String> {
+    suspend fun chat(command: String, responseLanguage: String = ""): Result<String> {
         val conv = chatConversation ?: return Result.Error("Chat conversation not available")
         return try {
-            val prompt = PromptBuilder.buildChatUserMessage(command)
+            val prompt = PromptBuilder.buildChatUserMessage(command, responseLanguage)
             val responseMessage = try {
                 inferenceMutex.withLock {
                     withTimeout(INFERENCE_TIMEOUT_MS) {

@@ -19,9 +19,9 @@ Android implementation for UnoOne V2.
 - Safety-routed built-in/custom skills plus disabled, review-first suggestions learned only from repeated successful low-risk routines.
 - Offline Document Agent for verified save-as-copy filling of PDF AcroForms and DOCX content-control/placeholder templates. It is available from the landing screen or the built-in PDF/DOCX voice skills; ordinary DOCX files are also supported by Load Document.
 - FAST_ACTION, CHAT and AGENT_ACTION command routing, with deterministic parsing before model inference.
-- Eyes-free operation through hands-free listening, spoken execution steps, Blind Aid scene narration, voice-driven Page Agent commands and TalkBack live regions.
+- Eyes-free operation through hands-free listening, selected-language wake cues, native one-breath core commands, spoken execution steps, Blind Aid scene narration, voice-driven Page Agent commands and TalkBack live regions.
 - Read Screen through MediaProjection and bundled ML Kit Latin OCR; PDF, image, XLSX, DOCX, HTML, CSV and text loading; legacy `.xls` is unsupported.
-- A primary Xiaomi 14 running Android 15 has passed 48 connected-device tests. This is an alpha, not production qualification; the second-device matrix, controlled speech/vision benchmarks, signed release and production distribution remain pending.
+- A primary Xiaomi 14 running Android 15 has passed 55 connected-device tests, plus a 20-test subset with Wi-Fi and mobile data disabled. This is an alpha, not production qualification; the second-device matrix, controlled acoustic/vision benchmarks, signed release and production distribution remain pending.
 
 ## Modules
 
@@ -55,7 +55,7 @@ models/
 ├── speech/
 │   ├── shared/
 │   │   ├── sherpa-asr-en/
-│   │   ├── sherpa-asr-whisper/
+│   │   ├── sherpa-asr-indic/
 │   │   ├── vad/
 │   │   └── punctuation/
 │   └── languages/

@@ -7,6 +7,7 @@ import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceRuntimeState
+import com.unoone.agent.voice.VoiceLanguage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,11 +28,19 @@ class VoiceTestViewModel(private val voiceModule: VoiceModule) : ViewModel() {
         val tts: VoiceRuntimeState,
         val sttReady: Boolean,
         val ttsReady: Boolean,
-        val systemFallbackAllowed: Boolean
+        val systemFallbackAllowed: Boolean,
+        val language: String
     )
 
     private val _engine = MutableStateFlow(
-        EngineState(VoiceRuntimeState.UNAVAILABLE, VoiceRuntimeState.UNAVAILABLE, false, false, false)
+        EngineState(
+            VoiceRuntimeState.UNAVAILABLE,
+            VoiceRuntimeState.UNAVAILABLE,
+            false,
+            false,
+            false,
+            VoiceLanguage.DEFAULT
+        )
     )
     val engine: StateFlow<EngineState> = _engine.asStateFlow()
 
@@ -54,7 +63,8 @@ class VoiceTestViewModel(private val voiceModule: VoiceModule) : ViewModel() {
             tts = voiceModule.ttsState,
             sttReady = voiceModule.isSttInitialized(),
             ttsReady = voiceModule.isTtsInitialized(),
-            systemFallbackAllowed = voiceModule.allowSystemSttFallback
+            systemFallbackAllowed = voiceModule.allowSystemSttFallback,
+            language = voiceModule.currentLanguage()
         )
     }
 
@@ -111,7 +121,10 @@ class VoiceTestViewModel(private val voiceModule: VoiceModule) : ViewModel() {
             return
         }
         viewModelScope.launch {
-            val result = voiceModule.speakAwait(text)
+            val result = voiceModule.speakAwait(
+                text,
+                VoiceLanguage.localeTag(voiceModule.currentLanguage())
+            )
             _message.value = when (result) {
                 is Result.Success -> "Spoke: \"$text\""
                 is Result.Error -> "TTS failed: ${result.message}"

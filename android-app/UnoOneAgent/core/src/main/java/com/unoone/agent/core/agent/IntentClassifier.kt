@@ -64,6 +64,18 @@ object IntentClassifier {
         "does the ", "will the ", "should i ", "which "
     )
 
+    /** Question markers used by supported Indian languages and common Latin transliterations. */
+    private val MULTILINGUAL_QUESTION_MARKERS: List<String> = listOf(
+        " kya ", " kya hai", " kya hey", " kaun ", " kyun ", " kyu ", " kaise ",
+        " kab ", " kahan ", " kaha ",
+        "क्या", "कौन", "क्यों", "कैसे", "कब", "कहाँ",
+        "কী", "কি", "কেন", "কিয়", "কে", "কোন", "কখন", "কেতিয়া", "কোথায়", "ক'ত", "কিভাবে", "কেনেকৈ",
+        "என்ன", "ஏன்", "யார்", "எப்போது", "எங்கே", "எப்படி",
+        "ఏమి", "ఎందుకు", "ఎవరు", "ఎప్పుడు", "ఎక్కడ", "ఎలా",
+        "ಏನು", "ಏಕೆ", "ಯಾರು", "ಯಾವಾಗ", "ಎಲ್ಲಿ", "ಹೇಗೆ",
+        "എന്ത്", "എന്തുകൊണ്ട്", "ആര്", "എപ്പോൾ", "എവിടെ", "എങ്ങനെ"
+    )
+
     fun classify(text: String, ruleMatch: ToolCall?): IntentType {
         if (ruleMatch != null) {
             // A rule match is the deterministic offline path — it skips the LLM planner and the
@@ -82,7 +94,12 @@ object IntentClassifier {
         // Question-shaped and action-free → conversational chat.
         val hasQuestionMark = lowered.contains("?")
         val startsWithQuestion = QUESTION_STARTS.any { lowered.startsWith(it) }
-        return if (hasQuestionMark || startsWithQuestion) IntentType.CHAT else IntentType.UNKNOWN
+        val padded = " $lowered "
+        val multilingualQuestion =
+            MULTILINGUAL_QUESTION_MARKERS.any { marker -> padded.contains(marker) }
+        return if (hasQuestionMark || startsWithQuestion || multilingualQuestion) {
+            IntentType.CHAT
+        } else IntentType.UNKNOWN
     }
 
     /** True when [ruleMatch] is a genuinely instant (DIRECT-tier) action. Exposed for diagnostics. */
