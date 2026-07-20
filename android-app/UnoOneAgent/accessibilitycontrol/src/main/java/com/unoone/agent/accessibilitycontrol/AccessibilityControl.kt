@@ -200,4 +200,8 @@ class AccessibilityControl {
         val act = service.currentActivity ?: return pkg
         return "$pkg/$act"
     }
+
+    /** Exact foreground package observed from TYPE_WINDOW_STATE_CHANGED events. */
+    fun getCurrentPackage(): String? =
+        UnoOneAccessibilityService.getInstance()?.currentPackage
 }

@@ -55,7 +55,6 @@ class ActionExecutorToolCoverageTest {
             accessibilityControl = AccessibilityControl(),
             agentRouter = AgentRouter()
         )
-        executor._speak = {} // no-op TTS in unit test
     }
 
     @After

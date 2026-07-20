@@ -27,11 +27,13 @@ declare global {
 
 const pageController = new PageController({
   enableMask: true,
-  viewportExpansion: 0,
+  // A tiny embedded WebView viewport otherwise reuses indexes as controls scroll in and out.
+  // Full-page indexing keeps form-control identities stable for multi-step offline form filling.
+  viewportExpansion: -1,
   keepSemanticTags: true,
   includeAttributes: [
     'id', 'name', 'type', 'placeholder', 'aria-label', 'aria-describedby', 'role',
-    'autocomplete', 'required', 'for', 'min', 'max', 'step'
+    'autocomplete', 'required', 'checked', 'aria-checked', 'for', 'min', 'max', 'step'
   ]
 })
 
@@ -44,12 +46,13 @@ const agent = new PageAgentCore({
   experimentalScriptExecutionTool: false,
   experimentalLlmsTxt: false,
   transformPageContent: maskSensitivePageContent,
-  maxSteps: 40,
+  maxSteps: 12,
   stepDelay: 0.4,
   instructions: {
     system: [
       'Operate only on the current native-admitted page origin.',
       'Use one DOM action per step and verify the result before continuing.',
+      'Never repeat an action when the current DOM already shows the requested value or checked state.',
       'Request native authorization for every DOM action and obey its decision exactly.',
       'When native authorization allows an action, execute it; when it denies or requests takeover, do not bypass or retry it.',
       'Use ask_user when required data is missing or user takeover is necessary.',

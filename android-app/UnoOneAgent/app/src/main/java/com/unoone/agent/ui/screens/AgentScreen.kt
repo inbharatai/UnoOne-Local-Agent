@@ -1,6 +1,7 @@
 package com.unoone.agent.ui.screens
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -310,6 +311,11 @@ fun AgentScreen(
         ) {
             val (badgeText, badgeColor) = if (!isAgentEnabled) {
                 "APP OFF" to FailedRed
+            } else if (isBlindAidActive) {
+                // Blind Aid owns the device's memory budget and deliberately unloads Gemma while
+                // CameraX + the offline detector are active. That is a healthy exclusive mode, not
+                // a degraded/system-fallback state, so do not mislabel it as LIMITED.
+                "OFFLINE" to DoneGreen
             } else when (offlineMode) {
                 com.unoone.agent.ui.viewmodel.OfflineMode.OFFLINE -> "OFFLINE" to DoneGreen
                 com.unoone.agent.ui.viewmodel.OfflineMode.LIMITED -> "LIMITED" to SafetyOrange
@@ -932,15 +938,24 @@ fun BlindAidCameraPreview(
     // Aid panel is visible. The MediaPipe detector itself is lazy (created on the
     // first analyzed frame) so construction never blocks activation.
     val blindAidManager = remember {
-        com.unoone.agent.phonecontrol.BlindAidManager(context) { feedback ->
-            val next = narrationScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
-                voiceModule.speakAwait(feedback)
+        com.unoone.agent.phonecontrol.BlindAidManager(
+            context = context,
+            onFeedbackSpoken = { feedback ->
+                val next = narrationScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                    voiceModule.speakAwait(feedback)
+                }
+                narrationJob.getAndSet(next)?.cancel()
+                // A changed, freshly-confirmed scene replaces any older spoken observation.
+                voiceModule.stopSpeaking()
+                next.start()
+            },
+            languageCodeProvider = {
+                VoiceLanguage.normalize(
+                    context.getSharedPreferences(VoiceLanguage.PREF_NAME, Context.MODE_PRIVATE)
+                        .getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT)
+                )
             }
-            narrationJob.getAndSet(next)?.cancel()
-            // A changed, freshly-confirmed scene replaces any older spoken observation.
-            voiceModule.stopSpeaking()
-            next.start()
-        }
+        )
     }
 
     DisposableEffect(lifecycleOwner) {

@@ -49,7 +49,8 @@ private data class BlindDetection(
  */
 class BlindAidManager(
     private val context: Context,
-    private val onFeedbackSpoken: (String) -> Unit
+    private val onFeedbackSpoken: (String) -> Unit,
+    private val languageCodeProvider: () -> String = { "en" }
 ) {
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -132,6 +133,11 @@ class BlindAidManager(
                 .setScoreThreshold(0.24f)
                 .build()
             ObjectDetector.createFromOptions(context, options)
+        } catch (e: LinkageError) {
+            // MediaPipe is a native/reflection-heavy dependency. A missing JNI symbol or an
+            // incorrectly shrunk release must disable detection, never terminate the whole app.
+            Logger.e("BlindAidManager: Object detector runtime unavailable", e)
+            null
         } catch (e: Exception) {
             Logger.e("BlindAidManager: Failed to create object detector", e)
             null
@@ -308,11 +314,6 @@ class BlindAidManager(
             .filterValues { it >= 3 }
             .keys
             .toSet()
-        val screenAreaForNarration = uprightW * uprightH
-        val hasCloseObject = objects.any { obj ->
-            (obj.boundingBox.width() * obj.boundingBox.height()).toFloat() /
-                screenAreaForNarration > 0.15f
-        }
         val diagnosticLabels = boxes.map { it.label }.toSet()
         val now = System.currentTimeMillis()
         // The generic fallback classifier can alternate between broad labels on adjacent frames.
@@ -328,15 +329,22 @@ class BlindAidManager(
                 lastNarrationMs = lastSceneNarrationTime,
                 lastLabels = lastSceneLabels,
                 currentLabels = confirmedLabels,
-                // A close-object warning below is more useful than a second, redundant scene
-                // sentence for the same frame.
-                quietMode = quietMode || hasCloseObject
+                // Do not suppress names merely because an object is close. The closest-object
+                // label can flicker and fail the separate obstacle-warning confirmation; this
+                // stable summary is the guaranteed eyes-free path for identified objects.
+                quietMode = quietMode
             )) {
-            val summary = BlindAidNarrator.sceneSummary(confirmedLabels)
+            val summary = BlindAidNarrator.sceneSummary(
+                confirmedLabels,
+                languageCodeProvider()
+            )
             if (summary.isNotBlank()) {
                 lastSceneNarrationTime = now
                 lastSceneLabels = BlindAidNarrator.normalize(confirmedLabels)
-                if (!released) onFeedbackSpoken(summary)
+                if (!released) {
+                    Logger.i("BlindAidManager: speaking fresh object labels=${lastSceneLabels.joinToString()}")
+                    onFeedbackSpoken(summary)
+                }
             }
         }
 
@@ -386,10 +394,15 @@ class BlindAidManager(
                 lastSpokenTime = now
                 lastSpokenObject = label
                 lastSpokenRiskBand = riskBand
-                if (!released) onFeedbackSpoken(
-                    if (fillRatio > 0.40f) "Stop! $label is directly in front of you."
-                    else "$label ahead."
-                )
+                if (!released) {
+                    onFeedbackSpoken(
+                        BlindAidNarrator.proximityWarning(
+                            label = label,
+                            immediate = fillRatio > 0.40f,
+                            languageCode = languageCodeProvider()
+                        )
+                    )
+                }
             }
         }
     }

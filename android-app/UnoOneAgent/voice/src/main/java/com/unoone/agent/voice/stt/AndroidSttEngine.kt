@@ -68,7 +68,7 @@ class AndroidSttEngine(private val context: Context) {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale.toString())
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, locale.toString())
             // Enable fallback for other languages (e.g., Hindi: hi, Tamil: ta, Telugu: te)
-            putExtra(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES, arrayOf("en-IN", "hi-IN", "ta-IN", "te-IN", "kn-IN", "ml-IN", "bn-IN"))
+            putExtra(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES, arrayOf("en-IN", "hi-IN"))
         }
 
         var resumed = false

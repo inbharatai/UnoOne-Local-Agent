@@ -11,12 +11,15 @@ import com.unoone.agent.securebrowser.SecureWebViewController
 import com.unoone.agent.core.model.BrainModelRegistry
 import com.unoone.agent.core.model.ExclusiveBrainLeaseState
 import com.unoone.agent.core.model.Result
+import com.unoone.agent.core.runtime.AgentRuntimeController
 import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.di.DatabaseProvider
 import com.unoone.agent.modelmanager.ModelManager
 import com.unoone.agent.safety.AuditLogger
 import com.unoone.agent.voice.VoiceModule
+import com.unoone.agent.voice.VoiceAgentRuntime
+import com.unoone.agent.voice.VoiceAgentState
 import com.unoone.agent.voice.VoiceLanguage
 import com.unoone.agent.voice.VoiceService
 import dagger.hilt.android.HiltAndroidApp
@@ -34,7 +37,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 @HiltAndroidApp
-class UnoOneApplication : Application() {
+class UnoOneApplication : Application(), AgentRuntimeController {
 
     lateinit var orchestrator: AgentOrchestrator
         private set
@@ -52,7 +55,7 @@ class UnoOneApplication : Application() {
     val commandFlow: SharedFlow<String> = _commandFlow.asSharedFlow()
 
     private val _isAgentEnabled = MutableStateFlow(true)
-    val isAgentEnabled: StateFlow<Boolean> = _isAgentEnabled.asStateFlow()
+    override val isAgentEnabled: StateFlow<Boolean> = _isAgentEnabled.asStateFlow()
 
     /** Remembered for restoring the main Gemma 4 brain after memory-pressure unload. */
     @Volatile private var lastLlmPath: String? = null
@@ -84,6 +87,7 @@ class UnoOneApplication : Application() {
         }
 
         sharedVoiceModule = VoiceModule(this)
+        VoiceService.sharedVoiceModuleProvider = { sharedVoiceModule }
         // Sherpa model construction performs file I/O and native initialization. Keep it off the
         // main thread so a cold offline launch cannot freeze Compose while voice models warm up.
         if (persistedEnabled) {
@@ -137,7 +141,17 @@ class UnoOneApplication : Application() {
             commandFlow.collect { command ->
                 if (AgentRuntimeGate.isEnabled() && command.isNotBlank()) {
                     Logger.i("UnoOneApplication: received local voice command")
-                    orchestrator.processCommand(command, com.unoone.agent.core.model.InputType.VOICE)
+                    try {
+                        orchestrator.processCommand(command, com.unoone.agent.core.model.InputType.VOICE)
+                    } finally {
+                        VoiceService.endForegroundTask()
+                        if (AgentRuntimeGate.isEnabled()) {
+                            VoiceAgentRuntime.transition(
+                                VoiceAgentState.WAKE_LISTENING,
+                                "voice command completed"
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -148,12 +162,9 @@ class UnoOneApplication : Application() {
         // block the spotting loop from capturing the command that follows.
         VoiceService.onWakeWord = {
             if (AgentRuntimeGate.isEnabled()) {
-                appScope.launch(Dispatchers.IO) {
-                    runCatching {
-                        sharedVoiceModule.speakAwait(VoiceLanguage.wakeCue(selectedVoiceLanguage()))
-                    }
-                        .onFailure { Logger.w("UnoOneApplication: wake cue speak failed: ${it.message}") }
-                }
+                runCatching {
+                    sharedVoiceModule.speakAwait(VoiceLanguage.wakeCue(selectedVoiceLanguage()))
+                }.onFailure { Logger.w("UnoOneApplication: wake cue speak failed: ${it.message}") }
             }
         }
         if (persistedEnabled) {
@@ -169,14 +180,16 @@ class UnoOneApplication : Application() {
     }
 
     fun postVoiceCommand(command: String) {
-        if (AgentRuntimeGate.isEnabled()) _commandFlow.tryEmit(command)
+        if (!AgentRuntimeGate.isEnabled()) return
+        VoiceService.beginForegroundTask()
+        if (!_commandFlow.tryEmit(command)) VoiceService.endForegroundTask()
     }
 
     /**
      * Persistent emergency stop. The gate closes synchronously before teardown begins, so racing
      * callbacks cannot start a new action while resources are being released.
      */
-    fun disableAgent() {
+    override fun disableAgent() {
         if (!AgentRuntimeGate.isEnabled()) return
         AgentRuntimeGate.setEnabled(false)
         getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).edit(commit = true) {
@@ -186,9 +199,10 @@ class UnoOneApplication : Application() {
 
         modelLoadJob?.cancel()
         modelLoadJob = null
-        VoiceService.foregroundSessionActive = false
+        VoiceService.clearAudioOwnership()
         VoiceService.voiceCommandCallback = { }
         VoiceService.onWakeWord = { }
+        VoiceService.sharedVoiceModuleProvider = null
         VoiceService.stop(this)
         sharedVoiceModule.stopRecording()
         sharedVoiceModule.stopSpeaking()
@@ -208,10 +222,11 @@ class UnoOneApplication : Application() {
             }
         }
         Logger.i("AgentRuntime: disabled; microphone, inference, speech and automation stopped")
+        VoiceAgentRuntime.clearForDisable()
     }
 
     /** Explicit user-only re-enable. No old prompt, recording, or browser task is resumed. */
-    fun enableAgent() {
+    override fun enableAgent() {
         if (AgentRuntimeGate.isEnabled()) return
         getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).edit(commit = true) {
             putBoolean(KEY_AGENT_ENABLED, true)
@@ -219,12 +234,12 @@ class UnoOneApplication : Application() {
         AgentRuntimeGate.setEnabled(true)
         _isAgentEnabled.value = true
         VoiceService.voiceCommandCallback = { command -> postVoiceCommand(command) }
+        VoiceService.sharedVoiceModuleProvider = { sharedVoiceModule }
+        VoiceAgentRuntime.transition(VoiceAgentState.INITIALISING, "explicit enable")
         VoiceService.onWakeWord = {
             if (AgentRuntimeGate.isEnabled()) {
-                appScope.launch(Dispatchers.IO) {
-                    runCatching {
-                        sharedVoiceModule.speakAwait(VoiceLanguage.wakeCue(selectedVoiceLanguage()))
-                    }
+                runCatching {
+                    sharedVoiceModule.speakAwait(VoiceLanguage.wakeCue(selectedVoiceLanguage()))
                 }
             }
         }

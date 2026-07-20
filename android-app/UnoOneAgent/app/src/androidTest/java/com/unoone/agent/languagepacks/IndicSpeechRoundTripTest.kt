@@ -13,10 +13,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Functional non-English speech gate. Synthesizes a native-script sentence with the installed
- * per-language MMS TTS model, feeds the resulting PCM directly into Omnilingual STT, and
- * verifies a non-empty transcript in the requested script. This catches wrong-language routing,
- * empty PCM, and an initialized-but-nonfunctional recognizer without needing network or fixtures.
+ * Functional Hindi speech gate. Synthesizes a native-script sentence with the installed Hindi
+ * MMS TTS model, feeds the resulting PCM directly into Omnilingual STT, and verifies a non-empty
+ * Devanagari transcript. This catches wrong-language routing, empty PCM, and an
+ * initialized-but-nonfunctional recognizer without needing network or microphone fixtures.
  */
 class IndicSpeechRoundTripTest {
 
@@ -27,12 +27,7 @@ class IndicSpeechRoundTripTest {
     )
 
     private val cases = listOf(
-        Case("hi", VoiceLanguage.testPhrase("hi"), '\u0900'..'\u097F'),
-        Case("bn", VoiceLanguage.testPhrase("bn"), '\u0980'..'\u09FF'),
-        Case("ta", VoiceLanguage.testPhrase("ta"), '\u0B80'..'\u0BFF'),
-        Case("te", VoiceLanguage.testPhrase("te"), '\u0C00'..'\u0C7F'),
-        Case("kn", VoiceLanguage.testPhrase("kn"), '\u0C80'..'\u0CFF'),
-        Case("ml", VoiceLanguage.testPhrase("ml"), '\u0D00'..'\u0D7F')
+        Case("hi", VoiceLanguage.testPhrase("hi"), '\u0900'..'\u097F')
     )
 
     @Test
@@ -110,6 +105,6 @@ class IndicSpeechRoundTripTest {
             stt.release()
             tts.release()
         }
-        assertTrue("Indic speech round-trip failures: ${failures.joinToString()}", failures.isEmpty())
+        assertTrue("Hindi speech round-trip failures: ${failures.joinToString()}", failures.isEmpty())
     }
 }

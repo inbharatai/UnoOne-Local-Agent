@@ -71,17 +71,45 @@ class WakePhrasesTest {
     }
 
     @Test
-    fun extractsNativeOneBreathCommandsForEveryIndicLanguage() {
+    fun extractsNativeHindiOneBreathCommand() {
         val cases = mapOf(
             "सुनो, स्क्रीन पढ़ो" to "स्क्रीन पढ़ो",
-            "শোনো: স্ক্রিন পড়ো" to "স্ক্রিন পড়ো",
-            "கேள், திரையை படி" to "திரையை படி",
-            "విను: స్క్రీన్ చదువు" to "స్క్రీన్ చదువు",
-            "ಕೇಳು, ಪರದೆಯನ್ನು ಓದು" to "ಪರದೆಯನ್ನು ಓದು",
-            "കേൾക്കൂ: സ്ക്രീൻ വായിക്കുക" to "സ്ക്രീൻ വായിക്കുക"
+            "मेरी बात सुनो: ब्लाइंड एड चालू करो" to "ब्लाइंड एड चालू करो"
         )
         cases.forEach { (utterance, command) ->
             assertEquals(utterance, command, WakePhrases.commandAfterWakePhrase(utterance))
         }
+    }
+
+    @Test
+    fun naturalActivationVariantsMatch() {
+        val positives = listOf(
+            "Uno", "Uno One", "Uno start", "Uno One start", "Uno on", "Start Uno",
+            "Hey Uno", "You know start", "Unone", "Uno chalu karo"
+        )
+        positives.forEach { utterance ->
+            assertTrue("$utterance should activate", WakePhraseMatcher.match(utterance) != null)
+        }
+    }
+
+    @Test
+    fun ordinaryConversationDoesNotActivate() {
+        val negatives = listOf(
+            "You know what happened",
+            "I have no one",
+            "Start the video",
+            "Turn the phone on",
+            "Random background conversation"
+        )
+        negatives.forEach { utterance ->
+            assertEquals("$utterance must stay ambient", null, WakePhraseMatcher.match(utterance))
+        }
+    }
+
+    @Test
+    fun stripsWakeAndActivationFillersWithoutDroppingCommand() {
+        assertEquals("start blind mode", WakePhrases.commandAfterWakePhrase("Uno start blind mode"))
+        assertEquals("open WhatsApp", WakePhrases.commandAfterWakePhrase("Uno on, open WhatsApp"))
+        assertEquals("Hindi mein jawab do", WakePhrases.commandAfterWakePhrase("Hey Uno, Hindi mein jawab do"))
     }
 }

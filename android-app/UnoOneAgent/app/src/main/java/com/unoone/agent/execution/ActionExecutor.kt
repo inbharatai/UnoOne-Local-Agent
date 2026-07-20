@@ -12,6 +12,7 @@ import com.unoone.agent.core.util.Logger
 import com.unoone.agent.core.util.TextSummarizer
 import com.unoone.agent.data.DataExporter
 import com.unoone.agent.phonecontrol.CalendarControl
+import com.unoone.agent.phonecontrol.LaunchAttempt
 import com.unoone.agent.phonecontrol.OcrControl
 import com.unoone.agent.phonecontrol.PackageResolver
 import com.unoone.agent.phonecontrol.PhoneControl
@@ -25,6 +26,7 @@ import com.unoone.agent.storage.entity.NoteEntity
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.delay
 
 /**
  * Executes tool calls that the orchestrator has validated and classified.
@@ -98,7 +100,6 @@ class ActionExecutor(
                 }
                 "speak_response" -> {
                     val text = toolCall.args["text"]?.jsonPrimitive?.content ?: ""
-                    _speak?.invoke(text)
                     Result.Success(text)
                 }
                 "delete_notes" -> {
@@ -120,14 +121,20 @@ class ActionExecutor(
                     val to = toolCall.args["to"]?.jsonPrimitive?.content ?: ""
                     val sub = toolCall.args["subject"]?.jsonPrimitive?.content ?: "Update"
                     val body = toolCall.args["body"]?.jsonPrimitive?.content ?: ""
-                    phoneControl.draftEmail(to, sub, body)
-                        .map { "Email draft opened. Please review and press send." }
+                    verifyForegroundLaunch(
+                        phoneControl.draftEmail(to, sub, body),
+                        actionLabel = "Email",
+                        successMessage = "Email draft opened. Please review and press send."
+                    )
                 }
                 "send_whatsapp" -> {
                     val number = toolCall.args["number"]?.jsonPrimitive?.content ?: ""
                     val msg = toolCall.args["message"]?.jsonPrimitive?.content ?: ""
-                    phoneControl.sendWhatsAppMessage(number, msg)
-                        .map { "WhatsApp draft opened. Please review and press send." }
+                    verifyForegroundLaunch(
+                        phoneControl.sendWhatsAppMessage(number, msg),
+                        actionLabel = "WhatsApp",
+                        successMessage = "WhatsApp draft opened. Please review and press send."
+                    )
                 }
                 "check_calendar" -> {
                     val now = System.currentTimeMillis()
@@ -140,21 +147,35 @@ class ActionExecutor(
                 }
                 "open_calendar_insert" -> {
                     val title = toolCall.args["title"]?.jsonPrimitive?.content ?: "Untitled event"
-                    val now = System.currentTimeMillis()
-                    val start = parseTimeMs(toolCall.args["start_time"]?.jsonPrimitive?.content) ?: now
+                    val start = parseTimeMs(toolCall.args["start_time"]?.jsonPrimitive?.content)
+                        ?: return Result.Error(
+                            "Calendar date or time is missing or ambiguous. Please give an exact date and time."
+                        )
                     val end = parseTimeMs(toolCall.args["end_time"]?.jsonPrimitive?.content) ?: (start + 3_600_000L)
-                    phoneControl.openCalendarInsert(title, start, end)
-                        .map { "Calendar insert opened for '$title'." }
+                    verifyForegroundLaunch(
+                        phoneControl.openCalendarInsert(title, start, end),
+                        actionLabel = "Calendar",
+                        successMessage = "Calendar insert opened for '$title'."
+                    )
                 }
                 "open_calendar" -> {
-                    phoneControl.openCalendar().map { "Calendar opened." }
+                    verifyForegroundLaunch(
+                        phoneControl.openCalendar(),
+                        actionLabel = "Calendar",
+                        successMessage = "Calendar opened."
+                    )
                 }
                 "open_app" -> {
                     val appName = toolCall.args["app_name"]?.jsonPrimitive?.content ?: ""
                     val pkg = toolCall.args["package_name"]?.jsonPrimitive?.content
                         ?: PackageResolver.resolveAppName(appName)
                         ?: return Result.Error("Could not resolve app '$appName'. Provide package_name.")
-                    phoneControl.openApp(pkg).map { "Opened $appName." }
+                    val actionLabel = appName.ifBlank { pkg }
+                    verifyForegroundLaunch(
+                        phoneControl.openApp(pkg),
+                        actionLabel = actionLabel,
+                        successMessage = "Opened $actionLabel."
+                    )
                 }
                 "open_url" -> {
                     val url = toolCall.args["url"]?.jsonPrimitive?.content ?: ""
@@ -280,11 +301,36 @@ class ActionExecutor(
         return ToolPermissionRegistry.runtimePermissionsFor(tool)
     }
 
+    /**
+     * `Context.startActivity()` returning normally means Android accepted an intent, not that the
+     * target reached the foreground. Poll the AccessibilityService's exact package observation
+     * before returning success. Without Accessibility, report the launch as unverified rather than
+     * speaking a false success.
+     */
+    private suspend fun verifyForegroundLaunch(
+        launchResult: Result<LaunchAttempt>,
+        actionLabel: String,
+        successMessage: String
+    ): Result<String> {
+        val attempt = when (launchResult) {
+            is Result.Success -> launchResult.data
+            is Result.Error -> return launchResult
+        }
+        if (!accessibilityControl.isServiceEnabled()) {
+            return Result.Error(ForegroundLaunchVerifier.unavailableMessage(actionLabel))
+        }
+        repeat(FOREGROUND_VERIFICATION_ATTEMPTS) {
+            if (ForegroundLaunchVerifier.matches(attempt, accessibilityControl.getCurrentPackage())) {
+                return Result.Success(successMessage)
+            }
+            delay(FOREGROUND_VERIFICATION_INTERVAL_MS)
+        }
+        return Result.Error(ForegroundLaunchVerifier.mismatchMessage(actionLabel))
+    }
+
     // Injected callbacks — set by Orchestrator to avoid circular dependencies
     var _skillsModule: com.unoone.agent.skills.SkillsModule? = null
     var _setBlindAidActive: (suspend (Boolean) -> Unit)? = null
-    /** Speak text via the shared VoiceModule (TTS). Lets speak_response force audio in any input mode. */
-    var _speak: ((String) -> Unit)? = null
     /**
      * Record a voice memo for [durationSeconds] and return the offline STT transcription.
      * Set by the Orchestrator, which owns the shared VoiceModule + coroutine scope. The
@@ -349,6 +395,11 @@ class ActionExecutor(
                 }
             }
         }
+    }
+
+    private companion object {
+        const val FOREGROUND_VERIFICATION_ATTEMPTS = 20
+        const val FOREGROUND_VERIFICATION_INTERVAL_MS = 125L
     }
 
     /**

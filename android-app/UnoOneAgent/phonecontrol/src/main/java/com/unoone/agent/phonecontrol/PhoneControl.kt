@@ -10,6 +10,16 @@ import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.InputSanitizer
 import com.unoone.agent.core.util.Logger
 
+/**
+ * A launch request accepted by Android is not proof that the requested application reached the
+ * foreground. The app module uses this exact package set with AccessibilityService observations
+ * before it announces success.
+ */
+data class LaunchAttempt(
+    val requestedPackage: String,
+    val expectedForegroundPackages: Set<String> = setOf(requestedPackage)
+)
+
 class PhoneControl(private val context: Context) {
 
     fun openChrome(): Result<Unit> {
@@ -43,7 +53,7 @@ class PhoneControl(private val context: Context) {
         }
     }
 
-    fun openApp(packageName: String): Result<Unit> {
+    fun openApp(packageName: String): Result<LaunchAttempt> {
         return try {
             val candidatePackages = if (packageName == "com.whatsapp") {
                 listOf("com.whatsapp", "com.whatsapp.w4b")
@@ -54,9 +64,16 @@ class PhoneControl(private val context: Context) {
                 context.packageManager.getLaunchIntentForPackage(it)
             }
                 ?: return Result.Error("App not installed: $packageName")
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            val resolvedPackage = intent.component?.packageName
+                ?: return Result.Error("App has no launchable activity: $packageName")
+            intent.addFlags(RELIABLE_LAUNCH_FLAGS)
             context.startActivity(intent)
-            Result.Success(Unit)
+            Result.Success(
+                LaunchAttempt(
+                    requestedPackage = resolvedPackage,
+                    expectedForegroundPackages = candidatePackages.toSet()
+                )
+            )
         } catch (e: Exception) {
             Logger.e("Failed to open app: $packageName", e)
             Result.Error("Cannot open app", e)
@@ -69,7 +86,7 @@ class PhoneControl(private val context: Context) {
         endTime: Long,
         description: String? = null,
         location: String? = null
-    ): Result<Unit> {
+    ): Result<LaunchAttempt> {
         return try {
             val intent = Intent(Intent.ACTION_INSERT).apply {
                 data = CalendarContract.Events.CONTENT_URI
@@ -78,10 +95,19 @@ class PhoneControl(private val context: Context) {
                 putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endTime)
                 description?.let { putExtra(CalendarContract.Events.DESCRIPTION, InputSanitizer.sanitizeForAccessibility(it)) }
                 location?.let { putExtra(CalendarContract.Events.EVENT_LOCATION, InputSanitizer.sanitizeForAccessibility(it)) }
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                addFlags(RELIABLE_LAUNCH_FLAGS)
             }
+            val preferredPackages = installedPackages(CALENDAR_PACKAGES)
+            preferredPackages.firstOrNull()?.let(intent::setPackage)
+            val resolvedPackage = intent.resolveActivity(context.packageManager)?.packageName
+                ?: return Result.Error("No installed calendar can create an event")
             context.startActivity(intent)
-            Result.Success(Unit)
+            Result.Success(
+                LaunchAttempt(
+                    requestedPackage = resolvedPackage,
+                    expectedForegroundPackages = (preferredPackages + resolvedPackage).toSet()
+                )
+            )
         } catch (e: Exception) {
             Logger.e("Failed to open calendar insert", e)
             Result.Error("Cannot open calendar", e)
@@ -89,14 +115,23 @@ class PhoneControl(private val context: Context) {
     }
 
     /** Opens an installed calendar directly, falling back to the platform calendar category. */
-    fun openCalendar(): Result<Unit> {
+    fun openCalendar(): Result<LaunchAttempt> {
         return try {
-            val intent = listOf("com.google.android.calendar", "com.xiaomi.calendar")
+            val candidates = installedPackages(CALENDAR_PACKAGES)
+            val intent = candidates
                 .firstNotNullOfOrNull { context.packageManager.getLaunchIntentForPackage(it) }
                 ?: Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_APP_CALENDAR) }
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            val resolvedPackage = intent.component?.packageName
+                ?: intent.resolveActivity(context.packageManager)?.packageName
+                ?: return Result.Error("Calendar is not installed")
+            intent.addFlags(RELIABLE_LAUNCH_FLAGS)
             context.startActivity(intent)
-            Result.Success(Unit)
+            Result.Success(
+                LaunchAttempt(
+                    requestedPackage = resolvedPackage,
+                    expectedForegroundPackages = (candidates + resolvedPackage).toSet()
+                )
+            )
         } catch (e: Exception) {
             Logger.e("Failed to open calendar", e)
             Result.Error("Calendar is not installed", e)
@@ -129,41 +164,65 @@ class PhoneControl(private val context: Context) {
         }
     }
 
-    fun draftEmail(to: String, subject: String, body: String): Result<Unit> {
+    fun draftEmail(to: String, subject: String, body: String): Result<LaunchAttempt> {
         val safeSubject = InputSanitizer.sanitizeForAccessibility(subject)
         val safeBody = InputSanitizer.sanitize(body)
         return try {
             val intent = Intent(Intent.ACTION_SENDTO).apply {
-                data = Uri.Builder().scheme("mailto").opaquePart(to.trim()).build()
-                putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
+                // Gmail and several OEM mail clients ignore ACTION_SENDTO extras but honour the
+                // RFC-6068 query. Supply both so the visible, reviewable compose draft is populated
+                // consistently without ever requesting SEND_EMAIL or sending automatically.
+                data = EmailDraftUri.build(to, safeSubject, safeBody)
+                if (to.isNotBlank()) putExtra(Intent.EXTRA_EMAIL, arrayOf(to.trim()))
                 putExtra(Intent.EXTRA_SUBJECT, safeSubject)
                 putExtra(Intent.EXTRA_TEXT, safeBody)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                if (context.packageManager.getLaunchIntentForPackage("com.google.android.gm") != null) {
+                    setPackage("com.google.android.gm")
+                }
+                addFlags(RELIABLE_LAUNCH_FLAGS)
             }
+            val resolvedPackage = intent.resolveActivity(context.packageManager)?.packageName
+                ?: return Result.Error("No email application is installed")
             context.startActivity(intent)
-            Result.Success(Unit)
+            Result.Success(LaunchAttempt(resolvedPackage))
         } catch (e: Exception) {
             Logger.e("Failed to draft email", e)
             Result.Error("Cannot draft email", e)
         }
     }
 
-    fun sendWhatsAppMessage(number: String, message: String): Result<Unit> {
-        val safeNumber = validatePhoneNumber(number)
-            ?: return Result.Error("Invalid phone number: $number")
+    fun sendWhatsAppMessage(number: String, message: String): Result<LaunchAttempt> {
         val safeMessage = InputSanitizer.sanitize(message)
+        if (safeMessage.isBlank()) return Result.Error("A WhatsApp draft needs a message.")
+        val safeNumber = number.takeIf { it.isNotBlank() }?.let(::validatePhoneNumber)
+        if (number.isNotBlank() && safeNumber == null) {
+            return Result.Error("Invalid phone number: $number")
+        }
 
         return try {
-            val uri = Uri.parse("https://wa.me/${safeNumber.removePrefix("+")}?text=${Uri.encode(safeMessage)}")
             val whatsappPackage = listOf("com.whatsapp", "com.whatsapp.w4b").firstOrNull {
                 context.packageManager.getLaunchIntentForPackage(it) != null
             } ?: return Result.Error("WhatsApp is not installed")
-            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                setPackage(whatsappPackage)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            val intent = if (safeNumber != null) {
+                val uri = Uri.parse(
+                    "https://wa.me/${safeNumber.removePrefix("+")}?text=${Uri.encode(safeMessage)}"
+                )
+                Intent(Intent.ACTION_VIEW, uri).apply {
+                    setPackage(whatsappPackage)
+                    addFlags(RELIABLE_LAUNCH_FLAGS)
+                }
+            } else {
+                // Contact names are private and ambiguous. Let WhatsApp present its own recipient
+                // picker with the message prefilled; never guess or persist a recipient mapping.
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, safeMessage)
+                    setPackage(whatsappPackage)
+                    addFlags(RELIABLE_LAUNCH_FLAGS)
+                }
             }
             context.startActivity(intent)
-            Result.Success(Unit)
+            Result.Success(LaunchAttempt(whatsappPackage))
         } catch (e: Exception) {
             Logger.e("Failed to send WhatsApp message", e)
             Result.Error("WhatsApp is not installed or cannot open this draft", e)
@@ -240,5 +299,16 @@ class PhoneControl(private val context: Context) {
         } else {
             null
         }
+    }
+
+    private fun installedPackages(packages: List<String>): List<String> =
+        packages.filter { context.packageManager.getLaunchIntentForPackage(it) != null }
+
+    private companion object {
+        val CALENDAR_PACKAGES = listOf("com.google.android.calendar", "com.xiaomi.calendar")
+        const val RELIABLE_LAUNCH_FLAGS =
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
     }
 }

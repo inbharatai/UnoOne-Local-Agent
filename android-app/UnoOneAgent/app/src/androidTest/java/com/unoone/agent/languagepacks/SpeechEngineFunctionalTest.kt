@@ -12,11 +12,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Phase 6b — functional speech gate (README Phase C: "run STT/TTS for each language").
+ * Functional speech gate for the two production voice languages: English and Hindi.
  *
  * Goes beyond "files present + sha verified" to prove the Sherpa-ONNX engines actually RUN on the
  * Xiaomi 14:
- *  - TTS: for every installed language, construct SherpaTtsEngine, initialize(), speak(sample).
+ *  - TTS: for English and Hindi, construct SherpaTtsEngine, initialize(), speak(sample).
  *    speak() returns Success only when the VITS model produces a non-empty PCM buffer — so Success
  *    proves real ONNX synthesis end-to-end (model loads -> inference -> PCM samples generated).
  *  - STT: initialize() the English transducer and the multilingual Omnilingual recognizer. Success
@@ -33,12 +33,7 @@ class SpeechEngineFunctionalTest {
 
     private val langs = listOf(
         Lang("en", "en-IN", "Hello, this is an offline speech test on the Xiaomi 14."),
-        Lang("hi", "hi-IN", "नमस्ते, यह एक ऑफ़लाइन आवाज़ परीक्षण है।"),
-        Lang("bn", "bn-IN", "নমস্কার, এটি একটি অফলাইন স্পিচ পরীক্ষা।"),
-        Lang("ta", "ta-IN", "வணக்கம், இது ஒரு ஆஃப்லைன் பேச்சு சோதனை."),
-        Lang("te", "te-IN", "నమస్కారం, ఇది ఒక ఆఫ్‌లైన్ స్పీచ్ టెస్ట్."),
-        Lang("kn", "kn-IN", "ನಮಸ್ಕಾರ, ಇದು ಒಂದು ಆಫ್‌ಲೈನ್ ಭಾಷಣ ಪರೀಕ್ಷೆ."),
-        Lang("ml", "ml-IN", "നമസ്കാരം, ഇതൊരു ഓഫ്‌ലൈൻ സ്പീച്ച് ടെസ്റ്റ് ആണ്.")
+        Lang("hi", "hi-IN", "नमस्ते, यह एक ऑफ़लाइन आवाज़ परीक्षण है।")
     )
 
     @Test

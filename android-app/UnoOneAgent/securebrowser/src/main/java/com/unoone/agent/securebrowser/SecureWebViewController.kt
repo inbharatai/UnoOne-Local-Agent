@@ -49,7 +49,8 @@ class SecureWebViewController(
     private val scope: CoroutineScope,
     private val requestHandler: PageAgentRequestHandler,
     private val onBlockedNavigation: (String) -> Unit = {},
-    private val onRuntimeReady: () -> Unit = {},
+    private val onNavigationStarted: (String) -> Unit = {},
+    private val onRuntimeReady: (String) -> Unit = {},
     private val onRuntimeError: (String) -> Unit = {},
     private val onShowFileChooser: (
         ValueCallback<Array<Uri>>,
@@ -70,6 +71,7 @@ class SecureWebViewController(
     private val runtimeBundle: String? by lazy { readRuntimeBundle() }
 
     @Volatile private var runtimeInjected = false
+    private val runtimeInjectionInFlight = AtomicBoolean(false)
     private val taskGate = PageAgentTaskGate()
     @Volatile private var taskTimeoutJob: Job? = null
     @Volatile private var pendingTaskCallback: ((Boolean, String) -> Unit)? = null
@@ -158,7 +160,7 @@ class SecureWebViewController(
                 webView.evaluateJavascript("window.UnoOnePageAgentRuntime?.stop?.()", null)
                 val cb = pendingTaskCallback
                 pendingTaskCallback = null
-                cb?.invoke(false, "Browser task timed out after two minutes and was stopped.")
+                cb?.invoke(false, "Browser task exceeded the eight-minute safety limit and was stopped.")
             }
         }
         val script = """
@@ -272,6 +274,8 @@ class SecureWebViewController(
                 // Navigation invalidates every indexed DOM reference from the previous page.
                 stopTask()
                 runtimeInjected = false
+                runtimeInjectionInFlight.set(false)
+                onNavigationStarted(url.orEmpty())
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -436,8 +440,17 @@ class SecureWebViewController(
     }
 
     private fun injectRuntime(origin: String) {
+        if (runtimeInjected) {
+            onRuntimeReady(webView.url.orEmpty())
+            return
+        }
+        // WebView may call onPageFinished more than once for the same document (redirect/client
+        // callbacks and some SPAs do this). A second concurrent bundle evaluation attempted to
+        // redefine the deliberately non-configurable runtime global and aborted initialization.
+        if (!runtimeInjectionInFlight.compareAndSet(false, true)) return
         val bundle = runtimeBundle
         if (bundle == null) {
+            runtimeInjectionInFlight.set(false)
             onRuntimeError(
                 "PageAgent bundle is missing. Build web-runtime/page-agent-unoone and copy " +
                     "unoone-page-agent.js to securebrowser/src/main/assets/page-agent/."
@@ -463,8 +476,9 @@ class SecureWebViewController(
         webView.evaluateJavascript(bootstrap) {
             webView.evaluateJavascript(bundle) {
                 webView.evaluateJavascript("Boolean(window.UnoOnePageAgentRuntime)") { available ->
+                    runtimeInjectionInFlight.set(false)
                     runtimeInjected = available == "true"
-                    if (runtimeInjected) onRuntimeReady()
+                    if (runtimeInjected) onRuntimeReady(webView.url.orEmpty())
                     else onRuntimeError("PageAgent bundle executed but runtime initialization failed")
                 }
             }
@@ -500,7 +514,11 @@ class SecureWebViewController(
             snapshot.forEach { it.stop() }
             activeControllers.clear()
         }
-        private const val TASK_TIMEOUT_MS = 120_000L
+        // A single local CPU planning step can take 20–30 seconds on supported phones. Complex
+        // forms need several plan → execute → inspect cycles, so the previous two-minute limit
+        // terminated healthy tasks part-way through. Individual model calls remain separately
+        // bounded by PageAgentGemmaPlanner; this is the hard limit for the complete browser run.
+        private const val TASK_TIMEOUT_MS = 8 * 60_000L
         const val BRIDGE_NAME = "UnoOnePageAgent"
         const val RUNTIME_ASSET = "page-agent/unoone-page-agent.js"
         /** C9: synthetic https origin a local/offline HTML form is loaded at (via loadDataWithBaseURL). */

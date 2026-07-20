@@ -13,8 +13,9 @@ import com.unoone.agent.core.model.AgentStatus
 import com.unoone.agent.core.model.InputType
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.TimelineStep
-import com.unoone.agent.core.util.Logger
+import com.unoone.agent.core.runtime.AgentRuntimeController
 import com.unoone.agent.core.runtime.AgentRuntimeGate
+import com.unoone.agent.core.util.Logger
 import com.unoone.agent.ui.components.ConfirmationLevel
 import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceRuntimeState
@@ -41,7 +42,7 @@ enum class OfflineMode { OFFLINE, LIMITED, NO_MODEL }
 class AgentViewModel(
     private val orchestrator: AgentOrchestrator,
     voiceModule: VoiceModule,
-    private val runtimeController: UnoOneApplication? = null
+    private val runtimeController: AgentRuntimeController? = null
 ) : ViewModel() {
 
     companion object {
@@ -52,9 +53,6 @@ class AgentViewModel(
         // One tap starts a session: the app keeps listening, transcribes each utterance, runs it
         // through the orchestrator as a VOICE command (so the reply is spoken), then re-arms
         // automatically — no repeated tapping. End by voice ("stop listening") or tapping again.
-        private const val SPEECH_THRESHOLD = 1200f   // amplitude (0..~32767) that counts as speech
-        private const val SILENCE_MS = 1500L          // silence after speech that ends an utterance
-        private const val HARD_CAP_MS = 12_000L       // never record one utterance longer than this
         private val STOP_PHRASES = setOf(
             "stop listening", "stop listening now", "that's all", "that's all for now",
             "done listening", "stop the session", "exit listening"
@@ -108,6 +106,11 @@ class AgentViewModel(
     private val _isHandsFree = MutableStateFlow(false)
     val isHandsFree: StateFlow<Boolean> = _isHandsFree.asStateFlow()
     private var sessionJob: Job? = null
+    private var listeningJob: Job? = null
+    private var commandJob: Job? = null
+    private var ocrJob: Job? = null
+    private var documentJob: Job? = null
+    private var runtimeStateJob: Job? = null
 
     /** Recompute the offline-mode chip from current engine + brain state. Call from the screen. */
     fun refreshOfflineMode() {
@@ -127,42 +130,17 @@ class AgentViewModel(
         }
     }
 
-    init {
-        // Wire the shared VoiceModule into the orchestrator so both use the same instance
-        orchestrator.setVoiceModule(voiceModuleInstance)
-
-        voiceModuleInstance.onAmplitude = { amp ->
-            _amplitude.value = amp
-        }
-
-        orchestrator.onConfirmationRequired = { message, callback ->
-            val level = if (message.startsWith("SECURITY CHECK")) ConfirmationLevel.STRONG_CONFIRM
-            else ConfirmationLevel.CONFIRM
-            _pendingConfirmation.value = message to level
-            confirmationCallback.set(callback)
-        }
-
-        orchestrator.onDocumentFillRequest = { format ->
-            _documentFillPickerRequest.value = format.lowercase()
-        }
-
-        runtimeController?.let { app ->
-            viewModelScope.launch {
-                app.isAgentEnabled.collect { enabled ->
-                    if (!enabled) clearTransientStateForDisable()
-                }
-            }
-        }
-    }
-
     fun startListening(context: Context) {
         if (!AgentRuntimeGate.isEnabled()) return
         if (_isListening.value || isProcessing.value) return
-        viewModelScope.launch {
+        listeningJob?.cancel()
+        VoiceService.foregroundSessionActive = true
+        listeningJob = viewModelScope.launch {
             val result = voiceModuleInstance.startRecording(context, viewModelScope)
             if (result is Result.Success) {
                 _isListening.value = true
             } else if (result is Result.Error) {
+                VoiceService.foregroundSessionActive = _isHandsFree.value
                 Logger.w("Failed to start recording: ${result.message}")
             }
         }
@@ -172,27 +150,34 @@ class AgentViewModel(
         if (!_isListening.value) return
         _isListening.value = false
         _amplitude.value = 0f
-        viewModelScope.launch {
-            val result = voiceModuleInstance.stopAndTranscribe()
-            if (result is Result.Success && result.data.isNotBlank()) {
-                val confidence = voiceModuleInstance.lastSttConfidence
-                // Low-confidence retry: ask the user to repeat once, then re-listen. Don't loop.
-                if (confidence < LOW_CONFIDENCE_THRESHOLD && !retryArmed) {
-                    retryArmed = true
-                    voiceModuleInstance.speakAwait("Sorry, I didn't catch that clearly. Could you please repeat?")
-                    Logger.i("AgentViewModel: Low STT confidence (${"%.2f".format(confidence)}); re-listening once.")
-                    // Re-listen using the app-scoped context (a singleton) rather than holding an
-                    // Activity Context across the coroutine — avoids a ViewModel context leak.
-                    startListening(com.unoone.agent.UnoOneApplication.appContext)
-                    return@launch
+        listeningJob?.cancel()
+        listeningJob = viewModelScope.launch {
+            var shouldRetry = false
+            try {
+                val result = voiceModuleInstance.stopAndTranscribe()
+                if (result is Result.Success && result.data.isNotBlank()) {
+                    val confidence = voiceModuleInstance.lastSttConfidence
+                    // Low-confidence retry: ask the user to repeat once, then re-listen. Don't loop.
+                    if (confidence < LOW_CONFIDENCE_THRESHOLD && !retryArmed) {
+                        retryArmed = true
+                        voiceModuleInstance.speakAwait("Sorry, I didn't catch that clearly. Could you please repeat?")
+                        Logger.i("AgentViewModel: Low STT confidence (${"%.2f".format(confidence)}); re-listening once.")
+                        shouldRetry = true
+                    } else {
+                        retryArmed = false
+                        orchestrator.processCommand(result.data, InputType.VOICE)
+                    }
+                } else if (result is Result.Error) {
+                    retryArmed = false
+                    Logger.e("Speech transcription failed: ${result.message}")
+                } else {
+                    retryArmed = false
                 }
-                retryArmed = false
-                orchestrator.processCommand(result.data, InputType.VOICE)
-            } else if (result is Result.Error) {
-                retryArmed = false
-                Logger.e("Speech transcription failed: ${result.message}")
-            } else {
-                retryArmed = false
+            } finally {
+                VoiceService.foregroundSessionActive = _isHandsFree.value
+            }
+            if (shouldRetry && AgentRuntimeGate.isEnabled()) {
+                startListening(com.unoone.agent.UnoOneApplication.appContext)
             }
         }
     }
@@ -247,7 +232,8 @@ class AgentViewModel(
     }
 
     private fun runOcrAndSpeak() {
-        viewModelScope.launch(Dispatchers.IO) {
+        ocrJob?.cancel()
+        ocrJob = viewModelScope.launch(Dispatchers.IO) {
             // recognizeScreen() calls the blocking ScreenshotCapture.captureScreen() (~500ms poll),
             // so it must run off the main thread.
             val result = ocrControl.recognizeScreen()
@@ -292,7 +278,8 @@ class AgentViewModel(
         if (_isFillingDocument.value) return
         _isFillingDocument.value = true
         _documentFillMessage.value = "Inspecting document fields offline…"
-        viewModelScope.launch(Dispatchers.IO) {
+        documentJob?.cancel()
+        documentJob = viewModelScope.launch(Dispatchers.IO) {
             when (val result = documentFillEngine.inspect(uri, mimeType)) {
                 is Result.Success -> {
                     documentFillSourceUri = uri
@@ -323,7 +310,8 @@ class AgentViewModel(
         if (_isFillingDocument.value) return
         _isFillingDocument.value = true
         _documentFillMessage.value = "Writing and verifying a new copy…"
-        viewModelScope.launch(Dispatchers.IO) {
+        documentJob?.cancel()
+        documentJob = viewModelScope.launch(Dispatchers.IO) {
             when (val result = documentFillEngine.fillCopy(source, outputUri, template, values)) {
                 is Result.Success -> {
                     _documentFillMessage.value =
@@ -357,6 +345,40 @@ class AgentViewModel(
     private val _isLoadingDocument = MutableStateFlow(false)
     val isLoadingDocument: StateFlow<Boolean> = _isLoadingDocument.asStateFlow()
 
+    /*
+     * IMPORTANT: this is deliberately the only init block, and it stays below every state holder,
+     * job reference, lazy controller and transient field used by clearTransientStateForDisable().
+     * StateFlow collectors launched on Dispatchers.Main.immediate may receive the persisted value
+     * before the constructor returns, so moving only the crashing field would leave another
+     * initialization-order trap behind.
+     */
+    init {
+        orchestrator.setVoiceModule(voiceModuleInstance)
+
+        voiceModuleInstance.onAmplitude = { amp ->
+            _amplitude.value = amp
+        }
+
+        orchestrator.onConfirmationRequired = { message, callback ->
+            val level = if (message.startsWith("SECURITY CHECK")) ConfirmationLevel.STRONG_CONFIRM
+            else ConfirmationLevel.CONFIRM
+            _pendingConfirmation.value = message to level
+            confirmationCallback.set(callback)
+        }
+
+        orchestrator.onDocumentFillRequest = { format ->
+            _documentFillPickerRequest.value = format.lowercase()
+        }
+
+        runtimeController?.let { controller ->
+            runtimeStateJob = viewModelScope.launch {
+                controller.isAgentEnabled.collect { enabled ->
+                    if (!enabled) clearTransientStateForDisable()
+                }
+            }
+        }
+    }
+
     /**
      * C8: pick a document via SAF, extract its text (PDF→page-OCR, image→OCR, xlsx→SAX, HTML/text→
      * UTF-8), and stash it. Speaks a confirmation with the char count so a blind user knows it loaded.
@@ -365,7 +387,8 @@ class AgentViewModel(
         if (!AgentRuntimeGate.isEnabled()) return
         if (_isLoadingDocument.value) return
         _isLoadingDocument.value = true
-        viewModelScope.launch(Dispatchers.IO) {
+        documentJob?.cancel()
+        documentJob = viewModelScope.launch(Dispatchers.IO) {
             val result = documentLoader.load(uri, mimeType)
             val doc = (result as? Result.Success)?.data
             _loadedDocument.value = doc
@@ -421,7 +444,9 @@ class AgentViewModel(
             append(q.trimEnd('.', '?', '!'))
             append(".")
         }
-        viewModelScope.launch { orchestrator.processCommand(prompt, InputType.VOICE) }
+        commandJob = viewModelScope.launch {
+            orchestrator.processCommand(prompt, InputType.VOICE)
+        }
     }
 
     /**
@@ -493,12 +518,13 @@ class AgentViewModel(
             } finally {
                 _isListening.value = false
                 _amplitude.value = 0f
+                VoiceService.foregroundSessionActive = false
             }
         }
     }
 
     fun stopHandsFreeSession(announce: Boolean = true) {
-        if (!_isHandsFree.value) return
+        val wasActive = _isHandsFree.value
         _isHandsFree.value = false
         sessionJob?.cancel()
         sessionJob = null
@@ -507,7 +533,7 @@ class AgentViewModel(
         _amplitude.value = 0f
         // Release the mic back to the background KWS loop.
         VoiceService.foregroundSessionActive = false
-        if (announce && AgentRuntimeGate.isEnabled()) viewModelScope.launch {
+        if (wasActive && announce && AgentRuntimeGate.isEnabled()) viewModelScope.launch {
             // Offline synthesis is CPU-heavy; keep it off the UI thread and wait for playback so a
             // rapid start/stop cannot trigger a watchdog stall or overlap the next recording.
             runCatching { voiceModuleInstance.speakAwait("Stopped listening.") }
@@ -531,15 +557,21 @@ class AgentViewModel(
         val loopStart = System.currentTimeMillis()
         try {
             // Cancellation surfaces at delay() below (CancellationException); _isHandsFree gates exit.
-            while (_isHandsFree.value && (System.currentTimeMillis() - loopStart) < HARD_CAP_MS) {
+            while (
+                _isHandsFree.value &&
+                (System.currentTimeMillis() - loopStart) < com.unoone.agent.voice.VoiceActivityPolicy.MAX_UTTERANCE_MS
+            ) {
                 delay(150)
                 val amp = _amplitude.value
-                if (amp > SPEECH_THRESHOLD) {
+                if (com.unoone.agent.voice.VoiceActivityPolicy.isSpeech(amp)) {
                     speechStarted = true
                     silenceSince = 0L
                 } else if (speechStarted) {
                     if (silenceSince == 0L) silenceSince = System.currentTimeMillis()
-                    if (System.currentTimeMillis() - silenceSince >= SILENCE_MS) break
+                    if (
+                        System.currentTimeMillis() - silenceSince >=
+                        com.unoone.agent.voice.VoiceActivityPolicy.TRAILING_SILENCE_MS
+                    ) break
                 }
             }
         } finally {
@@ -560,7 +592,7 @@ class AgentViewModel(
 
     fun onTextCommand(text: String) {
         if (!AgentRuntimeGate.isEnabled()) return
-        viewModelScope.launch {
+        commandJob = viewModelScope.launch {
             orchestrator.processCommand(text, InputType.TEXT)
         }
     }
@@ -573,7 +605,7 @@ class AgentViewModel(
      */
     fun onVoiceCommand(text: String) {
         if (!AgentRuntimeGate.isEnabled()) return
-        viewModelScope.launch {
+        commandJob = viewModelScope.launch {
             orchestrator.processCommand(text, InputType.VOICE)
         }
     }
@@ -590,7 +622,7 @@ class AgentViewModel(
 
     fun onQuickAction(label: String) {
         if (!AgentRuntimeGate.isEnabled()) return
-        viewModelScope.launch {
+        commandJob = viewModelScope.launch {
             val command = when (label) {
                 "Create Note" -> "Create a note"
                 "Open Chrome" -> "Open Chrome"
@@ -614,17 +646,36 @@ class AgentViewModel(
     }
 
     private fun clearTransientStateForDisable() {
+        sessionJob?.cancel()
+        sessionJob = null
+        listeningJob?.cancel()
+        listeningJob = null
+        commandJob?.cancel()
+        commandJob = null
+        ocrJob?.cancel()
+        ocrJob = null
+        documentJob?.cancel()
+        documentJob = null
+
         stopHandsFreeSession(announce = false)
-        if (_isListening.value) {
-            runCatching { voiceModuleInstance.stopRecording() }
-            _isListening.value = false
-        }
+        runCatching { voiceModuleInstance.stopSpeaking() }
+        orchestrator.shutdownForDisable()
+
+        _isListening.value = false
+        _isHandsFree.value = false
+        _amplitude.value = 0f
+        retryArmed = false
+        confirmationCallback.set(null)
+        _pendingConfirmation.value = null
+        _isLoadingDocument.value = false
+        _isFillingDocument.value = false
         _loadedDocument.value = null
         documentFillSourceUri = null
         _editableDocument.value = null
         _documentFillPickerRequest.value = null
         _documentFillMessage.value = ""
         _lastReadScreenText.value = null
+        com.unoone.agent.phonecontrol.ScreenshotCapture.permissionListener = null
     }
 
     fun enableAgent() {
@@ -641,6 +692,8 @@ class AgentViewModel(
         runCatching { ocrControl.release() }
         // C8: release the document loader's OCR recognizer.
         runCatching { documentLoader.release() }
+        runtimeStateJob?.cancel()
+        runtimeStateJob = null
         orchestrator.onDocumentFillRequest = null
     }
 }

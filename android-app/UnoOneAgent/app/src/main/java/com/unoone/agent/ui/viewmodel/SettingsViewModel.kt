@@ -1,6 +1,7 @@
 package com.unoone.agent.ui.viewmodel
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Environment
 import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
@@ -47,6 +48,14 @@ class SettingsViewModel(context: Context) : ViewModel() {
     // Offline voice language, persisted in the same unoone_settings store. Default English.
     private val _voiceLanguage = MutableStateFlow(VoiceLanguage.normalize(prefs.getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT)))
     val voiceLanguage: StateFlow<String> = _voiceLanguage.asStateFlow()
+    private val voiceLanguagePreferenceListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { preferences, key ->
+            if (key == VoiceLanguage.PREF_KEY) {
+                _voiceLanguage.value = VoiceLanguage.normalize(
+                    preferences.getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT)
+                )
+            }
+        }
 
     // User-selectable agent security posture (Settings → Security Level). Default STANDARD so the
     // app never silently weakens safety. The orchestrator re-reads this per tool call, so a change
@@ -55,7 +64,16 @@ class SettingsViewModel(context: Context) : ViewModel() {
     val securityLevel: StateFlow<SecurityLevel> = _securityLevel.asStateFlow()
 
     init {
+        // Voice commands and the Offline Languages screen can both change this preference outside
+        // SettingsViewModel. Observing the source of truth keeps the landing-page language chip in
+        // sync with the live STT/TTS engines instead of displaying the previous language.
+        prefs.registerOnSharedPreferenceChangeListener(voiceLanguagePreferenceListener)
         refresh()
+    }
+
+    override fun onCleared() {
+        prefs.unregisterOnSharedPreferenceChangeListener(voiceLanguagePreferenceListener)
+        super.onCleared()
     }
 
     fun refresh() {
@@ -96,7 +114,7 @@ class SettingsViewModel(context: Context) : ViewModel() {
     }
 
     /**
-     * Select the offline voice language (en/hi/bn/ta/te/kn/ml), persist it, and ask the live
+     * Select the offline voice language (English or Hindi), persist it, and ask the live
      * VoiceService + shared VoiceModule to rebuild their STT/TTS engines for the new language so
      * the change takes effect without an app restart. Unsupported codes are normalized to English.
      */

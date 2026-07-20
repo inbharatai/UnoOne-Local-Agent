@@ -27,10 +27,12 @@ import com.unoone.agent.core.util.Logger
 import com.unoone.agent.storage.dao.ActionLogDao
 import com.unoone.agent.storage.entity.ActionLogEntity
 import com.unoone.agent.voice.VoiceModule
+import com.unoone.agent.voice.VoiceService
 import com.unoone.agent.safety.SecurityLevel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -91,6 +93,7 @@ class SecureBrowserViewModel(
     private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
     private var fileChooserLauncher: ((Intent) -> Unit)? = null
     private var attached = false
+    private var startupJob: Job? = null
 
     // Eyes-free (WS4): a (origin, task) stashed by the `secure_browser_task` tool before the
     // Secure Browser screen is composed. When the runtime becomes ready we auto-navigate to the
@@ -99,6 +102,7 @@ class SecureBrowserViewModel(
     @Volatile private var pendingTask: String? = null
     // Last spoken narration, to avoid repeating the identical status string verbatim.
     @Volatile private var lastNarration: String = ""
+    @Volatile private var ownsForegroundTaskAudio = false
 
     private val _state = MutableStateFlow(SecureBrowserUiState())
     val state: StateFlow<SecureBrowserUiState> = _state.asStateFlow()
@@ -122,6 +126,9 @@ class SecureBrowserViewModel(
     }
 
     private fun shutdownForDisable() {
+        releaseForegroundTaskAudio()
+        startupJob?.cancel()
+        startupJob = null
         attached = false
         controller?.stop()
         controller = null
@@ -169,7 +176,8 @@ class SecureBrowserViewModel(
             status = "Reserving Gemma 4 for Secure Browser…",
             error = ""
         )
-        viewModelScope.launch {
+        startupJob?.cancel()
+        startupJob = viewModelScope.launch {
             when (val leaseResult = modelLease.acquire()) {
                 is Result.Error -> {
                     _state.value = _state.value.copy(
@@ -179,6 +187,10 @@ class SecureBrowserViewModel(
                     )
                 }
                 is Result.Success -> {
+                    if (!attached) {
+                        modelLease.release(restore = true)
+                        return@launch
+                    }
                     val handler = SecureBrowserNativeHandler(
                         modelPort = leaseResult.data,
                         userInteraction = this@SecureBrowserViewModel,
@@ -192,6 +204,10 @@ class SecureBrowserViewModel(
                         }
                     )
                     withContext(Dispatchers.Main.immediate) {
+                        if (!attached) {
+                            modelLease.release(restore = true)
+                            return@withContext
+                        }
                         val prototypeMode = SecurityLevel.current(appContext) == SecurityLevel.OFF
                         controller = SecureWebViewController(
                             context = appContext,
@@ -207,7 +223,16 @@ class SecureBrowserViewModel(
                             onBlockedNavigation = { reason ->
                                 _state.value = _state.value.copy(status = "Navigation blocked", error = reason)
                             },
-                            onRuntimeReady = {
+                            onNavigationStarted = { pageUrl ->
+                                _state.value = _state.value.copy(
+                                    phase = "Loading",
+                                    status = "Loading page…",
+                                    currentUrl = pageUrl.ifBlank { _state.value.currentUrl },
+                                    runtimeReady = false,
+                                    error = ""
+                                )
+                            },
+                            onRuntimeReady = { pageUrl ->
                                 _state.value = _state.value.copy(
                                     phase = "Ready",
                                     status = if (_state.value.currentUrl.isBlank()) {
@@ -217,6 +242,7 @@ class SecureBrowserViewModel(
                                     } else {
                                         "PageAgent ready on approved page"
                                     },
+                                    currentUrl = pageUrl.ifBlank { _state.value.currentUrl },
                                     runtimeReady = true,
                                     sessionActive = true,
                                     modelBackend = modelLease.activeBackend(),
@@ -396,7 +422,12 @@ class SecureBrowserViewModel(
             currentUrl = SecureWebViewController.LOCAL_FORM_ORIGIN,
             error = ""
         )
-        narrate("Loaded local form: $displayName. Say or type what you'd like filled in.")
+        narrate(
+            localized(
+                english = "Form loaded. Say or type what you want filled in.",
+                hindi = "फ़ॉर्म खुल गया है। जो जानकारी भरनी है, उसे बोलें या लिखें।"
+            )
+        )
         ctrl.loadLocalHtml(html, displayName)
     }
 
@@ -411,6 +442,10 @@ class SecureBrowserViewModel(
             _state.value = _state.value.copy(error = "PageAgent is not ready on the current page")
             return
         }
+        val activeController = controller ?: run {
+            _state.value = _state.value.copy(error = "Secure Browser session is unavailable")
+            return
+        }
         _state.value = _state.value.copy(
             taskRunning = true,
             phase = "Running",
@@ -418,7 +453,9 @@ class SecureBrowserViewModel(
             lastResult = "",
             error = ""
         )
-        controller?.executeTask(task) { success, result ->
+        acquireForegroundTaskAudio()
+        activeController.executeTask(task) { success, result ->
+            releaseForegroundTaskAudio()
             _state.value = _state.value.copy(
                 taskRunning = false,
                 phase = if (success) "Completed" else "Failed",
@@ -426,13 +463,27 @@ class SecureBrowserViewModel(
                 lastResult = result.take(2_000),
                 error = if (success) "" else result.take(1_000)
             )
-            // Eyes-free narration of the terminal task result.
-            narrate(if (success) "Done. $result" else "Browser task failed. $result")
+            // Keep eyes-free feedback short and actionable. Never read raw bridge/model errors
+            // aloud: they are confusing to users and Hindi TTS cannot pronounce them reliably.
+            narrate(
+                if (success) {
+                    localized(
+                        english = "Page task complete.",
+                        hindi = "पेज का काम पूरा हुआ।"
+                    )
+                } else {
+                    localized(
+                        english = "I could not complete the page task. The error is shown on screen.",
+                        hindi = "पेज का काम पूरा नहीं हुआ। त्रुटि स्क्रीन पर दिखाई गई है।"
+                    )
+                }
+            )
         }
     }
 
     fun stopTask() {
         controller?.stopTask()
+        releaseForegroundTaskAudio()
         _state.value = _state.value.copy(
             taskRunning = false,
             phase = "Stopped",
@@ -451,7 +502,10 @@ class SecureBrowserViewModel(
     fun closeSession() {
         if (!attached) return
         attached = false
+        startupJob?.cancel()
+        startupJob = null
         controller?.stop()
+        releaseForegroundTaskAudio()
         controller = null
         pendingPrompt?.cancel()
         pendingPrompt = null
@@ -461,7 +515,10 @@ class SecureBrowserViewModel(
             status = "Restoring UnoOne phone brain…",
             runtimeReady = false,
             sessionActive = false,
-            taskRunning = false
+            taskRunning = false,
+            currentUrl = "",
+            lastResult = "",
+            error = ""
         )
         cleanupScope.launch {
             val result = modelLease.release(restore = true)
@@ -512,12 +569,18 @@ class SecureBrowserViewModel(
             PageAgentRequestType.ACTIVITY_EVENT -> {
                 val summary = activitySummary(payload)
                 _state.value = _state.value.copy(status = summary)
-                narrate(summary)
+                activityNarration(payload)?.let(::narrate)
             }
             PageAgentRequestType.TASK_RESULT -> {
                 _state.value = _state.value.copy(status = "PageAgent returned a task result")
             }
-            PageAgentRequestType.AUDIT_EVENT -> persistAudit(payload)
+            PageAgentRequestType.AUDIT_EVENT -> {
+                val event = decodeAuditEvent(payload)
+                if (event != null) {
+                    persistAudit(event)
+                    auditNarration(event)?.let(::narrate)
+                }
+            }
             else -> Unit
         }
     }
@@ -534,11 +597,14 @@ class SecureBrowserViewModel(
         pendingOrigin = origin
         pendingTask = task
         _state.value = _state.value.copy(currentUrl = origin, status = "Opening $origin…", error = "")
-        // If the controller already exists (screen already attached), navigate + run immediately.
+        // If the screen is already attached, ALWAYS navigate. The prior implementation first
+        // assigned currentUrl=origin, then compared currentUrl to origin and incorrectly skipped
+        // loading, so a voice task could execute against the previously-open page. Page start now
+        // clears runtimeReady; onRuntimeReady invokes runPendingTaskIfAny only after reinjection.
         val ctrl = controller
-        if (ctrl != null && _state.value.runtimeReady) {
-            if (_state.value.currentUrl != origin) ctrl.load(origin)
-            runPendingTaskIfAny()
+        if (ctrl != null) {
+            _state.value = _state.value.copy(runtimeReady = false)
+            ctrl.load(origin)
         }
     }
 
@@ -547,10 +613,18 @@ class SecureBrowserViewModel(
         val origin = pendingOrigin
         pendingTask = null
         pendingOrigin = null
-        val ctrl = controller ?: return
-        if (origin != null && _state.value.currentUrl != origin) ctrl.load(origin)
+        controller ?: return
         if (task.isBlank()) {
             narrate("Opened $origin.")
+            return
+        }
+        // Reading the current rendered page is deterministic and read-only. Sending this through
+        // the action planner made a small local model invent a scroll/done envelope and could never
+        // be as accurate as reading WebView's actual visible text. Form filling and other browser
+        // actions still use Page Agent below.
+        if (isReadOnlyPageTask(task)) {
+            _state.value = _state.value.copy(status = "Reading the current page")
+            readPageAloud()
             return
         }
         narrate("Starting: $task")
@@ -625,11 +699,12 @@ class SecureBrowserViewModel(
         }
     }
 
-    private suspend fun persistAudit(payload: String) {
-        val event = runCatching {
+    private fun decodeAuditEvent(payload: String): BrowserAuditEvent? =
+        runCatching {
             json.decodeFromString(BrowserAuditEvent.serializer(), payload)
-        }.getOrNull() ?: return
+        }.getOrNull()
 
+    private suspend fun persistAudit(event: BrowserAuditEvent) {
         val status = when (event.decision) {
             "allowed" -> "success"
             "blocked", "user_takeover", "declined_or_blocked" -> "blocked"
@@ -676,11 +751,93 @@ class SecureBrowserViewModel(
         else -> "PageAgent session active"
     }
 
+    /**
+     * Eyes-free progress should describe a useful state change, not speak every low-level retry.
+     * Repeated retry narration previously sounded like vague, broken chatter and could be captured
+     * again by the hands-free listener. The visible status still records retries for sighted QA.
+     */
+    private fun activityNarration(payload: String): String? = when {
+        // Thinking/executing is emitted for every field. Speaking it repeatedly sounds vague and
+        // can leak back into hands-free STT, so keep those transitions visible on screen only.
+        payload.contains("thinking", ignoreCase = true) -> null
+        payload.contains("executing", ignoreCase = true) -> null
+        // PageAgent can recover from an individual invalid model response. Do not announce those
+        // internal failures as if the whole task failed; the terminal task callback speaks one
+        // clear final outcome if recovery is exhausted.
+        payload.contains("error", ignoreCase = true) -> null
+        // Do not narrate model retries; one retry can emit several identical bridge events.
+        payload.contains("retry", ignoreCase = true) -> null
+        else -> null
+    }
+
+    private fun auditNarration(event: BrowserAuditEvent): String? {
+        if (event.decision != "allowed") return null
+        val field = safeFieldName(event.summary)
+        return when (event.actionName) {
+            "input_text" -> localized(
+                english = if (field == null) "Text field filled." else "Filled $field.",
+                hindi = if (field == null) "टेक्स्ट फ़ील्ड भर दी।" else "$field भर दिया।"
+            )
+            "pick_date" -> localized(
+                english = if (field == null) "Date selected." else "Selected $field.",
+                hindi = if (field == null) "तारीख चुन दी।" else "$field चुन दिया।"
+            )
+            "select_dropdown_option" -> localized(
+                english = if (field == null) "Option selected." else "Selected $field.",
+                hindi = if (field == null) "विकल्प चुन दिया।" else "$field चुन दिया।"
+            )
+            "toggle_checkbox", "choose_radio" -> localized(
+                english = if (field == null) "Choice selected." else "Selected $field.",
+                hindi = if (field == null) "विकल्प चुन दिया।" else "$field चुन दिया।"
+            )
+            "submit_form" -> localized(
+                english = "Form submitted.",
+                hindi = "फ़ॉर्म जमा कर दिया।"
+            )
+            else -> null
+        }
+    }
+
+    private fun acquireForegroundTaskAudio() {
+        if (ownsForegroundTaskAudio) return
+        ownsForegroundTaskAudio = true
+        VoiceService.beginForegroundTask()
+    }
+
+    private fun releaseForegroundTaskAudio() {
+        if (!ownsForegroundTaskAudio) return
+        ownsForegroundTaskAudio = false
+        VoiceService.endForegroundTask()
+    }
+
+    /**
+     * Extract only a control identifier such as `email` or `full-name` from PageAgent's element
+     * summary. Never speak the entered value or the full DOM line.
+     */
+    private fun safeFieldName(summary: String): String? {
+        val value = Regex("""(?i)\b(?:aria-label|name|id)=["']?([a-z][a-z0-9_-]{1,40})""")
+            .find(summary)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.replace('-', ' ')
+            ?.replace('_', ' ')
+            ?.trim()
+        return value?.takeIf {
+            it !in setOf("input", "select", "checkbox", "radio", "button", "form")
+        }
+    }
+
+    private fun localized(english: String, hindi: String): String =
+        if (voiceModule?.currentLanguage() == "hi") hindi else english
+
     private fun runtimeAssetExists(): Boolean = runCatching {
         appContext.assets.open(SecureWebViewController.RUNTIME_ASSET).use { it.available() > 0 }
     }.getOrDefault(false)
 
     override fun onCleared() {
+        releaseForegroundTaskAudio()
+        startupJob?.cancel()
+        startupJob = null
         controller?.stop()
         controller = null
         pendingPrompt?.cancel()
@@ -740,7 +897,8 @@ class SecureBrowserViewModel(
               </section>
               <section class="card">
                 <h2>Hands-free from the main screen</h2>
-                <p>Say: “Open secure browser example.com and fill the contact form, then stop before submit.”</p>
+                <p>In Standard mode, say: “Open Secure Browser on UniGurus and read this page.”</p>
+                <p>To automate another public HTTPS site, first select Off — prototype in Settings, then name the site and the form task.</p>
                 <p>Say “read this page aloud” after the page opens. When spoken feedback is enabled, UnoOne narrates Page Agent progress and completion.</p>
               </section>
             </body>
@@ -755,4 +913,27 @@ class SecureBrowserViewModel(
          */
         val APPROVED_ORIGINS: Set<String> = com.unoone.agent.securebrowser.ApprovedOriginPolicy.APPROVED_ORIGINS
     }
+}
+
+internal fun isReadOnlyPageTask(task: String): Boolean {
+    val normalized = task
+        .lowercase()
+        .replace(Regex("""[^\p{L}\p{M}\p{N}\s']"""), " ")
+        .replace(Regex("""\s+"""), " ")
+        .trim()
+    val asksToRead = listOf(
+        "read page",
+        "read the page",
+        "read this page",
+        "read page aloud",
+        "read the page aloud",
+        "what is on this page",
+        "what's on this page",
+        "describe this page"
+    ).any(normalized::contains)
+    if (!asksToRead) return false
+    val requestsMutation = Regex(
+        """\b(fill|type|enter|write|click|tap|select|choose|check|tick|upload|submit|send|buy|pay|book)\b"""
+    ).containsMatchIn(normalized)
+    return !requestsMutation
 }

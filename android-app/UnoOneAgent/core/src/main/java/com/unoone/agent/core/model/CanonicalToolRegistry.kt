@@ -109,7 +109,7 @@ object CanonicalToolRegistry {
         ToolParamSchema("aspect", ToolParamType.STRING, required = false)
     ))
     /**
-     * Drive the UnoOne Secure Browser (Alibaba PageAgent on a hardened WebView) and run a task.
+     * Drive the UnoOne Secure Browser (Page Agent on a hardened WebView) and run a task.
      * Standard mode resolves and gates the target to an approved origin. Explicit Prototype/Off
      * admits arbitrary public HTTPS targets. Transport restrictions and the session-bound bridge
      * remain enforced. Risk tier CONFIRM in Standard: it drives a browser.

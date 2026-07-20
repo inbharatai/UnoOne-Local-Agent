@@ -2,7 +2,7 @@
 
 UnoOne is an offline-first Android AI assistant for blind and sighted users. It combines on-device planning, hands-free speech, phone controls, Blind Aid, document tools, reusable Skills, and a Page Agent browser in one app.
 
-> **Current status — July 17, 2026:** Android lint, JVM tests, debug builds, Page Agent browser tests, and the connected-device suite pass. The current prototype has been exercised on a Xiaomi 14 running Android 15. UnoOne remains an alpha: second-device qualification, controlled speech and vision accuracy benchmarks, signed-release testing, and production distribution are not complete.
+> **Current status — July 20, 2026:** Android lint, 519 JVM tests, debug and release assembly, Android-test compilation, repository invariants, and all Page Agent unit/browser tests pass. The prototype has also been exercised on a Xiaomi 14 running Android 15. The separate instrumentation APK compiled successfully but its latest installation was rejected by the phone's OEM security policy, so the July 17 connected-device suite remains historical evidence rather than a claim about the current source revision. UnoOne remains an alpha: second-device qualification, controlled speech and vision accuracy benchmarks, signed-release testing, and production distribution are not complete.
 
 ## What works today
 
@@ -12,10 +12,10 @@ UnoOne is an offline-first Android AI assistant for blind and sighted users. It 
 - One local Gemma 4 E2B planning engine through LiteRT-LM. Deterministic rules handle common commands before model inference.
 - A canonical 29-tool registry rejects unknown tools and validates required arguments.
 - Direct commands, compound tasks, model-planned actions, and Skills use the same permission, risk, confirmation, execution, verification, and audit pipeline.
-- Offline Sherpa-ONNX speech recognition and speech output, with explicit model-health checks. English uses the streaming transducer; enabled Indian languages share the official Omnilingual 300M CTC int8 recognizer and use one MMS VITS voice per language.
-- Selectable English, Hindi, Bengali, Tamil, Telugu, Kannada, and Malayalam speech profiles. The selection controls STT routing, native-script chat instructions, deterministic tool-status replies, and TTS; it does not silently fall back to English.
+- Offline Sherpa-ONNX speech recognition and speech output, with explicit model-health checks. English uses the streaming transducer; Hindi uses the Omnilingual recognizer and its own offline voice.
+- Selectable English and Hindi speech profiles. The selection controls STT routing, deterministic tool-status replies, wake acknowledgement, and TTS.
 - One-tap hands-free sessions that listen, run the command, speak the result, and re-arm. The foreground session and background wake service coordinate ownership of the microphone.
-- Background activation uses a low-latency offline keyword spotter plus an independent bounded offline-STT fallback for one-breath commands. The fallback accepts native wake prefixes and core Blind Aid, screen-reading, camera, Calendar, WhatsApp, Chrome, and Secure Browser commands in Hindi, Bengali, Tamil, Telugu, Kannada, and Malayalam; its spoken wake cue follows the selected language.
+- Background activation uses a low-latency offline keyword spotter plus an independent bounded offline-STT fallback for one-breath English and Hindi commands. Wake acknowledgement finishes before command capture begins, and foreground recording and TTS exclusively own the microphone to prevent self-transcription.
 - Phone actions for opening apps, Calendar, Chrome, WhatsApp, the dialer, URLs, and system screens.
 - Calendar events, WhatsApp messages, and emails are prepared as reviewable drafts. UnoOne does not press the external app's final Send or Save control.
 - Local notes, memory, Skills, activity logs, browser audit records, and preferences.
@@ -23,10 +23,29 @@ UnoOne is an offline-first Android AI assistant for blind and sighted users. It 
 - A collapsible **Agent activity** panel that shows what UnoOne understood, which checks ran, what is executing, and whether it succeeded.
 - A persistent **Disable UnoOne** master control on the Agent and Settings screens. Disabled mode stops and blocks microphone capture, STT, TTS, inference, Blind Aid, screen reading, accessibility actions, browser work, floating services, pending recovery, and network-backed page activity until the user explicitly enables the app.
 
+### Hands-free setup and voice commands
+
+For eyes-free phone control, grant Microphone and Camera when requested, enable **UnoOne → Accessibility**, keep **Disable UnoOne** off, and let the installed offline speech models finish their health check. Accessibility is required for verified cross-app screen reading and UI actions. Updating the APK can cause some Xiaomi/HyperOS versions to switch the service off; enable it again after an update if the Agent activity panel reports that verification is unavailable.
+
+Wake UnoOne with **“Uno One,” “Hey Uno,” “Listen,”** or **“Listen to me.”** A wake phrase and command can be spoken in one breath, for example **“Uno One, start blind mode.”** Hindi fallback activation also accepts **“यूनो,” “सुनो,”** and **“मेरी बात सुनो.”** Useful deterministic commands include:
+
+- “Start blind mode” / “ब्लाइंड एड चालू करो”
+- “Stop blind mode” / “ब्लाइंड एड बंद करो”
+- “Read screen” / “स्क्रीन पढ़ो”
+- “Open camera,” “Open Calendar,” “Open WhatsApp,” or “Open Gmail”
+- “Add meeting to calendar tomorrow at 5 PM” / “कल शाम ५ बजे मीटिंग कैलेंडर में जोड़ो”
+- “Write a WhatsApp message saying I will be late”
+- “Draft email to name@example.com about update with body the report is ready”
+- “Open UniAssist and fill the profile form”
+- “Speak in Hindi” / “अब हिंदी में बोलो” / “Speak in English”
+
+WhatsApp, email, and Calendar commands open reviewable drafts. UnoOne does not press the external app’s final Send or Save button. Say **“stop listening”** to end a foreground hands-free session. The master disable control cannot be reversed by voice; re-enabling always requires an explicit on-screen action.
+
 ### Blind Aid and screen understanding
 
 - CameraX preview and analysis run independently of the Gemma model folder.
 - Blind Aid uses an offline MediaPipe EfficientDet-Lite2 detector with COCO object labels, normalized bounding boxes, confidence filtering, multi-frame confirmation, scene narration, proximity tones, and haptics.
+- English labels are narrated in English. Hindi mode maps supported detector labels and status messages to native Hindi before speech, and uses gender-neutral confirmations so an English label is not sent through the Hindi phonemizer as muffled mixed-language audio.
 - The bundled detector can recognize supported classes such as people, cars, bicycles, chairs, and mobile phones. It is not a fine-grained product or brand recognition model.
 - Starting Blind Aid releases the resident Gemma engine to reduce memory pressure. Stopping Blind Aid closes the detector, clears detection and narration state, and permits a guarded brain reload.
 - Repeated unchanged warnings are cooldown-limited. Stopped or closed Blind Aid does not continue speaking cached detections.
@@ -81,6 +100,13 @@ Repeated successful low-risk usage can create a disabled suggestion for review f
 - Arbitrary JavaScript and native-code execution are not exposed as agent tools.
 - Browser audit records store the origin, action class, and decision—not typed form values.
 - Remote pages require internet access. The local Page Agent home and controlled local-form workflow remain available offline.
+- The deterministic browser runtime covers text, email, number, textarea, select, checkbox, radio, date, file, and explicit-submit controls in automated browser tests. The small on-device planner applies an allow-list, required-argument validation, bounded repair, and read-back verification; it is still an alpha planner and is not represented as universally reliable on every changing public website.
+
+Open **Secure Browser** from the Agent screen, enter an HTTPS URL and press **Go**, then wait for **PageAgent ready**. Type a task or use the browser microphone, for example “Read this page” or “Fill full name with Reetu Raj and stop before submit.” **Read Page** speaks the currently rendered title and visible text. **Load offline HTML form** uses Android’s document picker and runs the same Page Agent workflow without internet. A one-breath command such as “Open UniAssist and fill the profile form” navigates and starts the task automatically after the requested page, rather than the previous page, is ready.
+
+Standard mode is limited to the approved HTTPS origins listed in the app. **Off — prototype** permits navigation and automation on arbitrary public HTTPS sites and bypasses UnoOne’s per-action browser confirmations, takeovers, and blocks. It is intentionally high risk, remains visibly marked, and does not weaken Android permissions, the file picker, HTTPS-only transport, public-host validation, main-frame isolation, or authenticated bridge checks.
+
+Page Agent fills HTML forms; it does not edit PDF or DOCX files inside a web page. Use **Fill PDF / DOCX Offline** for supported AcroForms and DOCX templates. A scanned/flat PDF or arbitrary Word layout must first be converted to a supported fillable template.
 
 ## Security modes
 
@@ -195,15 +221,11 @@ The phone agent and Page Agent browser use an exclusive model lease. UnoOne unlo
 |---|---|---|
 | English | enabled baseline | controlled accent, noise, names, numbers, latency, and audible-quality benchmark |
 | Hindi | enabled baseline | same controlled benchmark |
-| Bengali | enabled baseline | same controlled benchmark |
-| Tamil | enabled baseline | same controlled benchmark |
-| Telugu | enabled baseline | same controlled benchmark |
-| Kannada | enabled baseline | same controlled benchmark |
-| Malayalam | enabled baseline | same controlled benchmark |
+| Bengali, Tamil, Telugu, Kannada, Malayalam | deferred | not exposed while English and Hindi are hardened |
 | Assamese | planned priority | select and qualify exact STT and TTS artifacts |
 | Marathi, Gujarati, Punjabi, Odia, Urdu | planned | select, license-check, and qualify exact artifacts |
 
-All seven enabled engines initialize in connected-device tests. Hindi, Bengali, Tamil, Telugu, Kannada, and Malayalam additionally pass an offline native-script TTS→STT round-trip gate and native one-breath command-routing tests on the primary Xiaomi 14. These deterministic tests do not replace a controlled acoustic benchmark; broader accents, short ambiguous utterances, background noise, microphone distance, and a second device still require qualification. See [Speech Model Qualification](docs/SPEECH_MODEL_QUALIFICATION.md).
+Only English and Hindi are exposed in the current app. Deterministic engine and command-routing tests do not replace a controlled acoustic benchmark; broader accents, short ambiguous utterances, background noise, microphone distance, and a second device still require qualification. See [Speech Model Qualification](docs/SPEECH_MODEL_QUALIFICATION.md).
 
 ## Build and test
 
@@ -245,7 +267,7 @@ adb shell am instrument -w \
   com.unoone.agent.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-On Xiaomi/HyperOS, stream installation may be blocked. The validated path is `adb push` followed by `adb shell pm install -r`.
+On Xiaomi/HyperOS, streamed installation may be blocked. The debug app APK can be installed with `adb push` followed by `adb shell pm install -r`; the separate instrumentation APK may still require an OEM confirmation that ADB cannot bypass.
 
 ### Distribution projects
 
@@ -270,20 +292,31 @@ python scripts/ci/check_repo_invariants.py
 
 ## Latest verified results
 
-Validated on July 17, 2026 against the Xiaomi 14 (`7f8cafef`), Android 15:
+Automated gates rerun on July 20, 2026:
 
 | Gate | Result |
 |---|---|
-| Android lint and JVM unit tests | Pass |
-| Debug APK and Android-test APK | Pass |
-| Connected-device instrumentation | `OK (55 tests)` in 206.218 seconds |
-| No-network device subset | `OK (20 tests)` in 77.202 seconds with Wi-Fi and mobile data disabled |
-| PDF and DOCX Android round trips | `OK (2 tests)`; exact values persisted and original bytes unchanged |
-| Page Agent TypeScript and unit tests | Pass; 4 unit tests |
+| Android lint | Pass; no new issues against the existing baseline |
+| Android JVM unit tests | Pass; 519 tests, 0 failures, 0 errors |
+| Debug, release, and Android-test assembly/compilation | Pass |
+| Repository invariant check | Pass |
+| Page Agent TypeScript and unit tests | Pass; 8 unit tests |
 | Page Agent Playwright | Pass; 5 browser scenarios |
-| Page Agent physical WebView fixture | Pass for authenticated form filling and Read Page extraction |
-| Blind Aid regression | Representative mobile-phone fixture detected; stale-cache lifecycle test passed |
-| Crash/ANR/OOM scan | No UnoOne crash, ANR, OOM, missing crypto class, or UnoOne low-memory kill in the final run |
+
+Physical evidence on the Xiaomi 14 (`7f8cafef`), Android 15:
+
+| Gate | Result |
+|---|---|
+| Historical connected-device instrumentation, July 17 | `OK (55 tests)` in 206.218 seconds |
+| Historical no-network subset, July 17 | `OK (20 tests)` in 77.202 seconds with Wi-Fi and mobile data disabled |
+| Latest instrumentation attempt | Test APK compiled; Xiaomi rejected installation with `INSTALL_FAILED_USER_RESTRICTED` |
+| PDF and DOCX Android round trips | `OK (2 tests)` in the July 17 suite; exact values persisted and original bytes unchanged |
+| Phone actions | WhatsApp Business, Gmail, and Calendar opened with foreground-package verification; drafts remain reviewable |
+| Read Screen | Read actual Accessibility Settings content through the accessibility/OCR path and spoke the result |
+| Page Agent physical WebView | Read rendered page text and executed guarded text-entry actions; complex public-site completion is not yet qualified |
+| Hindi speech and Blind Aid | Hindi STT/TTS engines initialized; person/mobile-phone and other COCO labels were detected and spoken through native Hindi narration, with no stale narration after stop |
+| Master disable | Blocked commands and speech, survived process restart, and did not replay the old request after re-enable |
+| Crash/ANR/OOM scan | No UnoOne crash, ANR, OOM, missing crypto class, or UnoOne low-memory kill in the final inspected run |
 
 Detailed evidence and honest boundaries are recorded in [Connected-device validation](docs/DEVICE_VALIDATION_2026-07-17.md) and [Device verification](DEVICE_VERIFICATION.md).
 
@@ -322,7 +355,7 @@ The installer PWA is implemented but intentionally keeps downloads locked when a
 - [Android build and validation](android-app/UnoOneAgent/README.md)
 - [Phone-control implementation](android-app/UnoOneAgent/phonecontrol/README.md)
 - [Offline Document Skills](docs/OFFLINE_DOCUMENT_SKILLS.md)
-- [Connected-device validation](docs/DEVICE_VALIDATION_2026-07-16.md)
+- [Connected-device validation](docs/DEVICE_VALIDATION_2026-07-17.md)
 - [Device verification matrix](DEVICE_VERIFICATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Safety](docs/SAFETY.md)

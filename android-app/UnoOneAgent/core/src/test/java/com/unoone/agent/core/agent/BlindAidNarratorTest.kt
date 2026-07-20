@@ -38,6 +38,36 @@ class BlindAidNarratorTest {
     }
 
     @Test
+    fun hindiSceneSummaryUsesNativeObjectNames() {
+        assertEquals(
+            "सामने: व्यक्ति, मोबाइल फोन, बोतल, टेलीविज़न।",
+            BlindAidNarrator.sceneSummary(
+                listOf("person", "cell phone", "bottle", "tv"),
+                languageCode = "hi"
+            )
+        )
+    }
+
+    @Test
+    fun hindiProximityWarningsAreShortAndNative() {
+        assertEquals(
+            "रुकिए। सामने कार है।",
+            BlindAidNarrator.proximityWarning("car", immediate = true, languageCode = "hi-IN")
+        )
+        assertEquals(
+            "कुर्सी सामने है।",
+            BlindAidNarrator.proximityWarning("chair", immediate = false, languageCode = "hi")
+        )
+    }
+
+    @Test
+    fun hindiModeMessagesAvoidGenderedVoiceWording() {
+        assertEquals("ब्लाइंड एड बंद है।", BlindAidNarrator.deactivationMessage("hi"))
+        assertFalse(BlindAidNarrator.activationMessage("hi").contains("रही"))
+        assertFalse(BlindAidNarrator.activationMessage("hi").contains("करूँगी"))
+    }
+
+    @Test
     fun shouldNarrateIsSuppressedInQuietMode() {
         assertFalse(
             BlindAidNarrator.shouldNarrateScene(

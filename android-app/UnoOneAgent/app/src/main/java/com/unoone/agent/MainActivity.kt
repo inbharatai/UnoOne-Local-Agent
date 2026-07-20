@@ -15,6 +15,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.compose.rememberNavController
 import com.unoone.agent.accessibilitycontrol.UnoOneAccessibilityService
 import com.unoone.agent.core.runtime.AgentRuntimeGate
@@ -105,7 +107,20 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val agentViewModel = AgentViewModel(agentOrchestrator, voiceModule, app)
+        // Keep the AgentViewModel across configuration changes. Constructing it manually here
+        // recreated disable collectors and transient state on every Activity recreation.
+        val agentViewModel = ViewModelProvider(
+            this,
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    if (modelClass.isAssignableFrom(AgentViewModel::class.java)) {
+                        return AgentViewModel(agentOrchestrator, voiceModule, app) as T
+                    }
+                    throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
+                }
+            }
+        )[AgentViewModel::class.java]
         val notesViewModel = NotesViewModel(database.noteDao())
         val logsViewModel = LogsViewModel(database.actionLogDao())
         val skillsViewModel = SkillsViewModel(agentOrchestrator.skillsModule)

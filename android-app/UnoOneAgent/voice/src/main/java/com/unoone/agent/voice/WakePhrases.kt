@@ -27,32 +27,15 @@ object WakePhrases {
     /**
      * Prefixes accepted by the independent Omnilingual-STT wake fallback. The low-latency native
      * KWS remains English because the shipped streaming transducer is English-only; these native
-     * phrases make a complete one-breath wake command work in every language UnoOne exposes.
+     * phrases make a complete one-breath wake command work in English and Hindi.
      * Longer phrases must precede their shorter forms.
      */
-    private val TRANSCRIPT_PREFIXES = listOf(
-        "listen to me", "uno one", "unoone", "listen",
-        "मेरी बात सुनो", "यूनो वन", "यूनोवन", "सुनो",
-        "আমার কথা শোনো", "ইউনো ওয়ান", "ইউনোওয়ান", "শোনো",
-        "கேளுங்கள்", "யூனோ ஒன்", "யூனோஒன்", "கேள்",
-        "వినండి", "యునో వన్", "యునోవన్", "విను",
-        "ಕೇಳಿ", "ಯುನೋ ಒನ್", "ಯುನೋಒನ್", "ಕೇಳು",
-        "കേൾക്കുക", "യൂനോ വൺ", "യൂനോവൺ", "കേൾക്കൂ"
-    )
-
     /**
      * Returns the command following a leading wake phrase, an empty string when the utterance is
      * only a wake phrase, or null when this is ordinary ambient speech.
      */
     fun commandAfterWakePhrase(transcript: String): String? {
-        val trimmed = transcript.trim()
-        val lower = trimmed.lowercase()
-        val prefix = TRANSCRIPT_PREFIXES.firstOrNull { phrase ->
-            lower == phrase || lower.startsWith("$phrase ") ||
-                lower.startsWith("$phrase,") || lower.startsWith("$phrase:") ||
-                lower.startsWith("$phrase-")
-        } ?: return null
-        return trimmed.drop(prefix.length).trimStart(' ', ',', '.', ':', '-', '—')
+        return WakePhraseMatcher.match(transcript)?.command
     }
 
     /** Removes only a leading wake phrase while preserving identical words inside the command. */

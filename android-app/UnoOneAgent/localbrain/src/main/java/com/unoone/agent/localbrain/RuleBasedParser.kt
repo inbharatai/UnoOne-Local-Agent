@@ -17,6 +17,18 @@ import kotlinx.serialization.json.JsonPrimitive
  */
 object RuleBasedParser {
 
+    private fun hasAnyWord(value: String, vararg words: String): Boolean =
+        words.any { word ->
+            Regex("(^|\\s)${Regex.escape(word)}(?=\\s|[,.!?]|$)", RegexOption.IGNORE_CASE)
+                .containsMatchIn(value)
+        }
+
+    private fun explicitWebTarget(value: String): String? =
+        Regex(
+            "(?<![@\\w])(?:https?://)?(?:www\\.)?[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)+(?:/[^\\s]*)?",
+            RegexOption.IGNORE_CASE
+        ).find(value)?.value?.trimEnd('.', ',', ';')
+
     // Domain-specific patterns that use "and" internally for their own semantics.
     // These MUST be checked BEFORE the compound handler splits on " and ".
     private val domainSpecificKeywords = listOf(
@@ -54,6 +66,9 @@ object RuleBasedParser {
 
     fun parse(command: String): ToolCall? {
         val lowered = command.lowercase().trim()
+        val explicitTarget = explicitWebTarget(lowered)
+        val startsWithOpenVerb = lowered.startsWith("open ") || lowered.startsWith("launch ") ||
+            lowered.startsWith("start ") || lowered.startsWith("use ")
         parseLocalizedCoreCommand(lowered)?.let { return it }
 
         return when {
@@ -72,17 +87,41 @@ object RuleBasedParser {
                 )
             }
 
-            // Email Drafting — 4D: fixed email regex with escaped dots
-            lowered.contains("email") || lowered.contains("mail") -> {
-                val to = Regex("to ([\\w.]+@[\\w]+\\.[\\w]+)").find(lowered)?.groupValues?.get(1) ?: ""
-                val subject = Regex("subject (.*?) (body|text|$)").find(lowered)?.groupValues?.get(1) ?: "Expert Update"
-                val body = lowered.substringAfter("body", "").ifEmpty { lowered.substringAfter("text", "") }.trim()
+            // A request to open/check Gmail is navigation, never an empty email draft.
+            lowered in setOf(
+                "open gmail", "open my gmail", "open gmail app", "launch gmail",
+                "open email", "open my email", "check email", "check my email",
+                "show inbox", "open inbox"
+            ) -> ToolCall(
+                "open_app",
+                JsonObject(mapOf(
+                    "app_name" to JsonPrimitive("gmail"),
+                    "package_name" to JsonPrimitive("com.google.android.gm")
+                ))
+            )
+
+            // Email Drafting. Only explicit compose/draft/write/send language reaches this branch;
+            // an incidental word such as "email address" remains available to the normal planner.
+            (lowered.contains("email") || lowered.contains("e-mail") || lowered.contains("mail")) &&
+                hasAnyWord(lowered, "draft", "compose", "write", "send", "prepare") -> {
+                val to = Regex(
+                    "(?:to\\s+)?([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,})",
+                    RegexOption.IGNORE_CASE
+                ).find(command)?.groupValues?.get(1) ?: ""
+                val subject = Regex(
+                    "\\bsubject\\s+(.+?)(?=\\s+(?:body|message|text)\\b|$)",
+                    RegexOption.IGNORE_CASE
+                ).find(command)?.groupValues?.get(1)?.trim() ?: "Update"
+                val body = Regex(
+                    "\\b(?:body|message|text)\\s+(.+)$",
+                    RegexOption.IGNORE_CASE
+                ).find(command)?.groupValues?.get(1)?.trim().orEmpty()
                 ToolCall(
                     "draft_email",
                     JsonObject(mapOf(
                         "to" to JsonPrimitive(to),
                         "subject" to JsonPrimitive(subject),
-                        "body" to JsonPrimitive(body.ifEmpty { command })
+                        "body" to JsonPrimitive(body)
                     ))
                 )
             }
@@ -102,16 +141,23 @@ object RuleBasedParser {
             )
 
             // WhatsApp Integration — prepare a draft only; the user presses Send in WhatsApp.
-            lowered.contains("whatsapp") -> {
+            // Without a spoken phone number, WhatsApp's own recipient picker is opened instead of
+            // inventing or learning a contact mapping.
+            lowered.contains("whatsapp") &&
+                hasAnyWord(lowered, "message", "text", "write", "draft", "send", "saying", "say") -> {
                 val number = Regex("(?:to|at) ([+]?[\\d]{8,15})").find(lowered)?.groupValues?.get(1) ?: ""
-                val message = lowered.substringAfter("whatsapp")
-                    .substringAfter("message").substringAfter("saying").trim()
-                    .let { Regex("^[\\d+]+\\s*").replace(it, "").trim() }
+                val message = Regex(
+                    "\\b(?:saying|message|text|say)\\b\\s*(.+)$",
+                    RegexOption.IGNORE_CASE
+                ).find(command)?.groupValues?.get(1)?.trim()
+                    ?.let { Regex("^(?:saying|say)\\s+", RegexOption.IGNORE_CASE).replace(it, "") }
+                    ?.let { Regex("^[+\\d][\\d\\s-]{7,}\\s*").replace(it, "").trim() }
+                    .orEmpty()
                 ToolCall(
                     "send_whatsapp",
                     JsonObject(mapOf(
                         "number" to JsonPrimitive(number),
-                        "message" to JsonPrimitive(message.ifEmpty { command })
+                        "message" to JsonPrimitive(message)
                     ))
                 )
             }
@@ -127,15 +173,20 @@ object RuleBasedParser {
             ) -> ToolCall("open_calendar", JsonObject(emptyMap()))
 
             // Calendar Intelligence
-            lowered.contains("calendar") || lowered.contains("schedule") || lowered.contains("events") -> {
+            lowered.contains("calendar") || lowered.contains("schedule") || lowered.contains("events") ||
+                lowered.startsWith("remind me ") -> {
                 if (lowered.contains("check") || lowered.contains("what") || lowered.contains("show") || lowered.contains("read")) {
                     ToolCall("check_calendar", JsonObject(emptyMap()))
-                } else if (lowered.contains("add") || lowered.contains("book") || lowered.contains("create") || lowered.contains("insert")) {
-                    val title = Regex("(open|book|add to|create|insert) calendar", RegexOption.IGNORE_CASE).replace(command, "").trim()
+                } else if (
+                    lowered.contains("add") || lowered.contains("book") || lowered.contains("create") ||
+                    lowered.contains("insert") || lowered.contains("schedule") ||
+                    lowered.startsWith("remind me ")
+                ) {
+                    val details = CalendarCommandParser.parse(command)
                     ToolCall("open_calendar_insert", JsonObject(mapOf(
-                        "title" to JsonPrimitive(title.ifEmpty { "New Event" }),
-                        "start_time" to JsonPrimitive(""),
-                        "end_time" to JsonPrimitive("")
+                        "title" to JsonPrimitive(details.title),
+                        "start_time" to JsonPrimitive(details.startTimeIso.orEmpty()),
+                        "end_time" to JsonPrimitive(details.endTimeIso.orEmpty())
                     )))
                 } else null
             }
@@ -145,7 +196,9 @@ object RuleBasedParser {
             // as a {tool, args} object in a single "steps" JSON array. (Previously the 3rd part was
             // parsed and discarded; it is now included.) If only one half parses, that half is
             // returned directly — the "and" was not a command separator.
-            lowered.contains(" and ") && domainSpecificKeywords.none { lowered.contains(it) } -> {
+            lowered.contains(" and ") &&
+                domainSpecificKeywords.none { lowered.contains(it) } &&
+                !(startsWithOpenVerb && explicitTarget != null) -> {
                 val parts = lowered.split(" and ").map { it.trim() }.filter { it.isNotBlank() }
                 val parsed = parts.mapNotNull { parse(it) }
                 when {
@@ -188,20 +241,26 @@ object RuleBasedParser {
             // does NOT get hijacked into the browser. RuleBasedParser only PROPOSES this tool;
             // ActionExecutor re-validates the origin via ApprovedOriginPolicy, so a stale entry below
             // is rejected at execution, not trusted.
-            ((lowered.startsWith("open ") || lowered.startsWith("launch ") ||
-                lowered.startsWith("start ") || lowered.startsWith("use ")) &&
-                SECURE_ORIGIN_FRIENDLY.any { lowered.contains(it.first) }) ||
+            (startsWithOpenVerb &&
+                (SECURE_ORIGIN_FRIENDLY.any { lowered.contains(it.first) } || explicitTarget != null)) ||
                 lowered.contains("secure browser") -> {
-                val explicitTarget = Regex(
-                    "(?:https?://)?(?:www\\.)?[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)+(?:/[^\\s]*)?",
-                    RegexOption.IGNORE_CASE
-                ).find(lowered)?.value?.trimEnd('.', ',', ';')
-                val origin = explicitTarget
-                    ?: SECURE_ORIGIN_FRIENDLY.firstOrNull { lowered.contains(it.first) }?.second
+                val friendlyTarget = SECURE_ORIGIN_FRIENDLY.firstOrNull {
+                    lowered.contains(it.first)
+                }
+                // A form task commonly contains an email address. Its domain is field data, not
+                // the requested navigation origin. Prefer an explicit friendly site name and only
+                // scan for a public URL when no friendly target was named; the negative lookbehind
+                // also prevents matching a domain immediately after '@'.
+                val requestedExplicitTarget = explicitTarget.takeIf { friendlyTarget == null }
+                val origin = friendlyTarget?.second
+                    ?: requestedExplicitTarget
                     ?: "https://unigurus.com"
                 val task = lowered
                     .replace(Regex("\\bsecure browser\\b", RegexOption.IGNORE_CASE), " ")
-                    .let { s -> if (explicitTarget == null) s else s.replace(explicitTarget, " ") }
+                    .let { s ->
+                        if (requestedExplicitTarget == null) s
+                        else s.replace(requestedExplicitTarget, " ")
+                    }
                     .let { s -> SECURE_ORIGIN_FRIENDLY.fold(s) { acc, (name, _) -> acc.replace(name, " ") } }
                     .trim()
                     .let { Regex("^(open|launch|start|use|the)\\s*", RegexOption.IGNORE_CASE).replace(it, "") }
@@ -218,6 +277,12 @@ object RuleBasedParser {
             // 4D: "barriers" alone triggers deactivation only, not detection
             lowered.contains("stop blind aid") || lowered.contains("deactivate blind aid") ||
             lowered.contains("turn off blind aid") || lowered.contains("stop scanning") ||
+            lowered in setOf(
+                "stop blind", "stop blind mode", "stop blind view", "blind mode off",
+                "blind view off", "disable blind mode", "disable blind view",
+                "exit blind mode", "exit blind view", "blind mode band karo",
+                "blind view band karo"
+            ) ||
             lowered == "barriers" || lowered == "obstacles" ||
             ((lowered.contains("barriers") || lowered.contains("obstacles")) &&
                 (lowered.contains("stop") || lowered.contains("remove") || lowered.contains("turn off") ||
@@ -227,6 +292,13 @@ object RuleBasedParser {
 
             // Blind Aid Activation — requires positive context like "detect" or "start"
             lowered.contains("start blind aid") || lowered.contains("activate blind aid") ||
+            lowered in setOf(
+                "start blind", "start blind mode", "start blind view",
+                "enable blind mode", "enable blind view", "blind mode on", "blind view on",
+                "turn on blind mode", "turn on blind view", "switch to blind mode",
+                "switch to blind view", "blind mode chalu karo", "blind mode shuru karo",
+                "blind view chalu karo", "andha mode chalu karo", "netraheen mode chalu karo"
+            ) ||
             lowered.contains("detect objects") || lowered.contains("what's in front of me") ||
             lowered.contains("detect barrier") ||
             ((lowered.contains("barriers") || lowered.contains("obstacles")) &&
@@ -394,12 +466,14 @@ object RuleBasedParser {
 
         return when {
             hasAny(
-                "ब्लाइंड एड बंद करो", "ব্লাইন্ড এইড বন্ধ করো", "பிளைண்ட் எய்டை நிறுத்து",
+                "ब्लाइंड एड बंद करो", "ब्लाइंड मोड बंद करो", "दृष्टि सहायता बंद करो",
+                "ব্লাইন্ড এইড বন্ধ করো", "பிளைண்ட் எய்டை நிறுத்து",
                 "బ్లైండ్ ఎయిడ్ ఆపు", "ಬ್ಲೈಂಡ್ ಏಡ್ ನಿಲ್ಲಿಸು", "ബ്ലൈൻഡ് എയ്ഡ് നിർത്തുക"
             ) -> ToolCall("deactivate_blind_aid", JsonObject(emptyMap()))
 
             hasAny(
-                "ब्लाइंड एड चालू करो", "सामने क्या है", "वस्तुओं का पता लगाओ",
+                "ब्लाइंड एड चालू करो", "ब्लाइंड मोड शुरू करो", "ब्लाइंड मोड चालू करो",
+                "दृष्टि सहायता चालू करो", "सामने क्या है", "वस्तुओं का पता लगाओ",
                 "ব্লাইন্ড এইড চালু করো", "সামনে কী আছে",
                 "பிளைண்ட் எய்டை தொடங்கு", "எனக்கு முன்னால் என்ன இருக்கிறது",
                 "బ్లైండ్ ఎయిడ్ ప్రారంభించు", "నా ముందు ఏముంది",
@@ -422,6 +496,48 @@ object RuleBasedParser {
                 "कैलेंडर खोलो", "ক্যালেন্ডার খোলো", "காலெண்டரை திற", "క్యాలెండర్ తెరువు",
                 "ಕ್ಯಾಲೆಂಡರ್ ತೆರೆಯಿರಿ", "കലണ്ടർ തുറക്കുക"
             ) -> ToolCall("open_calendar", JsonObject(emptyMap()))
+
+            command.contains("कैलेंडर") &&
+                hasAny("जोड़ो", "बनाओ", "लगाओ", "रिमाइंडर") -> {
+                val details = CalendarCommandParser.parse(command)
+                ToolCall("open_calendar_insert", JsonObject(mapOf(
+                    "title" to JsonPrimitive(details.title),
+                    "start_time" to JsonPrimitive(details.startTimeIso.orEmpty()),
+                    "end_time" to JsonPrimitive(details.endTimeIso.orEmpty())
+                )))
+            }
+
+            hasAny("जीमेल खोलो", "ईमेल खोलो", "इनबॉक्स खोलो", "मेल खोलो") ->
+                openApp("gmail", "com.google.android.gm")
+
+            (command.contains("ईमेल") || command.contains("मेल")) &&
+                hasAny("ड्राफ्ट", "लिखो", "बनाओ", "तैयार करो") -> {
+                val to = Regex(
+                    "([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,})",
+                    RegexOption.IGNORE_CASE
+                ).find(command)?.value.orEmpty()
+                val body = command.substringAfter("कि", "")
+                    .ifBlank { command.substringAfter("लिखो", "") }
+                    .trim()
+                ToolCall("draft_email", JsonObject(mapOf(
+                    "to" to JsonPrimitive(to),
+                    "subject" to JsonPrimitive("Update"),
+                    "body" to JsonPrimitive(body)
+                )))
+            }
+
+            (command.contains("व्हाट्सऐप") || command.contains("व्हाट्सएप")) &&
+                hasAny("मैसेज", "संदेश", "लिखो", "ड्राफ्ट") -> {
+                val number = Regex("[+]?\\d{8,15}").find(command)?.value.orEmpty()
+                val message = command.substringAfter("कि", "")
+                    .ifBlank { command.substringAfter("मैसेज", "") }
+                    .ifBlank { command.substringAfter("संदेश", "") }
+                    .trim()
+                ToolCall("send_whatsapp", JsonObject(mapOf(
+                    "number" to JsonPrimitive(number),
+                    "message" to JsonPrimitive(message)
+                )))
+            }
 
             hasAny(
                 "व्हाट्सऐप खोलो", "व्हाट्सएप खोलो", "হোয়াটসঅ্যাপ খোলো",

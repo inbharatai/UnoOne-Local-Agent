@@ -19,25 +19,16 @@ class VoiceLanguageMappingTest {
     }
 
     @Test
-    fun indicLanguagesUseSharedOmnilingualAsrAndPerLanguageMmsTts() {
-        listOf("hi", "bn", "ta", "te", "kn", "ml").forEach { lang ->
-            val asr = VoiceLanguage.asrSpec(lang)
-            assertEquals("speech/shared/sherpa-asr-indic", asr.folder)
-            assertEquals(SttMode.OMNILINGUAL, asr.mode)
-            assertEquals(lang, asr.language)
-        }
+    fun hindiUsesSharedOmnilingualAsr() {
+        val asr = VoiceLanguage.asrSpec("hi")
+        assertEquals("speech/shared/sherpa-asr-indic", asr.folder)
+        assertEquals(SttMode.OMNILINGUAL, asr.mode)
+        assertEquals("hi", asr.language)
     }
 
     @Test
-    fun ttsFolderPerIndicLanguage() {
+    fun hindiUsesItsOfflineTtsFolder() {
         assertEquals("speech/languages/hi-IN/tts", VoiceLanguage.ttsFolder("hi"))
-        assertEquals("speech/languages/bn-IN/tts", VoiceLanguage.ttsFolder("bn"))
-        assertEquals("speech/languages/ta-IN/tts", VoiceLanguage.ttsFolder("ta"))
-        assertEquals("speech/languages/te-IN/tts", VoiceLanguage.ttsFolder("te"))
-        assertEquals("speech/languages/kn-IN/tts", VoiceLanguage.ttsFolder("kn"))
-        assertEquals("speech/languages/ml-IN/tts", VoiceLanguage.ttsFolder("ml"))
-        val folders = listOf("hi", "bn", "ta", "te", "kn", "ml").map { VoiceLanguage.ttsFolder(it) }
-        assertEquals(folders.size, folders.toSet().size)
     }
 
     @Test
@@ -61,20 +52,20 @@ class VoiceLanguageMappingTest {
         assertEquals("en", VoiceLanguage.normalize("xyz"))
         assertEquals("en", VoiceLanguage.normalize("fr"))
         assertEquals("hi", VoiceLanguage.normalize("hi"))
-        assertEquals("ml", VoiceLanguage.normalize("ml"))
+        assertEquals("en", VoiceLanguage.normalize("ml"))
     }
 
     @Test
-    fun supportedListHasAllSevenInDisplayOrder() {
+    fun supportedListIsEnglishAndHindiOnly() {
         val codes = VoiceLanguage.SUPPORTED.map { it.code }
-        assertEquals(listOf("en", "hi", "bn", "ta", "te", "kn", "ml"), codes)
+        assertEquals(listOf("en", "hi"), codes)
     }
 
     @Test
     fun displayNameIsHumanReadable() {
         assertEquals("English", VoiceLanguage.displayName("en"))
         assertEquals("Hindi", VoiceLanguage.displayName("hi"))
-        assertEquals("Malayalam", VoiceLanguage.displayName("ml"))
+        assertEquals("English", VoiceLanguage.displayName("ml"))
         assertNotEquals("en", VoiceLanguage.displayName("hi"))
     }
 
@@ -82,12 +73,7 @@ class VoiceLanguageMappingTest {
     fun everySupportedLanguageHasAnIndianLocaleAndNativeTestPhrase() {
         val expected = mapOf(
             "en" to "en-IN",
-            "hi" to "hi-IN",
-            "bn" to "bn-IN",
-            "ta" to "ta-IN",
-            "te" to "te-IN",
-            "kn" to "kn-IN",
-            "ml" to "ml-IN"
+            "hi" to "hi-IN"
         )
         VoiceLanguage.SUPPORTED.forEach { language ->
             assertEquals(expected.getValue(language.code), VoiceLanguage.localeTag(language.code))
@@ -98,16 +84,39 @@ class VoiceLanguageMappingTest {
     @Test
     fun englishAsrDiffersFromIndicAsrMode() {
         assertNotEquals(VoiceLanguage.asrSpec("en").mode, VoiceLanguage.asrSpec("hi").mode)
-        assertTrue(VoiceLanguage.isSupported("ta"))
+        assertTrue(VoiceLanguage.isSupported("hi"))
     }
 
     @Test
-    fun everyLanguageHasANonEnglishNativeWakeCue() {
+    fun hindiHasANonEnglishNativeWakeCue() {
         assertEquals("Yes, I'm listening.", VoiceLanguage.wakeCue("en"))
-        listOf("hi", "bn", "ta", "te", "kn", "ml").forEach { language ->
-            val cue = VoiceLanguage.wakeCue(language)
-            assertTrue("$language wake cue must not be blank", cue.isNotBlank())
-            assertNotEquals("Indic wake cue must not fall back to English", VoiceLanguage.wakeCue("en"), cue)
-        }
+        val cue = VoiceLanguage.wakeCue("hi")
+        assertTrue(cue.isNotBlank())
+        assertNotEquals("Hindi wake cue must not fall back to English", VoiceLanguage.wakeCue("en"), cue)
+    }
+
+    @Test
+    fun explicitVoiceCommandsSelectEnglishOrHindi() {
+        listOf(
+            "Speak in Hindi",
+            "Hindi mein bolo",
+            "Hindi mein jawab do",
+            "अब हिंदी में बोलो"
+        ).forEach { assertEquals(it, "hi", VoiceLanguage.requestedFromCommand(it)) }
+        listOf(
+            "Speak in English",
+            "English mein bolo",
+            "इंग्लिश में बोलो"
+        ).forEach { assertEquals(it, "en", VoiceLanguage.requestedFromCommand(it)) }
+    }
+
+    @Test
+    fun languageMentionsWithoutAnExplicitChangeDoNotSwitch() {
+        listOf(
+            "Translate this Hindi sentence",
+            "Open the English calendar",
+            "Send a message saying Hindi class is cancelled",
+            "What is the Hindi word for calendar?"
+        ).forEach { assertEquals(it, null, VoiceLanguage.requestedFromCommand(it)) }
     }
 }

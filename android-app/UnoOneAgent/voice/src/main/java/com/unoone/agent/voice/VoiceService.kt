@@ -6,16 +6,14 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.voice.recorder.AudioRecorder
-import com.unoone.agent.voice.stt.AndroidSttEngine
 import com.unoone.agent.voice.stt.KeywordSpotterEngine
-import com.unoone.agent.voice.stt.SherpaSttEngine
-import com.unoone.agent.voice.tts.SherpaTtsEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,7 +23,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 
 class VoiceService : Service() {
 
@@ -44,18 +42,8 @@ class VoiceService : Service() {
     private val reinitLock = Mutex()
 
     private val recorder = AudioRecorder()
+    private val audioManager by lazy { getSystemService(AudioManager::class.java) }
     private var keywordSpotter: KeywordSpotterEngine? = null
-    private var sttEngine: SherpaSttEngine? = null
-    private var ttsEngine: SherpaTtsEngine? = null
-    private var androidStt: AndroidSttEngine? = null
-    private var useAndroidStt = false
-
-    /**
-     * When true, the emergency Android SpeechRecognizer is used when Sherpa STT is unavailable.
-     * Default false (offline-first). Mirrors [com.unoone.agent.voice.VoiceModule.allowSystemSttFallback]
-     * so the service never silently uses the cloud-dependent system recognizer.
-     */
-    private var allowSystemSttFallback = false
 
     var onWakeWordDetected: (() -> Unit)? = null
     var onCommandReceived: ((String) -> Unit)? = null
@@ -66,6 +54,8 @@ class VoiceService : Service() {
     companion object {
         private const val CHANNEL_ID = "voice_service_channel"
         private const val NOTIFICATION_ID = 1001
+        /** One second of 16 kHz mono PCM16; safely exceeds the bundled KWS 45-frame minimum. */
+        private const val KWS_SAFE_PCM_BYTES = 16_000 * 2
         const val ACTION_VOICE_COMMAND = "com.unoone.agent.VOICE_COMMAND"
         const val EXTRA_COMMAND = "command"
         /**
@@ -87,7 +77,14 @@ class VoiceService : Service() {
          * cross-module coupling — mirrors [voiceCommandCallback]. Invoked from the spotting loop
          * off the audio thread so the cue does not block command capture.
          */
-        var onWakeWord: (() -> Unit)? = null
+        var onWakeWord: (suspend () -> Unit)? = null
+
+        /**
+         * Application-owned speech runtime. The service owns continuous capture/KWS only; final
+         * PCM decoding and TTS use this shared VoiceModule.
+         */
+        @Volatile
+        var sharedVoiceModuleProvider: (() -> VoiceModule?)? = null
 
         /**
          * C5: when true, the in-app hands-free session owns the mic — the background KWS loop must
@@ -95,6 +92,41 @@ class VoiceService : Service() {
          * (the prior "listen is slow/erratic" cause). Set by AgentViewModel when a session starts.
          */
         var foregroundSessionActive: Boolean = false
+
+        private val agentSpeechOwners = AtomicInteger(0)
+        private val foregroundTaskOwners = AtomicInteger(0)
+
+        /** Prevents the wake recorder from transcribing UnoOne's own TTS. */
+        fun beginAgentSpeech() {
+            agentSpeechOwners.incrementAndGet()
+        }
+
+        fun endAgentSpeech() {
+            agentSpeechOwners.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
+        }
+
+        fun isAgentSpeaking(): Boolean = agentSpeechOwners.get() > 0
+
+        /**
+         * Gives a foreground agent operation exclusive access to local CPU/audio resources.
+         * The passive wake loop otherwise runs full Sherpa fallback transcription every few
+         * seconds, competing with PageAgent inference and decoding the agent's spoken progress.
+         */
+        fun beginForegroundTask() {
+            foregroundTaskOwners.incrementAndGet()
+        }
+
+        fun endForegroundTask() {
+            foregroundTaskOwners.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
+        }
+
+        fun isForegroundTaskActive(): Boolean = foregroundTaskOwners.get() > 0
+
+        fun clearAudioOwnership() {
+            foregroundSessionActive = false
+            agentSpeechOwners.set(0)
+            foregroundTaskOwners.set(0)
+        }
 
         fun start(context: Context) {
             if (!AgentRuntimeGate.isEnabled()) return
@@ -123,6 +155,7 @@ class VoiceService : Service() {
             return
         }
         startForeground(NOTIFICATION_ID, createNotification("Listening locally — Mic active. Say 'UnoOne' or 'Listen' to give a command."))
+        VoiceAgentRuntime.transition(VoiceAgentState.INITIALISING, "voice service created")
         Logger.i("VoiceService: Created")
     }
 
@@ -133,10 +166,9 @@ class VoiceService : Service() {
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_REINIT_LANG) {
-            // Language changed at runtime: rebuild STT/TTS only, keep the wake-word loop running.
-            // MUST run off the main thread — Sherpa model load (especially the larger Indic Whisper
-            // ASR models) is heavy I/O and blocks onStartCommand's main thread, freezing the UI/ANR.
-            serviceScope.launch { reinitSttTts() }
+            // Settings already rebuilt the one shared VoiceModule; the service intentionally owns
+            // no duplicate STT/TTS runtime.
+            Logger.i("VoiceService: shared voice language changed")
             return START_STICKY
         }
         if (intent?.action == ACTION_VOICE_COMMAND) {
@@ -188,40 +220,9 @@ class VoiceService : Service() {
     private fun modelRoot(): String =
         (getExternalFilesDir(null)?.absolutePath ?: filesDir.absolutePath) + "/models"
 
-    /** The currently selected voice language (normalized; default English). */
-    private fun currentLanguage(): String =
-        VoiceLanguage.normalize(
-            getSharedPreferences(VoiceLanguage.PREF_NAME, Context.MODE_PRIVATE)
-                .getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT)
-        )
-
     private fun initEngines() {
         val modelDir = modelRoot()
-        val lang = currentLanguage()
-        initSttTts(modelDir, lang)
         initKeywordSpotter(modelDir)
-    }
-
-    /** Builds STT + TTS for [lang]. Sherpa is the offline default; Android STT is emergency-only. */
-    private fun initSttTts(modelDir: String, lang: String) {
-        val asr = VoiceLanguage.asrSpec(lang)
-        val stt = SherpaSttEngine(this, "$modelDir/${asr.folder}", asr.mode, asr.language)
-        if (stt.initialize() is Result.Success) {
-            sttEngine = stt
-            useAndroidStt = false
-            Logger.i("VoiceService: Sherpa STT ready (offline, ${asr.mode}/$lang)")
-        } else {
-            useAndroidStt = allowSystemSttFallback
-            Logger.w("VoiceService: Sherpa STT unavailable (lang=$lang); emergency Android fallback ${if (allowSystemSttFallback) "enabled" else "disabled"}")
-        }
-
-        val tts = SherpaTtsEngine(this, "$modelDir/${VoiceLanguage.ttsFolder(lang)}")
-        if (tts.initialize() is Result.Success) {
-            ttsEngine = tts
-            Logger.i("VoiceService: Sherpa TTS ready (offline, $lang)")
-        } else {
-            Logger.w("VoiceService: Sherpa TTS unavailable (lang=$lang)")
-        }
     }
 
     /** Wake-word (KWS) — always English (vad). No Indic keyword-spotter model exists. */
@@ -242,24 +243,13 @@ class VoiceService : Service() {
         Logger.w("VoiceService: Keyword spotter unavailable; wake phrases are disabled until a compatible English transducer is installed")
     }
 
-    /** Releases and rebuilds STT/TTS for the current language pref; keeps KWS running. */
-    private suspend fun reinitSttTts() {
-        reinitLock.withLock {
-            runCatching { sttEngine?.release() }
-            sttEngine = null
-            runCatching { ttsEngine?.release() }
-            ttsEngine = null
-            val lang = currentLanguage()
-            Logger.i("VoiceService: reinitializing STT/TTS for language '$lang'")
-            initSttTts(modelRoot(), lang)
-        }
-    }
-
     private fun startMonitoring() {
         monitoringJob?.cancel()
         monitoringJob = serviceScope.launch {
             try {
-                if (keywordSpotter != null || sttEngine != null) {
+                if (keywordSpotter != null ||
+                    sharedVoiceModuleProvider?.invoke()?.isSttInitialized() == true
+                ) {
                     startKeywordSpottingLoop()
                 } else {
                     Logger.i("VoiceService: No offline wake or speech model; manual activation only")
@@ -273,34 +263,87 @@ class VoiceService : Service() {
     private suspend fun startKeywordSpottingLoop() {
         Logger.i("VoiceService: Starting hybrid offline wake loop")
         val kws = keywordSpotter
-        val sttWakeFallbackAvailable = sttEngine != null
+        val sttWakeFallbackAvailable =
+            sharedVoiceModuleProvider?.invoke()?.isSttInitialized() == true
         if (kws == null && !sttWakeFallbackAvailable) return
-        val chunkSizeMs = 1000L // Process 1-second chunks
+        // The bundled Zipformer keyword model requires at least 45 feature frames per call.
+        // A 250 ms PCM chunk produces only ~19 frames and sherpa-onnx aborts natively instead of
+        // returning an error (`features.cc: 0 + 45 > 19`). Keep each KWS call at 500 ms or longer.
+        val chunkSizeMs = 500L
 
         var consecutiveSilenceChunks = 0
-        val maxSilenceChunks = 3 // 3 seconds of silence = end of command
+        val maxSilenceChunks = 2 // about one second of silence = end of command
         val commandAudio = PcmChunkAccumulator()
         val passiveWakeAudio = PcmChunkAccumulator(maxBytes = 16_000 * 2 * 8)
+        // readChunk() is deliberately non-blocking and its first return after AudioRecord.start()
+        // can be much shorter than the loop delay. Never pass that short startup buffer to Sherpa:
+        // the native KWS decoder aborts the process when it receives fewer than 45 feature frames.
+        val kwsAudio = PcmChunkAccumulator(maxBytes = KWS_SAFE_PCM_BYTES * 2)
         var passiveSpeechActive = false
         var passiveSilenceChunks = 0
+        var captureIncludesWakePhrase = false
+        var pausedForCall = false
 
         // 0C-7: Keep recorder running continuously instead of start/stop every second.
         // Start recording ONCE and use readChunk() to drain accumulated audio incrementally.
-        if (!recorder.isRecording() && recorder.hasPermission(this@VoiceService)) {
+        if (
+            !VoiceCapturePolicy.isCallAudioActive(audioManager.mode) &&
+            !recorder.isRecording() &&
+            recorder.hasPermission(this@VoiceService)
+        ) {
             val startResult = recorder.start(this@VoiceService)
             if (startResult is Result.Error) {
                 Logger.e("VoiceService: Cannot start recorder: ${startResult.message}")
+                VoiceAgentRuntime.recordError("MIC_START_FAILED", startResult.message)
+                VoiceAgentRuntime.transition(VoiceAgentState.ERROR_RECOVERY, "microphone start failed")
                 return
             }
+            VoiceAgentRuntime.transition(VoiceAgentState.WAKE_LISTENING, "offline wake loop active")
         }
 
         while (serviceScope.isActive && AgentRuntimeGate.isEnabled()) {
             try {
-                // C5: single mic owner — when the in-app hands-free session is active, release our
-                // recorder and skip spotting so it doesn't contend for the mic. Resume when it ends.
-                if (foregroundSessionActive) {
+                // Never capture a cellular or VoIP call. Besides being a privacy boundary, call
+                // audio was repeatedly decoded as wake speech and caused stale/garbled commands.
+                if (VoiceCapturePolicy.isCallAudioActive(audioManager.mode)) {
                     if (recorder.isRecording()) recorder.stop()
+                    commandAudio.clear()
+                    passiveWakeAudio.clear()
+                    kwsAudio.clear()
+                    passiveSpeechActive = false
+                    passiveSilenceChunks = 0
+                    consecutiveSilenceChunks = 0
+                    isListeningForCommand = false
+                    captureIncludesWakePhrase = false
+                    if (!pausedForCall) {
+                        pausedForCall = true
+                        Logger.i("VoiceService: microphone paused while call audio is active")
+                        updateNotification("Paused while a phone or voice call is active")
+                        VoiceAgentRuntime.transition(VoiceAgentState.PAUSED, "call audio active")
+                    }
                     delay(500)
+                    continue
+                } else if (pausedForCall) {
+                    pausedForCall = false
+                    Logger.i("VoiceService: call ended; local wake listening resumed")
+                    updateNotification("Listening locally — Mic active. Say 'UnoOne' or 'Listen' to give a command.")
+                    VoiceAgentRuntime.transition(VoiceAgentState.WAKE_LISTENING, "call ended")
+                }
+
+                // Exactly one audio owner at a time. Release and discard buffered state while an
+                // in-app recording or UnoOne TTS owns audio, otherwise the wake service can hear the
+                // app's own reply and replay an old/partial command.
+                if (foregroundSessionActive || isAgentSpeaking() || isForegroundTaskActive()) {
+                    if (recorder.isRecording()) recorder.stop()
+                    commandAudio.clear()
+                    passiveWakeAudio.clear()
+                    kwsAudio.clear()
+                    passiveSpeechActive = false
+                    passiveSilenceChunks = 0
+                    consecutiveSilenceChunks = 0
+                    isListeningForCommand = false
+                    captureIncludesWakePhrase = false
+                    delay(100)
                     continue
                 }
 
@@ -335,29 +378,33 @@ class VoiceService : Service() {
                         passiveSilenceChunks = if (hasSpeech) 0 else passiveSilenceChunks + 1
                     }
 
-                    // Low-latency native KWS remains the first path.
-                    val keyword = kws?.processChunk(pcmData)
+                    // Low-latency native KWS remains the first path, but only after accumulating a
+                    // native-safe amount of PCM. This also covers short reads during CPU/model-load
+                    // pressure, not just the first read after recorder startup.
+                    kwsAudio.add(pcmData)
+                    val keyword = if (kws != null && kwsAudio.size >= KWS_SAFE_PCM_BYTES) {
+                        val safeKwsPcm = kwsAudio.toByteArray()
+                        kwsAudio.clear()
+                        kws.processChunk(safeKwsPcm)
+                    } else {
+                        null
+                    }
                     if (keyword != null) {
                         Logger.i("VoiceService: wake phrase detected by keyword spotter")
-                        isListeningForCommand = true
-                        consecutiveSilenceChunks = 0
-                        // Retain the whole speech burst because the command may follow the wake phrase
-                        // in one breath and may have begun before the one-second KWS chunk completed.
+                        // Keep this speech burst. The wake word and command often arrive in one
+                        // utterance; stopping here used to discard "start blind mode".
                         commandAudio.clear()
                         commandAudio.add(passiveWakeAudio.toByteArray())
                         if (commandAudio.size == 0) commandAudio.add(pcmData)
                         passiveWakeAudio.clear()
+                        kwsAudio.clear()
                         passiveSpeechActive = false
                         passiveSilenceChunks = 0
-                        onWakeWordDetected?.invoke()
-                        // Eyes-free (WS2): speak the "I'm listening" cue. Invoked via the static
-                        // callback so the Application can route it to the shared VoiceModule without
-                        // cross-module coupling, and dispatched off the audio thread by the caller so
-                        // the cue does not block command capture.
-                        onWakeWord?.invoke()
-
-                        // Update notification
-                        updateNotification("Listening for command...")
+                        captureIncludesWakePhrase = true
+                        isListeningForCommand = true
+                        consecutiveSilenceChunks = if (hasSpeech) 0 else 1
+                        VoiceAgentRuntime.transition(VoiceAgentState.WAKE_DETECTED, "keyword spotter match")
+                        updateNotification("Wake detected — capturing command...")
                     } else if (
                         passiveSpeechActive &&
                         (passiveSilenceChunks >= 2 || passiveWakeAudio.isFull)
@@ -370,23 +417,28 @@ class VoiceService : Service() {
                         passiveSpeechActive = false
                         passiveSilenceChunks = 0
                         val transcript = transcribeAudio(wakePcm)
-                        val command = (transcript as? Result.Success)
-                            ?.data
-                            ?.let(WakePhrases::commandAfterWakePhrase)
-                        if (command != null) {
+                        val rawTranscript = (transcript as? Result.Success)?.data
+                        val match = rawTranscript?.let(WakePhraseMatcher::match)
+                        if (match != null) {
+                            VoiceAgentRuntime.recordWake(rawTranscript, match)
                             Logger.i("VoiceService: wake phrase detected by offline speech fallback")
                             onWakeWordDetected?.invoke()
-                            onWakeWord?.invoke()
-                            if (command.isBlank()) {
+                            if (match.command.isBlank()) {
+                                if (recorder.isRecording()) recorder.stop()
+                                onWakeWord?.invoke()
                                 isListeningForCommand = true
+                                captureIncludesWakePhrase = false
                                 consecutiveSilenceChunks = 0
                                 commandAudio.clear()
+                                VoiceAgentRuntime.transition(VoiceAgentState.COMMAND_LISTENING, "wake-only utterance")
                                 updateNotification("Listening for command...")
                             } else {
                                 Logger.i("VoiceService: received one-breath wake command")
-                                onCommandReceived?.invoke(command)
-                                voiceCommandCallback?.invoke(command)
-                                updateNotification("UnoOne is listening")
+                                if (recorder.isRecording()) recorder.stop()
+                                onCommandReceived?.invoke(match.command)
+                                voiceCommandCallback?.invoke(match.command)
+                                VoiceAgentRuntime.transition(VoiceAgentState.PROCESSING, "one-breath command routed")
+                                updateNotification("Processing command locally...")
                             }
                         }
                     }
@@ -415,12 +467,49 @@ class VoiceService : Service() {
 
                         val transcript = transcribeAudio(commandPcm)
                         if (transcript is Result.Success) {
-                            val command = WakePhrases.stripFromCommand(transcript.data)
-                            if (command.isBlank()) {
-                                Logger.i("VoiceService: Wake phrase detected but no command followed")
+                            val match = if (captureIncludesWakePhrase) {
+                                WakePhraseMatcher.match(transcript.data)
+                            } else {
+                                null
+                            }
+                            if (captureIncludesWakePhrase && match == null) {
+                                Logger.i("VoiceService: ignored keyword false positive")
+                                captureIncludesWakePhrase = false
+                                VoiceAgentRuntime.transition(
+                                    VoiceAgentState.WAKE_LISTENING,
+                                    "wake transcript not confirmed"
+                                )
                                 updateNotification("UnoOne is listening")
                                 continue
                             }
+                            if (match != null) {
+                                VoiceAgentRuntime.recordWake(transcript.data, match)
+                                onWakeWordDetected?.invoke()
+                            }
+                            val command = match?.command ?: WakePhrases.stripFromCommand(transcript.data)
+                            if (command.isBlank()) {
+                                Logger.i("VoiceService: Wake phrase detected but no command followed")
+                                if (captureIncludesWakePhrase) {
+                                    if (recorder.isRecording()) recorder.stop()
+                                    onWakeWord?.invoke()
+                                    isListeningForCommand = true
+                                    captureIncludesWakePhrase = false
+                                    consecutiveSilenceChunks = 0
+                                    VoiceAgentRuntime.transition(
+                                        VoiceAgentState.COMMAND_LISTENING,
+                                        "wake-only utterance"
+                                    )
+                                    updateNotification("Listening for command...")
+                                } else {
+                                    VoiceAgentRuntime.transition(
+                                        VoiceAgentState.WAKE_LISTENING,
+                                        "empty command"
+                                    )
+                                    updateNotification("UnoOne is listening")
+                                }
+                                continue
+                            }
+                            captureIncludesWakePhrase = false
                             Logger.i("VoiceService: received wake command")
                             onCommandReceived?.invoke(command)
 
@@ -429,6 +518,10 @@ class VoiceService : Service() {
                             // exposing the user's transcribed speech. The callback is set by the
                             // Application layer, keeping commands in-process only.
                             voiceCommandCallback?.invoke(command)
+                            VoiceAgentRuntime.transition(
+                                VoiceAgentState.PROCESSING,
+                                "voice command routed"
+                            )
                         }
 
                         updateNotification("UnoOne is listening")
@@ -460,20 +553,8 @@ class VoiceService : Service() {
     }
 
     private suspend fun transcribeAudio(pcmData: ByteArray): Result<String> {
-        // Sherpa offline path when available.
-        if (sttEngine != null) return sttEngine!!.transcribe(pcmData)
-        // Emergency Android fallback — only when explicitly opted in. Never silently use the
-        // cloud-dependent system SpeechRecognizer; otherwise surface the missing-model state so
-        // the caller can prompt the user instead of producing a phantom transcript.
-        if (!allowSystemSttFallback) {
-            return Result.Error("Offline STT model not installed. Install the Sherpa ASR model or enable the system fallback in Settings.")
-        }
-        val engine = androidStt ?: AndroidSttEngine(this).also { androidStt = it }
-        val initResult = engine.initialize()
-        if (initResult is Result.Error) return initResult
-        return engine.transcribeOnce(
-            Locale.forLanguageTag(VoiceLanguage.localeTag(currentLanguage()))
-        )
+        return sharedVoiceModuleProvider?.invoke()?.transcribePcm(pcmData)
+            ?: Result.Error("Shared offline STT is unavailable")
     }
 
     private fun sqrt(x: Double): Double = kotlin.math.sqrt(x)
@@ -520,10 +601,11 @@ class VoiceService : Service() {
         if (recorder.isRecording()) {
             recorder.stop()
         }
-        sttEngine?.release()
-        ttsEngine?.release()
         keywordSpotter?.release()
-        androidStt?.release()
+        VoiceAgentRuntime.transition(
+            if (AgentRuntimeGate.isEnabled()) VoiceAgentState.PAUSED else VoiceAgentState.DISABLED,
+            "voice service stopped"
+        )
         Logger.i("VoiceService: Stopped")
     }
 

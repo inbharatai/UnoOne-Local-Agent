@@ -19,9 +19,66 @@ export function indexedElementSummary(content: string, index: number): string {
   const lines = content.split('\n')
   // Match the controller's leading index token exactly. `includes('[1]')` also matched `[10]`,
   // which could authorize one field and then act on another.
-  const exactIndex = new RegExp(`^\\s*\\[${index}\\](?:<|\\s|$)`)
+  const exactIndex = new RegExp(`^\\s*\\*?\\[${index}\\](?:<|\\s|$)`)
   const exact = lines.find((line) => exactIndex.test(line))
   return exact?.trim() || `interactive element index ${index}`
+}
+
+type TypedControl = 'select' | 'checkbox' | 'radio' | 'date'
+
+interface IndexedTarget {
+  index: number
+  summary: string
+}
+
+function isTypedControl(summary: string, type: TypedControl): boolean {
+  const line = summary.toLowerCase()
+  if (type === 'select') return /<select\b/.test(line)
+  return new RegExp(`<input\\b[^\\n]*\\btype=${type}(?:\\s|/|>|$)`).test(line)
+}
+
+/**
+ * Resolve a typed form control against the controller's freshly rebuilt selector map.
+ *
+ * Page Agent reuses small numeric indexes after scrolling or DOM updates. A model response can
+ * therefore carry a formerly valid index that now refers to a label or a different field. Never
+ * execute that stale index: accept it only when the current DOM proves the type, otherwise remap
+ * only when the current DOM contains exactly one unambiguous control of the requested type.
+ */
+export function resolveTypedTarget(
+  content: string,
+  requestedIndex: number,
+  type: TypedControl
+): IndexedTarget | null {
+  const requestedSummary = indexedElementSummary(content, requestedIndex)
+  if (isTypedControl(requestedSummary, type)) {
+    return { index: requestedIndex, summary: requestedSummary }
+  }
+
+  const candidates = content
+    .split('\n')
+    .map((summary) => {
+      const match = /^\s*\*?\[(\d+)](?:<|\s|$)/.exec(summary)
+      return match && isTypedControl(summary, type)
+        ? { index: Number(match[1]), summary: summary.trim() }
+        : null
+    })
+    .filter((candidate): candidate is IndexedTarget => candidate !== null)
+
+  return candidates.length === 1 ? candidates[0] ?? null : null
+}
+
+async function typedTarget(
+  agent: any,
+  requestedIndex: number,
+  type: TypedControl
+): Promise<IndexedTarget | null> {
+  const state = await agent.pageController.getBrowserState()
+  return resolveTypedTarget(String(state.content ?? ''), requestedIndex, type)
+}
+
+function unavailable(type: TypedControl): string {
+  return `⚠️ The requested ${type} control is not uniquely available in the current DOM. Inspect or scroll the page before retrying.`
 }
 
 function valueCategory(text: string): string {
@@ -89,13 +146,14 @@ export function createGuardedTools(): Record<string, PageAgentTool | null> {
       description: 'Select a dropdown option after native safety authorization',
       inputSchema: z.object({ index: z.number().int().min(0), text: z.string() }),
       execute: async function (input) {
-        const summary = await elementSummary(this, input.index)
-        const auth = await authorize('select_dropdown_option', summary, {
-          elementIndex: input.index,
-          fieldLabel: summary
+        const target = await typedTarget(this, input.index, 'select')
+        if (!target) return unavailable('select')
+        const auth = await authorize('select_dropdown_option', target.summary, {
+          elementIndex: target.index,
+          fieldLabel: target.summary
         })
         if (!auth.allowed) return rejected(auth)
-        return (await this.pageController.selectOption(input.index, input.text)).message
+        return (await this.pageController.selectOption(target.index, input.text)).message
       }
     }),
 
@@ -103,13 +161,14 @@ export function createGuardedTools(): Record<string, PageAgentTool | null> {
       description: 'Toggle an indexed checkbox after native safety authorization',
       inputSchema: z.object({ index: z.number().int().min(0) }),
       execute: async function (input) {
-        const summary = await elementSummary(this, input.index)
-        const auth = await authorize('toggle_checkbox', summary, {
-          elementIndex: input.index,
-          fieldLabel: summary
+        const target = await typedTarget(this, input.index, 'checkbox')
+        if (!target) return unavailable('checkbox')
+        const auth = await authorize('toggle_checkbox', target.summary, {
+          elementIndex: target.index,
+          fieldLabel: target.summary
         })
         if (!auth.allowed) return rejected(auth)
-        return (await this.pageController.clickElement(input.index)).message
+        return (await this.pageController.clickElement(target.index)).message
       }
     }),
 
@@ -117,13 +176,14 @@ export function createGuardedTools(): Record<string, PageAgentTool | null> {
       description: 'Choose an indexed radio option after native safety authorization',
       inputSchema: z.object({ index: z.number().int().min(0) }),
       execute: async function (input) {
-        const summary = await elementSummary(this, input.index)
-        const auth = await authorize('choose_radio', summary, {
-          elementIndex: input.index,
-          fieldLabel: summary
+        const target = await typedTarget(this, input.index, 'radio')
+        if (!target) return unavailable('radio')
+        const auth = await authorize('choose_radio', target.summary, {
+          elementIndex: target.index,
+          fieldLabel: target.summary
         })
         if (!auth.allowed) return rejected(auth)
-        return (await this.pageController.clickElement(input.index)).message
+        return (await this.pageController.clickElement(target.index)).message
       }
     }),
 
@@ -131,14 +191,15 @@ export function createGuardedTools(): Record<string, PageAgentTool | null> {
       description: 'Enter an ISO date into an indexed date field after native safety authorization',
       inputSchema: z.object({ index: z.number().int().min(0), date: z.string() }),
       execute: async function (input) {
-        const summary = await elementSummary(this, input.index)
-        const auth = await authorize('pick_date', summary, {
-          elementIndex: input.index,
-          fieldLabel: summary,
+        const target = await typedTarget(this, input.index, 'date')
+        if (!target) return unavailable('date')
+        const auth = await authorize('pick_date', target.summary, {
+          elementIndex: target.index,
+          fieldLabel: target.summary,
           valueCategory: 'date'
         })
         if (!auth.allowed) return rejected(auth)
-        return (await this.pageController.inputText(input.index, input.date)).message
+        return (await this.pageController.inputText(target.index, input.date)).message
       }
     }),
 

@@ -2,6 +2,7 @@ package com.unoone.agent
 
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.edit
 import com.unoone.agent.core.model.AgentStatus
 import com.unoone.agent.core.model.InputType
 import com.unoone.agent.core.model.RiskLevel
@@ -21,7 +22,9 @@ import com.unoone.agent.core.agent.NarrationPolicy
 import com.unoone.agent.core.agent.StopReason
 import com.unoone.agent.core.agent.ToolHealthTracker
 import com.unoone.agent.core.agent.BrainHealthPolicy
+import com.unoone.agent.core.agent.BlindAidNarrator
 import com.unoone.agent.core.agent.VoiceResponseLocalizer
+import com.unoone.agent.core.agent.VoiceFastReply
 import com.unoone.agent.core.safety.PermissionRequirement
 import com.unoone.agent.core.util.CallbackMulticast
 import com.unoone.agent.core.util.ConfirmationListener
@@ -42,7 +45,10 @@ import com.unoone.agent.storage.dao.NoteDao
 import com.unoone.agent.storage.dao.SkillDao
 import com.unoone.agent.storage.entity.ActionLogEntity
 import com.unoone.agent.voice.VoiceLanguage
+import com.unoone.agent.voice.VoiceAgentRuntime
+import com.unoone.agent.voice.VoiceAgentState
 import com.unoone.agent.voice.VoiceModule
+import com.unoone.agent.voice.VoiceService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -190,7 +196,6 @@ class AgentOrchestrator(
     init {
         actionExecutor._skillsModule = skillsModule
         actionExecutor._setBlindAidActive = { active -> setBlindAidActiveFromTool(active) }
-        actionExecutor._speak = { text -> speakText(text) }
         actionExecutor._recordVoiceNote = { durationSeconds -> recordVoiceNote(durationSeconds) }
         // Multimodal vision for describe_scene — INACTIVE until a vision-capable .litertlm artifact
         // ships (the loaded Gemma 4 E2B artifact is text-only). When VISION_MODEL_ENABLED
@@ -230,16 +235,6 @@ class AgentOrchestrator(
         else Result.Success("Opening Secure Browser for $origin. I'll start: $task")
     }
 
-    /** Speaks text via the shared VoiceModule, used by the speak_response tool. */
-    private fun speakText(text: String) {
-        scope.launch {
-            runCatching { voiceModule.speakAwait(text) }
-                .onFailure { Logger.e("Orchestrator: speak_response exception", it) }
-                .getOrNull()
-                ?.onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: speak_response failed: $msg") }
-        }
-    }
-
     /**
      * The user's currently selected voice/TTS language code, read fresh per call from the same
      * `unoone_settings`/`voice_language` preference the voice module uses (so a Settings change
@@ -252,6 +247,84 @@ class AgentOrchestrator(
             .getString(VoiceLanguage.PREF_KEY, VoiceLanguage.DEFAULT) ?: VoiceLanguage.DEFAULT
     } catch (_: Exception) {
         VoiceLanguage.DEFAULT
+    }
+
+    /**
+     * Applies an explicit spoken language request without involving Gemma. Rebuilding both native
+     * speech engines is serialized by VoiceModule and owns the foreground-task gate so the wake
+     * recorder cannot race the model swap. The preference is committed only after both offline
+     * engines load; on failure the previous runtime is restored.
+     */
+    private suspend fun applyVoiceLanguageCommand(requestedCode: String, inputType: InputType) {
+        val previousCode = VoiceLanguage.normalize(currentVoiceLanguageCode())
+        val requested = VoiceLanguage.normalize(requestedCode)
+        val modelBaseDir =
+            (context.getExternalFilesDir(null)?.absolutePath ?: context.filesDir.absolutePath) +
+                "/models"
+        addStep(
+            AgentStatus.UNDERSTANDING,
+            "Changing voice language",
+            VoiceLanguage.displayName(requested)
+        )
+
+        var switched = requested == previousCode
+        if (!switched) {
+            VoiceService.beginForegroundTask()
+            try {
+                VoiceAgentRuntime.transition(
+                    VoiceAgentState.INITIALISING,
+                    "switching offline voice language"
+                )
+                val (sttResult, ttsResult) = withContext(Dispatchers.IO) {
+                    voiceModule.reinitForLanguage(modelBaseDir, requested)
+                }
+                switched = sttResult is Result.Success && ttsResult is Result.Success
+                if (switched) {
+                    val preferences =
+                        context.getSharedPreferences(VoiceLanguage.PREF_NAME, Context.MODE_PRIVATE)
+                    preferences.edit(commit = true) {
+                        putString(VoiceLanguage.PREF_KEY, requested)
+                    }
+                    switched = preferences.getString(VoiceLanguage.PREF_KEY, previousCode) == requested
+                }
+                if (!switched) {
+                    withContext(Dispatchers.IO) {
+                        voiceModule.reinitForLanguage(modelBaseDir, previousCode)
+                    }
+                }
+            } finally {
+                VoiceService.endForegroundTask()
+            }
+        }
+
+        val response = if (switched) {
+            VoiceLanguage.changeConfirmation(requested)
+        } else {
+            VoiceLanguage.changeFailure(requested, previousCode)
+        }
+        if (switched) {
+            addStep(AgentStatus.DONE, "Voice language changed", response)
+            VoiceAgentRuntime.recordOutcome("voice language changed", "offline STT and TTS loaded")
+        } else {
+            addStep(AgentStatus.FAILED, "Voice language unavailable", response)
+            VoiceAgentRuntime.recordError(
+                "VOICE_LANGUAGE_UNAVAILABLE",
+                "Install or repair the offline ${VoiceLanguage.displayName(requested)} speech pack"
+            )
+        }
+        if (inputType == InputType.VOICE || narrateTextCommands) {
+            addStep(AgentStatus.SPEAKING, "Response", response)
+            speakAnswer(response)
+        }
+        lastToolResult = response
+        saveLog(
+            ActionLogEntity(
+                inputText = "[private language command]",
+                inputType = inputType.name.lowercase(),
+                selectedTool = "change_voice_language",
+                status = if (switched) "success" else "failed"
+            )
+        )
     }
 
     /**
@@ -430,7 +503,11 @@ class AgentOrchestrator(
         else com.unoone.agent.core.model.Result.Error("No tool call proposed for: $command")
     }
 
-    fun setBlindAidActive(active: Boolean, bringToForeground: Boolean = false) {
+    fun setBlindAidActive(
+        active: Boolean,
+        bringToForeground: Boolean = false,
+        announce: Boolean = true
+    ) {
         if (active && !AgentRuntimeGate.isEnabled()) return
         if (active) {
             if (!blindAidActivationInFlight.compareAndSet(false, true)) return
@@ -453,12 +530,12 @@ class AgentOrchestrator(
                     if (bringToForeground) bringAppToForegroundIfNeeded()
                     // Accessibility disclaimer: Blind Aid is assistive guidance, not a certified
                     // navigation or medical-safety device. Spoken once on activation.
-                    voiceModule.speakAwait(
-                        "Blind Aid activated. Scanning for obstacles ahead. " +
-                            "This is assistive guidance only, not a certified navigation device — " +
-                            "please use a cane or a guide and normal safety precautions."
-                    ).onError { msg: String, _: Throwable? ->
-                        Logger.e("Orchestrator: Blind aid speak failed: $msg")
+                    if (announce) {
+                        voiceModule.speakAwait(
+                            BlindAidNarrator.activationMessage(currentVoiceLanguageCode())
+                        ).onError { msg: String, _: Throwable? ->
+                            Logger.e("Orchestrator: Blind aid speak failed: $msg")
+                        }
                     }
                 } catch (e: Exception) {
                     Logger.e("Orchestrator: Blind Aid activation failed", e)
@@ -471,10 +548,16 @@ class AgentOrchestrator(
             // Flush a currently-playing/queued scene before announcing the mode transition.
             voiceModule.stopSpeaking()
             _isBlindAidActive.value = false
-            scope.launch {
-                kotlinx.coroutines.delay(150L)
-                voiceModule.speakAwait("Blind Aid deactivated.")
-                    .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: Blind aid speak failed: $msg") }
+            if (announce) {
+                scope.launch {
+                    kotlinx.coroutines.delay(150L)
+                    voiceModule.speakAwait(
+                        BlindAidNarrator.deactivationMessage(currentVoiceLanguageCode())
+                    )
+                        .onError { msg: String, _: Throwable? ->
+                            Logger.e("Orchestrator: Blind aid speak failed: $msg")
+                        }
+                }
             }
             // C1: restore the brain for chat/agent commands. The Application's reloader honours the
             // exclusive-lease guards so it won't fight a Secure Browser session.
@@ -496,7 +579,9 @@ class AgentOrchestrator(
                     .onFailure { Logger.e("Orchestrator: voice Blind Aid brain unload failed", it) }
             }
         }
-        setBlindAidActive(active, bringToForeground = active)
+        // The validated tool pipeline already narrates the action and final result. Suppress the
+        // direct UI-toggle announcement here so a voice command is never spoken two or three times.
+        setBlindAidActive(active, bringToForeground = active, announce = false)
     }
 
     /**
@@ -529,6 +614,12 @@ class AgentOrchestrator(
         if (!processingLock.compareAndSet(false, true)) return
         _isProcessing.value = true
         _timelineSteps.value = emptyList()
+        VoiceAgentRuntime.recordCommand(
+            rawTranscript = text,
+            language = currentVoiceLanguageCode(),
+            preferredReplyLanguage = currentVoiceLanguageCode()
+        )
+        VoiceAgentRuntime.transition(VoiceAgentState.PROCESSING, "command accepted")
 
         // C3: start a fresh run generation. A cancel stamps cancelledRunId with the latest run id;
         // checkpoints below compare the two so this run bails only if cancelled, and a stale cancel
@@ -549,11 +640,36 @@ class AgentOrchestrator(
             return
         }
 
-        // Self-heal: if the brain was loaded but has dropped (it auto-closes on a 30s inference
-        // timeout and otherwise only reloads on onResume), reload it now so this command can use LLM
-        // planning instead of falling back to rule-only. Driven by remembered load state.
-        if (SELF_HEAL_ENABLED && lastLoadedPath != null && !isLlmLoaded()) {
-            selfHealReloadBrain()
+        // Voice language changes are deterministic and must work even while Gemma is unloaded.
+        // Only explicit requests match; ordinary mentions of Hindi/English continue normally.
+        VoiceLanguage.requestedFromCommand(sanitizedText)?.let { requested ->
+            applyVoiceLanguageCommand(requested, inputType)
+            releaseProcessingLock()
+            return
+        }
+
+        // A microphone check or greeting is a local protocol response, not an agent task. Keep this
+        // ahead of brain self-healing, skills and planning so it remains instant even while Gemma is
+        // unloaded or recovering.
+        val fastReply = VoiceFastReply.replyFor(sanitizedText, currentVoiceLanguageCode())
+        if (fastReply != null) {
+            val startedAt = System.currentTimeMillis()
+            addStep(AgentStatus.UNDERSTANDING, "Voice check", sanitizedText)
+            addStep(AgentStatus.SPEAKING, "Response", fastReply)
+            speakAnswer(fastReply)
+            addStep(AgentStatus.DONE, "Done", fastReply)
+            lastToolResult = fastReply
+            saveLog(
+                ActionLogEntity(
+                    inputText = "[private voice check: ${sanitizedText.length} chars]",
+                    inputType = inputType.name.lowercase(),
+                    selectedTool = "voice_fast_reply",
+                    status = "success",
+                    modelLatencyMs = System.currentTimeMillis() - startedAt
+                )
+            )
+            releaseProcessingLock()
+            return
         }
 
         val startTime = System.currentTimeMillis()
@@ -672,7 +788,22 @@ class AgentOrchestrator(
             // the agent flow; specific orders do not).
             val ruleMatch = commandParser.parse(sanitizedText)
             val intent = IntentClassifier.classify(sanitizedText, ruleMatch)
+            VoiceAgentRuntime.recordIntent(
+                intent = ruleMatch?.tool ?: intent.name,
+                confidence = if (ruleMatch != null) 1f else if (intent == IntentType.CHAT) .9f else .5f
+            )
             Logger.i("Orchestrator: intent=$intent ruleMatch=${ruleMatch?.tool}")
+
+            // Repair Gemma only when this command genuinely needs it. Reloading before
+            // deterministic routing made simple actions (especially "stop blind mode" after Blind
+            // Aid intentionally unloaded the brain) wait for model recovery and speak a late
+            // "brain reloaded" message after the action had already completed.
+            if (
+                ruleMatch == null && SELF_HEAL_ENABLED &&
+                lastLoadedPath != null && !isLlmLoaded()
+            ) {
+                selfHealReloadBrain()
+            }
             if (intent == IntentType.CHAT) {
                 if (isCancelled(myRun)) { releaseProcessingLock(); return }
                 val chatStart = System.currentTimeMillis()
@@ -845,8 +976,12 @@ class AgentOrchestrator(
                         return
                     }
 
-                    // speak_response already produced audio via ActionExecutor._speak; don't double-speak.
+                    // A speak_response is executed as data, then spoken here while holding the same
+                    // serialization lock as milestone narration. This prevents reordered/overlapping
+                    // fragments and keeps isProcessing true until playback has really completed.
                     if (toolCall.tool == "speak_response") {
+                        addStep(AgentStatus.SPEAKING, "Response", observation)
+                        speakAnswer(observation)
                         addStep(AgentStatus.DONE, "Done", observation)
                     } else {
                         val spokenObservation = VoiceResponseLocalizer.toolResult(
@@ -907,7 +1042,7 @@ class AgentOrchestrator(
                 Logger.i("Orchestrator: pending system permission '$req' still missing on resume — not re-running")
                 scope.launch {
                     runCatching {
-                        voiceModule.speak(
+                        voiceModule.speakAwait(
                             "That needs an access you haven't enabled yet. " +
                                 "Turn it on in Settings once, then ask me again — or say stop."
                         )
@@ -1183,6 +1318,7 @@ class AgentOrchestrator(
         val unsatisfiedSystem = safetyPipeline.unsatisfiedRequirements(toolCall.tool)
             .filterNot { it is PermissionRequirement.RuntimePerm }
         if (unsatisfiedSystem.isNotEmpty()) {
+            VoiceAgentRuntime.transition(VoiceAgentState.ERROR_RECOVERY, "system access required")
             addStep(AgentStatus.SAFETY_CHECK, "Access Required", "Needs system access for ${toolCall.tool}")
             return StepOutcome.NeedsSystemAccess(unsatisfiedSystem)
         }
@@ -1190,6 +1326,7 @@ class AgentOrchestrator(
         // 2. Runtime (dangerous) permissions
         val missingPermissions = safetyPipeline.checkPermissionsForTool(toolCall.tool)
         if (missingPermissions.isNotEmpty()) {
+            VoiceAgentRuntime.transition(VoiceAgentState.ERROR_RECOVERY, "runtime permission required")
             addStep(AgentStatus.SAFETY_CHECK, "Access Required", "Needs permissions for ${toolCall.tool}")
             return StepOutcome.NeedsRuntimeAccess(missingPermissions)
         }
@@ -1256,6 +1393,10 @@ class AgentOrchestrator(
         if (confirmationEnforced && safetyPipeline.requiresConfirmation(riskLevel)) {
             val confirmationMessage = safetyPipeline.confirmationMessage(toolCall.tool, riskLevel)
             addStep(AgentStatus.SAFETY_CHECK, "Confirmation Required", confirmationMessage)
+            VoiceAgentRuntime.transition(
+                VoiceAgentState.WAITING_FOR_CONFIRMATION,
+                "confirmation required for ${toolCall.tool}"
+            )
             val confirmed = awaitConfirmation(confirmationMessage)
             if (!confirmed) {
                 addStep(AgentStatus.FAILED, "Cancelled", "User declined confirmation")
@@ -1271,6 +1412,7 @@ class AgentOrchestrator(
         }
 
         // 4. Execute
+        VoiceAgentRuntime.transition(VoiceAgentState.EXECUTING, "executing ${toolCall.tool}")
         addStep(AgentStatus.EXECUTING, "Agent Active", "Executing ${toolCall.tool}...")
         val execStart = System.currentTimeMillis()
         val result = actionExecutor.executeTool(toolCall)
@@ -1316,8 +1458,12 @@ class AgentOrchestrator(
             }
         }
         if (result is Result.Error) {
+            VoiceAgentRuntime.recordError("TOOL_FAILED", result.message)
+            VoiceAgentRuntime.transition(VoiceAgentState.ERROR_RECOVERY, "tool execution failed")
             addStep(AgentStatus.FAILED, "Execution Error", result.message)
         } else {
+            VoiceAgentRuntime.recordOutcome(toolCall.tool, "executor reported success")
+            VoiceAgentRuntime.transition(VoiceAgentState.VERIFYING, "verifying ${toolCall.tool}")
             addStep(AgentStatus.VERIFYING, "Verifying Outcome", "Task complete")
         }
         return StepOutcome.Executed(result)
@@ -1437,6 +1583,9 @@ class AgentOrchestrator(
     private fun releaseProcessingLock() {
         _isProcessing.value = false
         processingLock.set(false)
+        if (AgentRuntimeGate.isEnabled()) {
+            VoiceAgentRuntime.transition(VoiceAgentState.WAKE_LISTENING, "command pipeline idle")
+        }
     }
 
     /** C3: true when [myRun] has been cancelled by [cancelCurrentCommand]. */
@@ -1458,9 +1607,14 @@ class AgentOrchestrator(
         _timelineSteps.value = emptyList()
         _isProcessing.value = false
         processingLock.set(false)
+        VoiceAgentRuntime.transition(
+            if (AgentRuntimeGate.isEnabled()) VoiceAgentState.WAKE_LISTENING
+            else VoiceAgentState.DISABLED,
+            "command cancelled"
+        )
         if (wasActive && speak && AgentRuntimeGate.isEnabled()) {
             scope.launch {
-                runCatching { voiceModule.speak("Stopped.") }
+                runCatching { voiceModule.speakAwait("Stopped.") }
                     .onFailure { Logger.w("Orchestrator: cancel speak failed: ${it.message}") }
             }
         }

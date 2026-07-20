@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UnoOne Page Agent QA Form</title>
+</head>
+<body>
+  <main>
+    <h1>Offline profile form</h1>
+    <form id="profile-form">
+      <p>
+        <label for="full-name">Full name</label>
+        <input id="full-name" name="fullName" autocomplete="name">
+      </p>
+      <p>
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email">
+      </p>
+      <p>
+        <label for="birth-date">Birth date</label>
+        <input id="birth-date" name="birthDate" type="date">
+      </p>
+      <p>
+        <label for="country">Country</label>
+        <select id="country" name="country">
+          <option value="">Choose a country</option>
+          <option value="india">India</option>
+          <option value="philippines">Philippines</option>
+        </select>
+      </p>
+      <p>
+        <label>
+          <input id="updates" name="updates" type="checkbox">
+          Receive product updates
+        </label>
+      </p>
+      <button id="submit" type="submit">Submit profile</button>
+    </form>
+    <output id="submitted" aria-live="polite"></output>
+  </main>
+  <script>
+    document.getElementById("profile-form").addEventListener("submit", function (event) {
+      event.preventDefault();
+      document.getElementById("submitted").textContent = "Form submitted";
+    });
+  </script>
+</body>
+</html>

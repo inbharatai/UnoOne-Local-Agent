@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -107,6 +108,7 @@ class VoiceModule(private val context: Context) {
      * and by Settings when the user changes the language. [modelBaseDir] is the models root
      * (typically `getExternalFilesDir(null)/models`). Does not touch the recorder or Android fallback.
      */
+    @Synchronized
     fun reinitForLanguage(modelBaseDir: String, lang: String = currentLanguage()): Pair<Result<Unit>, Result<Unit>> {
         runCatching { sttEngine?.release() }
         sttEngine = null
@@ -192,6 +194,7 @@ class VoiceModule(private val context: Context) {
 
     suspend fun stopAndTranscribe(): Result<String> {
         if (!isRecordingFlag.getAndSet(false)) return Result.Error("No active voice capture session")
+        VoiceAgentRuntime.transition(VoiceAgentState.PROCESSING, "transcribing final utterance")
 
         return if (useAndroidStt && sttEngine == null) {
             androidStt?.stopListening()
@@ -218,6 +221,19 @@ class VoiceModule(private val context: Context) {
                 res
             }
         }
+    }
+
+    /**
+     * Decode PCM captured by the background wake service through this application-owned Sherpa
+     * engine. VoiceService no longer constructs a second full STT model.
+     */
+    suspend fun transcribePcm(pcmData: ByteArray): Result<String> = withContext(Dispatchers.IO) {
+        if (pcmData.isEmpty()) return@withContext Result.Error("No audio captured")
+        val engine = sttEngine
+            ?: return@withContext Result.Error("Offline STT model not installed")
+        val result = engine.transcribe(pcmData)
+        lastSttConfidence = if (result is Result.Success) engine.lastConfidence else 0f
+        result
     }
 
     fun stopRecording(): ByteArray {
@@ -266,11 +282,20 @@ class VoiceModule(private val context: Context) {
         languageCode: String = VoiceLanguage.localeTag(currentLanguage())
     ): Result<Unit> {
         if (!AgentRuntimeGate.isEnabled()) return Result.Error("UnoOne is disabled")
-        val engine = ttsEngine
-        return if (engine != null && engine.isInitialized()) {
-            engine.speakAwait(text)
-        } else {
-            ttsPlayer.speakAwait(text, languageCode)
+        VoiceService.beginAgentSpeech()
+        VoiceAgentRuntime.transition(VoiceAgentState.SPEAKING, "playing local response")
+        return try {
+            val engine = ttsEngine
+            val result = if (engine != null && engine.isInitialized()) {
+                engine.speakAwait(text)
+            } else {
+                ttsPlayer.speakAwait(text, languageCode)
+            }
+            // Keep recognition gated briefly while speaker echo decays.
+            delay(220L)
+            result
+        } finally {
+            VoiceService.endAgentSpeech()
         }
     }
 

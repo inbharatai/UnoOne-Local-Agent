@@ -29,6 +29,13 @@ class RuleBasedParserTest {
         // Only triggers with positive context ("detect", "start", etc.) activate.
         val triggers = listOf(
             "start blind aid",
+            "start blind",
+            "start blind mode",
+            "start blind view",
+            "enable blind mode",
+            "blind mode on",
+            "blind view on",
+            "blind mode chalu karo",
             "activate blind aid",
             "detect objects",
             "what's in front of me",
@@ -47,6 +54,12 @@ class RuleBasedParserTest {
     fun testBlindAidDeactivationTriggers() {
         val triggers = listOf(
             "stop blind aid",
+            "stop blind",
+            "stop blind mode",
+            "stop blind view",
+            "blind mode off",
+            "disable blind mode",
+            "blind mode band karo",
             "deactivate blind aid",
             "turn off blind aid",
             "stop scanning",
@@ -285,6 +298,14 @@ class RuleBasedParserTest {
     }
 
     @Test
+    fun scheduleCalendarCommandRoutesToAReviewableInsert() {
+        val toolCall = RuleBasedParser.parse("schedule a meeting tomorrow at 4 PM")
+        assertNotNull(toolCall)
+        assertEquals("open_calendar_insert", toolCall!!.tool)
+        assertTrue(toolCall.args["start_time"]!!.jsonPrimitive.content.contains("T16:00"))
+    }
+
+    @Test
     fun testOpenWhatsAppRoutesToAppLaunchNotMessageDraft() {
         for (phrase in listOf("open whatsapp", "open my whatsapp", "launch whatsapp")) {
             val toolCall = RuleBasedParser.parse(phrase)
@@ -415,6 +436,38 @@ class RuleBasedParserTest {
     }
 
     @Test
+    fun emailFieldDataCannotHijackFriendlyBrowserOrigin() {
+        val toolCall = RuleBasedParser.parse(
+            "open unigurus and fill the contact form with name UnoOne Test " +
+                "and email qa@example.com and stop before submission"
+        )
+
+        assertNotNull(toolCall)
+        assertEquals("secure_browser_task", toolCall!!.tool)
+        assertEquals("https://unigurus.com", toolCall.args["origin"]?.jsonPrimitive?.content)
+        assertTrue(toolCall.args["task"]?.jsonPrimitive?.content.orEmpty().contains("qa@example.com"))
+    }
+
+    @Test
+    fun explicitHttpsFormCommandRoutesWholeInstructionToSecureBrowser() {
+        val toolCall = RuleBasedParser.parse(
+            "open https://httpbin.org/forms/post and fill customer name Reetu, " +
+                "email qa@example.com and stop before submission"
+        )
+
+        assertNotNull(toolCall)
+        assertEquals("secure_browser_task", toolCall!!.tool)
+        assertEquals(
+            "https://httpbin.org/forms/post",
+            toolCall.args["origin"]?.jsonPrimitive?.content
+        )
+        val task = toolCall.args["task"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(task.contains("fill customer name reetu"))
+        assertTrue(task.contains("qa@example.com"))
+        assertTrue(task.contains("stop before submission"))
+    }
+
+    @Test
     fun nativeBlindAidCommandsRouteDeterministicallyInEveryIndicLanguage() {
         val starts = listOf(
             "ब्लाइंड एड चालू करो", "ব্লাইন্ড এইড চালু করো", "பிளைண்ட் எய்டை தொடங்கு",
@@ -446,5 +499,36 @@ class RuleBasedParserTest {
     @Test
     fun commonStreamingAsrFinalConsonantLossStillOpensCalendar() {
         assertEquals("open_calendar", RuleBasedParser.parse("open calenda")?.tool)
+    }
+
+    @Test
+    fun openGmailNeverBecomesAnEmptyEmailDraft() {
+        val call = RuleBasedParser.parse("open gmail")
+        assertEquals("open_app", call?.tool)
+        assertEquals("com.google.android.gm", call?.args?.get("package_name")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun whatsappDraftWithoutNumberUsesWhatsAppRecipientPickerPath() {
+        val call = RuleBasedParser.parse("write a WhatsApp message saying I will be late")
+        assertEquals("send_whatsapp", call?.tool)
+        assertEquals("", call?.args?.get("number")?.jsonPrimitive?.content)
+        assertEquals("I will be late", call?.args?.get("message")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun HindiCoreDraftAndCalendarCommandsStayDeterministic() {
+        assertEquals(
+            "send_whatsapp",
+            RuleBasedParser.parse("मम्मी को व्हाट्सएप पर मैसेज लिखो कि मैं देर से आऊंगा")?.tool
+        )
+        assertEquals(
+            "draft_email",
+            RuleBasedParser.parse("ईमेल ड्राफ्ट बनाओ कि रिपोर्ट तैयार है")?.tool
+        )
+        assertEquals(
+            "open_calendar_insert",
+            RuleBasedParser.parse("कल शाम ५ बजे मीटिंग कैलेंडर में जोड़ो")?.tool
+        )
     }
 }

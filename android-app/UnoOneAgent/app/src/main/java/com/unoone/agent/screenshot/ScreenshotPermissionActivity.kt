@@ -3,7 +3,9 @@ package com.unoone.agent.screenshot
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,7 +48,20 @@ class ScreenshotPermissionActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        projectionLauncher.launch(manager.createScreenCaptureIntent())
+        val captureIntent =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // Read Screen must capture the display the user is currently using. Android 14's
+                // default consent UI prefers "A single app", which then opens an app picker and can
+                // make UnoOne OCR an accidentally selected app instead of the current screen.
+                // Pinning the request to the default display keeps the consent explicit while
+                // removing that ambiguous second picker step.
+                manager.createScreenCaptureIntent(
+                    MediaProjectionConfig.createConfigForDefaultDisplay()
+                )
+            } else {
+                manager.createScreenCaptureIntent()
+            }
+        projectionLauncher.launch(captureIntent)
     }
 
     companion object {

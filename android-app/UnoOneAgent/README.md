@@ -14,6 +14,7 @@ Android implementation for UnoOne V2.
 - Downloadable language-pack manager.
 - Accessibility-based phone control.
 - CameraX/MediaPipe Blind Aid using the bundled EfficientDet-Lite2 COCO detector.
+- English and native-Hindi Blind Aid object/status narration, with gender-neutral Hindi confirmations, multi-frame filtering, repeat cooldowns and stale-state cleanup on stop.
 - Page Agent Secure Browser using local Gemma planning.
 - Landing-screen Agent activity panel with a persistent latest-step summary, bounded expansion, and direct Skills access.
 - Safety-routed built-in/custom skills plus disabled, review-first suggestions learned only from repeated successful low-risk routines.
@@ -21,7 +22,8 @@ Android implementation for UnoOne V2.
 - FAST_ACTION, CHAT and AGENT_ACTION command routing, with deterministic parsing before model inference.
 - Eyes-free operation through hands-free listening, selected-language wake cues, native one-breath core commands, spoken execution steps, Blind Aid scene narration, voice-driven Page Agent commands and TalkBack live regions.
 - Read Screen through MediaProjection and bundled ML Kit Latin OCR; PDF, image, XLSX, DOCX, HTML, CSV and text loading; legacy `.xls` is unsupported.
-- A primary Xiaomi 14 running Android 15 has passed 55 connected-device tests, plus a 20-test subset with Wi-Fi and mobile data disabled. This is an alpha, not production qualification; the second-device matrix, controlled acoustic/vision benchmarks, signed release and production distribution remain pending.
+- A persistent master-disable mode that synchronously closes the runtime gate, stops voice, inference, camera, OCR, accessibility actions, Page Agent work and services, persists across restart/reboot, and never replays old work after explicit re-enable.
+- The July 17 Xiaomi 14 validation recorded 55 connected-device tests plus a 20-test no-network subset. On July 20, Android lint, 519 JVM tests, debug/release assembly, Android-test compilation, repository invariants, and all Page Agent tests passed. The latest instrumentation APK installation was rejected by Xiaomi with `INSTALL_FAILED_USER_RESTRICTED`; the older device suite is therefore historical evidence, not qualification of the current revision. This is an alpha, not production qualification.
 
 ## Modules
 
@@ -60,12 +62,7 @@ models/
 │   │   └── punctuation/
 │   └── languages/
 │       ├── en-IN/tts/
-│       ├── hi-IN/tts/
-│       ├── bn-IN/tts/
-│       ├── ta-IN/tts/
-│       ├── te-IN/tts/
-│       ├── kn-IN/tts/
-│       └── ml-IN/tts/
+│       └── hi-IN/tts/
 ├── vision/
 │   └── blind-aid/
 ├── ocr/
@@ -103,7 +100,7 @@ cd ../../../web-runtime/page-agent-unoone
 npm install --no-audit --no-fund
 npm run typecheck
 npm test
-npm run build
+npm run test:e2e
 npm run bundle:android
 ```
 
@@ -144,8 +141,14 @@ The Secure Browser uses an exclusive Gemma lease:
 Standard uses exact approved HTTPS origins; explicit Prototype/Off admits arbitrary public HTTPS.
 The first screen is an offline Page Agent home rather than a blank remote page. It explains URL entry,
 offline HTML form loading, typed/voice tasks, Read Page and hands-free command examples.
+Navigation-triggered tasks wait for the requested page and a fresh runtime before execution, so a
+voice command is not run against the previously open page.
 The bridge still validates the main frame, session id, nonce and exact source/declared/active origin,
 and Page Agent cannot execute arbitrary JavaScript.
+The guarded runtime supports text, email, number, textarea, select, checkbox, radio, date, file and
+explicit-submit controls in automated browser tests. The local planner rejects missing required
+arguments, repairs a bounded set of malformed small-model outputs and verifies visible changes.
+Changing public sites and every possible form are not qualified.
 In the default **Standard** security level, payments are blocked and credentials, OTPs, CAPTCHA and
 legal acceptance require manual takeover. The explicit **Off — prototype (agent + browser)** setting
 removes those per-action browser blocks for local prototyping and displays a persistent warning.
@@ -156,15 +159,12 @@ sessions remain blocked in every mode.
 
 The active voice language can be changed from the landing-screen selector or **Settings → Voice language**. **Settings → Offline Languages** manages pack installation and health. Activation is allowed only when every required model dependency is healthy; planned packs remain non-downloadable.
 
-Current baseline packs:
+Current enabled voice profiles:
 
 - English
 - Hindi
-- Bengali
-- Tamil
-- Telugu
-- Kannada
-- Malayalam
+
+Other language packs are deferred and are not exposed while English and Hindi are being hardened.
 
 Priority planned pack:
 
@@ -180,7 +180,7 @@ Required physical-device evidence includes:
 - first-token and total planning latency;
 - peak RAM and temperature;
 - repeated phone-agent and Page Agent tasks;
-- English and Indic STT/TTS;
+- English and Hindi STT/TTS;
 - Accessibility gestures and text capture;
 - Blind Aid camera, haptic and spoken feedback;
 - model repair and process restart;
