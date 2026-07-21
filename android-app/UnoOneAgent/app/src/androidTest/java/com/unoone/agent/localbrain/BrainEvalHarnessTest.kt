@@ -13,24 +13,20 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Device-time calibration harness for the on-device brain.
+ * Device-time calibration harness for the on-device E4B brain.
  *
- * This is the "is Gemma actually good enough?" measurement tool: it loads whichever `.litertlm`
- * profile is present on the device, runs the fixed [EvalPromptSet] through [GemmaPlanner.plan] one
- * case at a time, scores tool + arg accuracy with the pure-JVM [EvalScorer], and **prints** a real
- * [com.unoone.agent.core.eval.EvalSummary] to logcat. Run it against the exact Gemma 4 E2B
- * artifact and record the backend, device and model hash with the result.
+ * It loads the exact integrity-verified model returned by [ModelManager], runs the fixed
+ * [EvalPromptSet] through [GemmaPlanner.plan], scores tool and argument accuracy with the pure-JVM
+ * [EvalScorer], and prints a real evaluation summary. The model id, file hash, device, OS and active
+ * backend must be recorded with the output.
  *
- * This test does NOT gate on an accuracy threshold — a profile being evaluated is allowed to score
- * low; that low number is the point. It only asserts that every case produced a verdict (i.e. the
- * harness executed completely). Read the printed summary for the real verdict.
+ * This test does not fabricate or assume an accuracy result. It asserts only that the complete prompt
+ * set was scored. Release thresholds are applied to the recorded summary during device qualification.
  *
- * To run it, push a model first:
- *   adb push /path/to/gemma-4-E2B-it.litertlm \
- *     /sdcard/Android/data/com.unoone.agent/files/models/brain/gemma-4-e2b/
+ * Preferred installation is through UnoOne Model Status. For a controlled engineering import, the
+ * exact file must be placed at:
  *
- * Then: ./gradlew :app:connectedDebugAndroidTest --tests *.BrainEvalHarnessTest
- * and read the `EvalSummary` block in the logcat / test report.
+ * `/sdcard/Android/data/com.unoone.agent/files/models/brain/gemma-4-e4b/gemma-4-E4B-it.litertlm`
  */
 class BrainEvalHarnessTest {
 
@@ -47,7 +43,7 @@ class BrainEvalHarnessTest {
     @Test
     fun runsPromptSetAndReportsAccuracy() = runBlocking {
         val path = modelManager.getLlmModelPath()
-        assumeTrue("No .litertlm model found — skipping eval harness", path != null)
+        assumeTrue("No integrity-verified E4B model found — skipping eval harness", path != null)
 
         val planner = GemmaPlanner()
         val loadResult = planner.load(path!!)
@@ -55,6 +51,8 @@ class BrainEvalHarnessTest {
             "Model load failed: ${(loadResult as? Result.Error)?.message}"
         }
 
+        val loadedProfile = planner.loadedProfile()?.displayName ?: "unknown"
+        val loadedBackend = planner.activeBackend()
         val snapshot = ContextSnapshot(currentPackage = "com.unoone.agent")
         val actuals = ArrayList<ToolCall?>(EvalPromptSet.cases.size)
 
@@ -73,15 +71,11 @@ class BrainEvalHarnessTest {
         planner.close()
 
         val summary = EvalScorer.scoreAll(EvalPromptSet.cases, actuals)
-        // Printed to both stdout (test report) and logcat so a human reads real numbers, not a
-        // pass/fail flag. Device-time-only — no fabricated Gemma results are ever committed.
-        println("==== UNOONE BRAIN EVAL ====")
-        println("Profile: ${planner.loadedProfile()?.displayName ?: "unknown"} | backend: ${planner.activeBackend()}")
+        println("==== UNOONE E4B BRAIN EVAL ====")
+        println("Profile: $loadedProfile | backend: $loadedBackend")
         println(summary)
-        println("==== END BRAIN EVAL ====")
+        println("==== END E4B BRAIN EVAL ====")
 
-        // The harness must score every case — that is the only thing it asserts. Accuracy is read
-        // from the printed summary; it is intentionally not gated (see class KDoc).
         assert(summary.total == EvalPromptSet.cases.size) {
             "Harness scored ${summary.total} of ${EvalPromptSet.cases.size} cases"
         }
