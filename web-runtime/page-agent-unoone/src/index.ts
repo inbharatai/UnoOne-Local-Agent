@@ -40,7 +40,7 @@ const pageController = new PageController({
 const agent = new PageAgentCore({
   pageController,
   baseURL: 'https://unoone.local/v1',
-  model: 'gemma-4-e2b-local',
+  model: 'gemma-4-e4b-local',
   customFetch: createLocalGemmaFetch(),
   customTools: createGuardedTools(),
   experimentalScriptExecutionTool: false,
