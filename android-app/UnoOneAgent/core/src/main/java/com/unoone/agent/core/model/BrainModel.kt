@@ -79,14 +79,6 @@ object BrainModelRegistry {
     fun byFolder(folder: String): BrainModelSpec? =
         GEMMA_4_E4B.takeIf { folder == it.modelFolder }
 
-    /** Older persisted model identifiers are migrated to the sole E4B brain. */
+    /** Older persisted model identifiers are intentionally migrated to the sole E4B brain. */
     fun resolveOrDefault(manifestId: String?): BrainModelSpec = GEMMA_4_E4B
-
-    /**
-     * Temporary source-compatibility shim for code paths that are updated independently.
-     * It resolves to E4B and can never select or load an E2B artifact.
-     */
-    @Deprecated("UnoOne is E4B-only; use GEMMA_4_E4B", ReplaceWith("GEMMA_4_E4B"))
-    val GEMMA_4_E2B: BrainModelSpec
-        get() = GEMMA_4_E4B
 }
