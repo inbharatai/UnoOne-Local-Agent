@@ -70,7 +70,7 @@ export function createLocalGemmaFetch(): typeof fetch {
       id: `unoone-${crypto.randomUUID()}`,
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
-      model: 'gemma-4-e2b-local',
+      model: 'gemma-4-e4b-local',
       choices: [
         {
           index: 0,
