@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Drives model installation, health and the sole Gemma 4 E2B brain card. */
+/** Drives model installation, health and the sole Gemma 4 E4B brain card. */
 class ModelStatusViewModel(
     context: Context,
     modelMetadataDao: ModelMetadataDao? = null,
@@ -149,7 +149,7 @@ class ModelStatusViewModel(
 
     fun loadBrain() {
         if (_brainBusy.value) return
-        val spec = BrainModelRegistry.GEMMA_4_E2B
+        val spec = BrainModelRegistry.GEMMA_4_E4B
         if (orchestrator == null) {
             _resultMessage.value = "${spec.displayName} will load automatically when the app starts and the artifact is healthy."
             return
@@ -178,7 +178,7 @@ class ModelStatusViewModel(
     fun runBrainSelfTest() {
         val test = brainSelfTest
         if (test == null || _brainBusy.value) return
-        val spec = BrainModelRegistry.GEMMA_4_E2B
+        val spec = BrainModelRegistry.GEMMA_4_E4B
         _brainBusy.value = true
         _resultMessage.value = null
         _selfTest.value = null
@@ -221,7 +221,7 @@ class ModelStatusViewModel(
     }
 
     private fun buildBrainStatus(): BrainStatusRow {
-        val spec = BrainModelRegistry.GEMMA_4_E2B
+        val spec = BrainModelRegistry.GEMMA_4_E4B
         val loaded = orchestrator?.loadedBrainProfile()
         val isLoaded = loaded?.manifestId == spec.manifestId
         return BrainStatusRow(
