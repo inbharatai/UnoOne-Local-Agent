@@ -13,9 +13,9 @@ import java.security.MessageDigest
 /**
  * Source-of-truth model filesystem facade.
  *
- * UnoOne V2 stores models below the app-private models root using typed subdirectories. The bundled
- * manifest is the only model catalogue. If it cannot be parsed, model detection and installation fail
- * closed instead of inventing fallback descriptors or directories.
+ * UnoOne stores models below the app-private models root using typed subdirectories. The bundled
+ * manifest is the only install catalogue. If it cannot be parsed, model detection and installation
+ * fail closed instead of inventing fallback descriptors or directories.
  */
 class ModelManager(
     private val context: Context,
@@ -37,7 +37,7 @@ class ModelManager(
 
     fun findModel(id: String): ModelDescriptor? = manifestLoader.find(context, id)
 
-    /** Verifies every declared file against its size and SHA-256 when available. */
+    /** Verifies every declared file against its exact size and SHA-256. */
     suspend fun modelHealth(id: String): HealthResult = withContext(Dispatchers.IO) {
         val descriptor = findModel(id)
             ?: return@withContext HealthResult(
@@ -123,23 +123,61 @@ class ModelManager(
         )
     }
 
-    /** Deletes only the manifest-resolved folder beneath the app-private models root. */
+    /** Deletes only a manifest-resolved folder beneath the app-private models root. */
     suspend fun uninstallModel(id: String) = withContext(Dispatchers.IO) {
         val descriptor = findModel(id)
+            ?: run {
+                Logger.w("ModelManager: refusing uninstall for unknown model '$id'")
+                return@withContext
+            }
         val base = File(appPrivateModelPath)
-        val folder = if (descriptor != null) File(base, descriptor.folder) else File(base, id)
-        val baseCanonical = base.canonicalPath
-        val folderCanonical = folder.canonicalPath
-        if (folderCanonical != baseCanonical && !folderCanonical.startsWith(baseCanonical + File.separator)) {
-            Logger.w("ModelManager: refusing to uninstall '$id' outside models root ($folderCanonical)")
+        val folder = File(base, descriptor.folder)
+        if (!isSafeChild(base, folder)) {
+            Logger.w("ModelManager: refusing to uninstall '$id' outside models root (${folder.canonicalPath})")
             return@withContext
         }
-        if (folder.exists()) {
-            folder.walkTopDown().sortedByDescending { it.path }.forEach { runCatching { it.delete() } }
-            runCatching { folder.delete() }
-        }
+        deleteDirectoryContents(folder)
         modelMetadataDao?.deleteByName(id)
         Logger.i("ModelManager: uninstalled $id")
+    }
+
+    /**
+     * Removes the obsolete E2B artifact only after the E4B catalogue entry is fully verified.
+     *
+     * Existing installations may still have `brain/gemma-4-e2b` even though it no longer appears in
+     * the active manifest. Generic uninstall cannot safely resolve an unknown legacy id, so this
+     * migration uses one hard-coded historical relative path guarded by canonical-path checks.
+     */
+    suspend fun removeLegacyE2BIfE4BVerified(): LegacyCleanupResult = withContext(Dispatchers.IO) {
+        val active = BrainModelRegistry.defaultProfile
+        val health = modelHealth(active.manifestId)
+        if (!health.verified || getLlmModelPath(active) == null) {
+            return@withContext LegacyCleanupResult(
+                removed = false,
+                legacyPresent = legacyE2BFolder().exists(),
+                message = "E4B is not integrity-verified; legacy brain was preserved"
+            )
+        }
+
+        val base = File(appPrivateModelPath)
+        val legacy = legacyE2BFolder()
+        if (!legacy.exists()) {
+            modelMetadataDao?.deleteByName(LEGACY_E2B_ID)
+            return@withContext LegacyCleanupResult(false, false, "No legacy E2B files found")
+        }
+        if (!isSafeChild(base, legacy)) {
+            Logger.w("ModelManager: refusing legacy cleanup outside models root (${legacy.canonicalPath})")
+            return@withContext LegacyCleanupResult(false, true, "Legacy path safety check failed")
+        }
+
+        deleteDirectoryContents(legacy)
+        modelMetadataDao?.deleteByName(LEGACY_E2B_ID)
+        Logger.i("ModelManager: removed legacy E2B after verified E4B activation")
+        LegacyCleanupResult(true, false, "Legacy E2B removed after verified E4B activation")
+    }
+
+    fun legacyE2BPresent(): Boolean = legacyE2BFolder().let { folder ->
+        folder.isDirectory && folder.walkTopDown().any { it.isFile && it.length() > 0L }
     }
 
     suspend fun detectModels(): List<ModelStatus> = withContext(Dispatchers.IO) {
@@ -291,14 +329,43 @@ class ModelManager(
 
     fun getLlmModelPath(): String? = getLlmModelPath(BrainModelRegistry.defaultProfile)
 
+    /**
+     * Returns only the exact, manifest-declared, integrity-verified model file.
+     *
+     * There is deliberately no "largest .litertlm" fallback: a stale E2B file, web artifact,
+     * incomplete copy or manually dropped model must never be selected as UnoOne's brain.
+     */
     fun getLlmModelPath(spec: BrainModelSpec): String? {
-        val folder = File(appPrivateModelPath, spec.modelFolder)
-        val candidates = folder.listFiles { file ->
-            file.isFile && file.name.endsWith(spec.fileExtension, ignoreCase = true) && file.length() > 0L
+        val descriptor = findModel(spec.manifestId) ?: return null
+        val artifact = descriptor.files.singleOrNull { file ->
+            !file.archive && file.name.equals(spec.fileName, ignoreCase = false)
         } ?: return null
-        if (candidates.isEmpty()) return null
-        return candidates.firstOrNull { it.name.equals(spec.fileName, ignoreCase = true) }?.absolutePath
-            ?: candidates.maxByOrNull { it.length() }?.absolutePath
+        if (descriptor.folder != spec.modelFolder || artifact.sha256.isBlank() || artifact.sizeBytes <= 0L) {
+            return null
+        }
+
+        val folder = File(appPrivateModelPath, spec.modelFolder)
+        val exact = File(folder, spec.fileName)
+        if (!exact.isFile || exact.name.endsWith(".part") || exact.length() != artifact.sizeBytes) return null
+        if (computeSha256(exact.absolutePath) != artifact.sha256.lowercase()) return null
+        return exact.absolutePath
+    }
+
+    private fun legacyE2BFolder(): File = File(appPrivateModelPath, LEGACY_E2B_RELATIVE_FOLDER)
+
+    private fun isSafeChild(base: File, candidate: File): Boolean {
+        val baseCanonical = base.canonicalFile
+        val candidateCanonical = candidate.canonicalFile
+        return candidateCanonical != baseCanonical &&
+            candidateCanonical.path.startsWith(baseCanonical.path + File.separator)
+    }
+
+    private fun deleteDirectoryContents(folder: File) {
+        if (!folder.exists()) return
+        folder.walkTopDown().sortedByDescending { it.path }.forEach { file ->
+            runCatching { file.delete() }
+        }
+        runCatching { folder.delete() }
     }
 
     data class ModelStatus(
@@ -324,7 +391,15 @@ class ModelManager(
         val message: String
     )
 
+    data class LegacyCleanupResult(
+        val removed: Boolean,
+        val legacyPresent: Boolean,
+        val message: String
+    )
+
     companion object {
+        private const val LEGACY_E2B_ID = "gemma-4-e2b"
+        private const val LEGACY_E2B_RELATIVE_FOLDER = "brain/gemma-4-e2b"
         private val RUNTIME_DIRECTORIES: List<String> = listOf(
             "vision/blind-aid",
             "staging"
