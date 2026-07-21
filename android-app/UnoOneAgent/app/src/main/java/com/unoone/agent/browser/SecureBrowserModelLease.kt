@@ -13,12 +13,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Exclusive ownership of the Gemma 4 model while the local Page Agent is active.
+ * Exclusive ownership of Gemma 4 E4B while the local Page Agent is active.
  *
- * Mobile memory cannot safely hold separate phone-agent and browser-agent copies of Gemma. Acquiring
- * this lease closes the main UnoOne brain, loads the same qualified artifact into a browser-only
- * planner, and exposes a [BrowserModelPort]. Normal release restores the main brain when it was loaded
- * before acquisition. Emergency release skips restoration so memory-pressure handling cannot
+ * Mobile memory must never hold separate phone-agent and browser-agent copies of E4B. Acquiring this
+ * lease closes the main UnoOne brain, loads the same integrity-verified artifact into a browser-only
+ * planner, and exposes a [BrowserModelPort]. Normal release restores the main brain when it was
+ * loaded before acquisition. Emergency release skips restoration so memory-pressure handling cannot
  * immediately reallocate the model it just freed.
  */
 class SecureBrowserModelLease(
@@ -41,10 +41,10 @@ class SecureBrowserModelLease(
     suspend fun acquire(): Result<BrowserModelPort> = mutex.withLock {
         if (active) return@withLock Result.Error("Secure Browser already owns the Gemma model")
 
-        val spec = BrainModelRegistry.GEMMA_4_E2B
+        val spec = BrainModelRegistry.GEMMA_4_E4B
         val path = modelManager.getLlmModelPath(spec)
             ?: return@withLock Result.Error(
-                "Gemma 4 E2B is not installed. Add a qualified .litertlm artifact before starting Secure Browser."
+                "Gemma 4 E4B is not installed or failed integrity verification. Install the exact Android .litertlm artifact before starting Secure Browser."
             )
 
         val mainWasLoaded = orchestrator.isLlmLoaded()
@@ -108,7 +108,7 @@ class SecureBrowserModelLease(
         ExclusiveBrainLeaseState.release(OWNER_ID)
 
         if (shouldRestore && path != null) {
-            return@withLock orchestrator.loadLlmModel(path, BrainModelRegistry.GEMMA_4_E2B)
+            return@withLock orchestrator.loadLlmModel(path, BrainModelRegistry.GEMMA_4_E4B)
         }
         Result.Success(Unit)
     }
