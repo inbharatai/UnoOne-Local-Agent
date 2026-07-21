@@ -2,6 +2,7 @@ package com.unoone.agent.localbrain
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.unoone.agent.core.model.Result
 import com.unoone.agent.modelmanager.ModelManager
 import kotlinx.coroutines.runBlocking
 import org.junit.Assume.assumeTrue
@@ -9,15 +10,11 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Real device-time accuracy test for the Gemma 4 E2B brain.
+ * Real device-time smoke tests for the exact integrity-verified Gemma 4 E4B brain.
  *
- * This test only runs when a `.litertlm` model file is present on the device.
- * It loads the model, sends a set of known commands, and verifies that the
- * returned tool name matches the expected action.
- *
- * To run this test, push a model first:
- *   adb push /path/to/gemma-4-E2B-it.litertlm \
- *     /sdcard/Android/data/com.unoone.agent/files/models/brain/gemma-4-e2b/
+ * These tests exercise the planner directly. In the application, deterministic routing should handle
+ * simple commands before model inference; direct planning probes remain useful for proving that E4B
+ * can produce canonical calls when the agent lane invokes it.
  */
 class GemmaPlannerAccuracyTest {
 
@@ -32,33 +29,34 @@ class GemmaPlannerAccuracyTest {
     }
 
     @Test
-    fun modelLoadsWhenPresent() = runBlocking {
+    fun verifiedE4BLoadsWhenPresent() = runBlocking {
         val path = modelManager.getLlmModelPath()
-        assumeTrue("No .litertlm model found — skipping accuracy test", path != null)
+        assumeTrue("No integrity-verified E4B model found — skipping accuracy test", path != null)
 
         val planner = GemmaPlanner()
         val result = planner.load(path!!)
-        assert(result is com.unoone.agent.core.model.Result.Success) {
-            "Model load failed: ${(result as? com.unoone.agent.core.model.Result.Error)?.message}"
+        assert(result is Result.Success) {
+            "Model load failed: ${(result as? Result.Error)?.message}"
         }
+        assert(planner.loadedProfile()?.manifestId == "gemma-4-e4b")
         planner.close()
     }
 
     @Test
-    fun openChromeCommandProducesOpenChromeTool() = runBlocking {
+    fun openChromeCommandProducesCanonicalTool() = runBlocking {
         val path = modelManager.getLlmModelPath()
-        assumeTrue("No .litertlm model found — skipping accuracy test", path != null)
+        assumeTrue("No integrity-verified E4B model found — skipping accuracy test", path != null)
 
         val planner = GemmaPlanner()
         val loadResult = planner.load(path!!)
-        assert(loadResult is com.unoone.agent.core.model.Result.Success)
+        assert(loadResult is Result.Success)
 
         val planResult = planner.plan(
             "Open Chrome",
             ContextSnapshot(currentPackage = "com.unoone.agent")
         )
-        check(planResult is com.unoone.agent.core.model.Result.Success) {
-            "Planning failed: ${(planResult as? com.unoone.agent.core.model.Result.Error)?.message}"
+        check(planResult is Result.Success) {
+            "Planning failed: ${(planResult as? Result.Error)?.message}"
         }
 
         val toolCall = planResult.data
@@ -69,24 +67,28 @@ class GemmaPlannerAccuracyTest {
     }
 
     @Test
-    fun createNoteCommandProducesCreateNoteTool() = runBlocking {
+    fun createNoteCommandProducesRequiredArguments() = runBlocking {
         val path = modelManager.getLlmModelPath()
-        assumeTrue("No .litertlm model found — skipping accuracy test", path != null)
+        assumeTrue("No integrity-verified E4B model found — skipping accuracy test", path != null)
 
         val planner = GemmaPlanner()
         val loadResult = planner.load(path!!)
-        assert(loadResult is com.unoone.agent.core.model.Result.Success)
+        assert(loadResult is Result.Success)
 
         val planResult = planner.plan(
-            "Remember to buy milk tomorrow",
+            "Create a note titled Shopping with content buy milk tomorrow",
             ContextSnapshot(currentPackage = "com.unoone.agent")
         )
-        check(planResult is com.unoone.agent.core.model.Result.Success)
+        check(planResult is Result.Success) {
+            "Planning failed: ${(planResult as? Result.Error)?.message}"
+        }
 
         val toolCall = planResult.data
         assert(toolCall.tool == "create_note") {
             "Expected 'create_note' but got '${toolCall.tool}' with args ${toolCall.args}"
         }
+        assert(toolCall.args["title"]?.toString()?.isNotBlank() == true)
+        assert(toolCall.args["content"]?.toString()?.contains("milk", ignoreCase = true) == true)
         planner.close()
     }
 }
