@@ -78,6 +78,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.UnoOne">
 
+        <!-- LiteRT-LM GPU acceleration. Both libraries are optional so unsupported devices cleanly
+             fall back to the existing CPU backend instead of failing application startup. -->
+        <uses-native-library
+            android:name="libvndksupport.so"
+            android:required="false" />
+        <uses-native-library
+            android:name="libOpenCL.so"
+            android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
