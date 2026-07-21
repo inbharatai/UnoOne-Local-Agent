@@ -143,7 +143,7 @@ fun SettingsScreen(
                 onSelect = { code -> viewModel.setVoiceLanguage(code) }
             )
             Text(
-                "Secure Browser reserves Gemma 4 exclusively, automates approved HTTPS pages through the local Page Agent, and requires manual control for credentials, OTP, CAPTCHA, payments and legal declarations.",
+                "Secure Browser reserves Gemma 4 E4B exclusively, automates approved HTTPS pages through the local Page Agent, and requires manual control for credentials, OTP, CAPTCHA, payments and legal declarations.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 4.dp)
@@ -216,7 +216,7 @@ fun SettingsScreen(
                 Text("Privacy Settings")
             }
             Text(
-                "Control optional online tools and data sharing. Gemma, installed speech packs and PageAgent planning run locally.",
+                "Control optional online tools and data sharing. Gemma 4 E4B, installed speech packs and PageAgent planning run locally.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 modifier = Modifier.padding(top = 4.dp)
@@ -246,7 +246,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            "UnoOne v0.4.0-alpha-v2 · Gemma 4 E2B candidate",
+            "UnoOne v0.4.0-alpha-v2 · Gemma 4 E4B device qualification pending",
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
         )
@@ -309,10 +309,7 @@ private fun ManageButton(
     Spacer(modifier = Modifier.height(8.dp))
 }
 
-/**
- * Compact label + dropdown picker used by the Security Level and Voice Language settings. Tapping
- * the right-hand value opens a [DropdownMenu] of [options]; selecting one calls [onSelect].
- */
+/** Compact label and dropdown picker used by security-level and voice-language settings. */
 @Composable
 private fun <T> DropdownPicker(
     label: String,
@@ -339,7 +336,10 @@ private fun <T> DropdownPicker(
                 options.forEach { (value, display) ->
                     DropdownMenuItem(
                         text = { Text(display) },
-                        onClick = { onSelect(value); expanded = false }
+                        onClick = {
+                            onSelect(value)
+                            expanded = false
+                        }
                     )
                 }
             }
