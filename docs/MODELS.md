@@ -1,91 +1,157 @@
-# UnoOne Models — Installation, Integrity, Profiles
+# UnoOne Models — Installation, Integrity and Runtime Contract
 
-How on-device models are installed, verified, and organized. Source manifest:
-`android-app/UnoOneAgent/modelmanager/src/main/assets/models_manifest.json`.
+The active model catalogue is:
 
-## 1. Integrity model
+```text
+android-app/UnoOneAgent/modelmanager/src/main/assets/models_manifest.json
+```
 
-Every model file in the manifest carries `url`, and ideally `sha256` + `sizeBytes`. The installer
-(`ModelInstaller`) streams the download, integrity-checks it, and `ModelManager.modelHealth`
-reports three states:
+## Integrity rules
 
-| State | Meaning |
+Every downloadable artifact must declare:
+
+- an HTTPS engineering-acquisition URL or a bundled asset;
+- exact `sizeBytes`;
+- exact lowercase SHA-256;
+- an app-private destination folder;
+- an immutable model id and version label.
+
+`ModelInstaller` downloads to a `.part` file, supports HTTP range resume where available, verifies the final size and SHA-256, and atomically renames the file only after verification. A wrong or incomplete file must never appear healthy.
+
+`ModelManager.getLlmModelPath()` accepts only the exact filename declared by the active brain specification. It rejects:
+
+- a missing file;
+- a zero-byte or partial file;
+- a `.part` file;
+- a wrong filename;
+- a wrong byte size;
+- a wrong SHA-256;
+- an old E2B model;
+- the web-specific E4B build;
+- an unrelated larger `.litertlm` file.
+
+## Current planning model
+
+UnoOne has one installable language-model profile:
+
+| Field | Value |
 |---|---|
-| **Verified** | File present, size matches, SHA-256 matches |
-| **Present — not hash-verified (manual import)** | File present & non-empty, but manifest has no sha256/size to byte-check |
-| **Needs repair** | Missing, wrong size, or hash mismatch |
+| Model id | `gemma-4-e4b` |
+| Folder | `brain/gemma-4-e4b` |
+| File | `gemma-4-E4B-it.litertlm` |
+| Runtime | LiteRT-LM |
+| Backend order | GPU, then CPU fallback |
+| Exact size | `3,659,530,240` bytes |
+| SHA-256 | `0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0` |
+| Initial context | 2,048 tokens |
+| Maximum supported context | 32,768 tokens |
+| Minimum RAM gate | 8,192 MB |
+| Recommended RAM gate | 12,288 MB |
+| Physical-device qualification | pending |
 
-### Gemma (LLM) — honest status
+The file above is the Android LiteRT-LM artifact. Do not substitute the smaller web-specific artifact.
 
-UnoOne now has **two selectable brain profiles** (see [Local Brain](../README.md#local-brain-gemma-via-litert-lm)):
+The model is the planner for ambiguous, conversational and bounded multi-step tasks. Deterministic Android commands should not invoke E4B when native routing can resolve them safely.
 
-- **Gemma 3n E4B** — manifest id `gemma-3n-e4b`, folder `gemma-local/` (kept for migration continuity; a legacy `gemma-local` selection resolves to this profile). This is the **default, device-verified fallback**.
-- **Gemma 4 E2B** — manifest id `gemma-4-e2b`, folder `gemma-4-e2b/`, 128K context, ~2.58 GB. **Experimental opt-in, NOT device-verified.** It loads through the same safe code path as Gemma 3n, but no physical device has confirmed it loads + performs a tool call. Do not treat it as working until [`DEVICE_VERIFICATION.md`](../DEVICE_VERIFICATION.md) step 5b is green. The default stays Gemma 3n E4B.
+## Legacy E2B handling
 
-Both ship **URL-only** (`sha256=""`, `sizeBytes=0`) because the exact `.litertlm` you push must be
-hash-verified against **your** shipped artifact (no fabrication). A manually imported Gemma therefore
-shows **"Present — not hash-verified (manual import)"**, not "Verified."
+E2B is not present in the active install catalogue and is not a user-selectable fallback. Existing devices may still contain:
 
-**To make it Verified:** compute the exact SHA-256 and byte size of the `.litertlm` you will ship
-and add them to the manifest entry. Do not call the LLM production-ready until that is done and
-`modelHealth` reports Verified on a real device.
+```text
+brain/gemma-4-e2b/
+```
 
-### Sherpa voice models — verified
+That folder must be retained until E4B has:
 
-English STT (`sherpa-asr-en`), the shared Indic Omnilingual STT (`sherpa-asr-indic`), English TTS
-(`sherpa-tts-en`), per-language Indic MMS TTS (`sherpa-tts-{hin,ben,tam,tel,kan,mal}`), and the
-wake-word (`vad`) all carry stream-computed sha256 + sizeBytes and are integrity-checked on
-install. `punctuation` carries URL only.
+1. downloaded fully;
+2. passed exact size and SHA-256 verification;
+3. initialized successfully in LiteRT-LM;
+4. passed the phone self-test;
+5. completed the Xiaomi 14 sustained validation without crash, ANR, OOM or low-memory kill.
 
-## 2. Current models
+After those gates pass, the guarded migration may call:
 
-| Model | Type | Backend | Size | Hash | Languages |
-|---|---|---|---|---|---|
-| `gemma-3n-e4b.litertlm` | llm | any (GPU→CPU) | ~2–5 GB | **none (manual import)** | planning (multilingual) — **default brain** |
-| `gemma-4-e2b-it.litertlm` | llm | any (GPU→CPU) | ~2.58 GB | **none (manual import)** | planning (128K ctx) — **Experimental, not device-verified** |
-| `sherpa-asr-en` | asr | cpu | ~70 MB | ✅ | English |
-| `sherpa-asr-indic` | asr | cpu | ~279 MB archive / ~348 MB extracted | ✅ | hi/bn/ta/te/kn/ml (shared Omnilingual CTC) |
-| `sherpa-tts-en` | tts | cpu | ~110 MB | ✅ | English (Coqui VITS + espeak-ng-data) |
-| `sherpa-tts-<lang>` | tts | cpu | ~109 MB each | ✅ | hi/bn/ta/te/kn/ml (MMS VITS) |
-| `vad` | vad | cpu | ~70 MB | ✅ | English wake word |
-| `punctuation` | punctuation | cpu | — | none (URL only) | — |
+```text
+ModelManager.removeLegacyE2BIfE4BVerified()
+```
 
-Wake word is English-only (no public Indic KWS transducer exists). The *command* may be Indic; only
-the wake phrase is English.
+The cleanup uses a fixed historical relative folder and canonical-path checks. Generic uninstall refuses unknown model ids rather than guessing a path.
 
-## 3. Installation paths
+## Speech and voice models
 
-- **In-app:** Model Status screen → Install (streaming progress + integrity check) or Uninstall.
-- **Manual (ADB):** `scripts/adb-push-models/push-models.{bat,sh}` push the per-language folders.
-- **Gemma (default 3n E4B):** push the `.litertlm` into `models/gemma-local/` (manual import; no hash yet). Manifest id `gemma-3n-e4b`.
-- **Gemma (Experimental 4 E2B):** push `gemma-4-e2b-it.litertlm` into `models/gemma-4-e2b/`, then select the profile in Settings → Model Status → Brain Model and run the self-test. Manifest id `gemma-4-e2b` — **not device-verified**.
+| Model | Type | Backend | Approximate role | Status |
+|---|---|---|---|---|
+| `sherpa-asr-en` | ASR | CPU | English streaming recognition | integrity metadata present |
+| `sherpa-asr-indic` | ASR | CPU | shared Indic Omnilingual recognition | integrity metadata present |
+| `sherpa-tts-en` | TTS | CPU | English offline speech | integrity metadata present |
+| `sherpa-tts-hin` | TTS | CPU | Hindi offline speech | integrity metadata present |
+| `sherpa-tts-ben` | TTS | CPU | Bengali offline speech | retained catalogue component |
+| `sherpa-tts-tam` | TTS | CPU | Tamil offline speech | retained catalogue component |
+| `sherpa-tts-tel` | TTS | CPU | Telugu offline speech | retained catalogue component |
+| `sherpa-tts-kan` | TTS | CPU | Kannada offline speech | retained catalogue component |
+| `sherpa-tts-mal` | TTS | CPU | Malayalam offline speech | retained catalogue component |
+| `vad` | VAD/KWS support | CPU | wake-listening support | shares verified English ASR bytes where identical |
 
-## 4. Download source abstraction (spec)
+English and Hindi are the currently exposed voice profiles. Other retained speech artefacts are not automatically production-qualified merely because files exist in the catalogue.
 
-Roadmap: classify each manifest source as `bundled | public_url | authenticated_hf | manual_import`.
-Hugging Face URLs can be gated/change; for Gemma, prefer `manual_import` (copy file → verify SHA →
-load) as the primary path, with `public_url` as a convenience.
+Assamese remains a priority planned pack. It must not be enabled until exact STT and TTS files pass licence review, integrity checks, Android loading, controlled accuracy testing and physical-device qualification.
 
-## 5. Model profiles (spec)
+## Model filesystem
 
-Don't force users to download everything. Roadmap installer profiles:
+```text
+models/
+├── brain/
+│   └── gemma-4-e4b/
+│       └── gemma-4-E4B-it.litertlm
+├── speech/
+│   ├── shared/
+│   │   ├── sherpa-asr-en/
+│   │   ├── sherpa-asr-indic/
+│   │   └── vad/
+│   └── languages/
+│       ├── en-IN/tts/
+│       ├── hi-IN/tts/
+│       └── other retained language TTS folders
+├── vision/
+│   └── blind-aid/
+└── staging/
+```
 
-| Profile | Contents |
-|---|---|
-| Tiny | Rules engine only + English STT/TTS |
-| Voice | English + one Indic language (STT + TTS + wake word) |
-| Agent | Voice profile + Gemma 3n E4B |
-| Blind Aid | Camera + object detection only |
-| Full | Everything |
+Models live under `getExternalFilesDir("models")`, falling back to internal app files when external app-private storage is unavailable. This does not require all-files storage permission.
 
-## 6. Object detection / YOLO path (spec — item 18)
+## Runtime memory policy
 
-A custom YOLOv8 model is currently documented under `gemma-local/custom_yolov8.tflite`, which is
-semantically wrong (YOLO is not Gemma). Roadmap: move it to `models/object-detection/yolov8n-int8.tflite`
-as a separate optional manifest entry of type `object-detection`, independent of `gemma-local`.
+- Only one E4B engine may be resident.
+- Secure Browser acquires an exclusive lease, unloads the phone planner, and restores it after release.
+- Blind Aid may release E4B before sustained camera analysis and reload it after clean shutdown.
+- GPU is attempted first; CPU is the supported fallback.
+- NPU use must not be claimed unless runtime logs prove an NPU backend was selected.
+- The operating context starts at 2,048 tokens. A larger default requires measured memory, latency and thermal evidence.
 
-## 7. Storage
+## Installation and repair
 
-All models live in app-private storage (`getExternalFilesDir("models")`), so no
-`MANAGE_EXTERNAL_STORAGE` / `READ_EXTERNAL_STORAGE` (on API 29+) is needed. Storage usage is
-shown on the Model Status screen.
+The Model Status screen should show:
+
+- download progress;
+- resume state;
+- exact integrity verification;
+- installed/healthy/verified status;
+- active backend after load;
+- self-test result;
+- a clear failure reason and retry action.
+
+A production build must eventually acquire the same approved bytes through UnoOne-controlled storage and a signed catalogue. The current upstream URL is an engineering acquisition source, not the final production distribution architecture.
+
+## Qualification
+
+Compilation and checksum verification do not prove model quality. Follow [E4B Xiaomi 14 Handoff](E4B_XIAOMI14_HANDOFF.md) and record:
+
+- actual model-load backend;
+- load and first-token latency;
+- process memory and peak memory;
+- heat and battery behaviour;
+- tool-name and required-argument accuracy;
+- English/Hindi response-language compliance;
+- Blind Aid and Secure Browser model transitions;
+- sustained 50-task stability;
+- crash, ANR, OOM and low-memory scan.
