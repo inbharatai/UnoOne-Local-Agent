@@ -13,22 +13,22 @@ class ModelManifestTest {
 
     private val sample = """
         {
-          "manifestVersion": 2,
+          "manifestVersion": 3,
           "models": [
             {
-              "id": "gemma-4-e2b",
-              "folder": "brain/gemma-4-e2b",
+              "id": "gemma-4-e4b",
+              "folder": "brain/gemma-4-e4b",
               "type": "llm",
-              "version": "gemma-4-E2B-it-litert-lm-main-6e5c4f1",
-              "minRamMb": 6144,
+              "version": "gemma-4-E4B-it-litert-lm-main-28299f3",
+              "minRamMb": 8192,
               "backend": "any",
               "defaultLanguage": "en",
               "files": [
                 {
-                  "name": "gemma-4-E2B-it.litertlm",
-                  "url": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-                  "sha256": "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
-                  "sizeBytes": 2588147712,
+                  "name": "gemma-4-E4B-it.litertlm",
+                  "url": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
+                  "sha256": "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
+                  "sizeBytes": 3659530240,
                   "archive": false
                 }
               ]
@@ -86,21 +86,23 @@ class ModelManifestTest {
     @Test
     fun parsesCurrentGemmaAndSpeechModels() {
         val manifest = loader.parse(sample)
-        assertEquals(2, manifest.manifestVersion)
+        assertEquals(3, manifest.manifestVersion)
         assertEquals(3, manifest.models.size)
 
-        val gemma = manifest.find("gemma-4-e2b")
+        val gemma = manifest.find("gemma-4-e4b")
         assertNotNull(gemma)
         assertEquals(ModelType.llm, gemma!!.type)
         assertEquals(ModelBackend.any, gemma.backend)
-        assertEquals("brain/gemma-4-e2b", gemma.folder)
-        assertEquals(6144, gemma.minRamMb)
-        assertEquals("gemma-4-E2B-it.litertlm", gemma.files.single().name)
-        assertEquals(2588147712L, gemma.files.single().sizeBytes)
+        assertEquals("brain/gemma-4-e4b", gemma.folder)
+        assertEquals(8192, gemma.minRamMb)
+        assertEquals("gemma-4-E4B-it.litertlm", gemma.files.single().name)
+        assertEquals(3659530240L, gemma.files.single().sizeBytes)
         assertEquals(
-            "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+            "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
             gemma.files.single().sha256
         )
+        assertNull(manifest.find("gemma-4-e2b"))
+        assertEquals(1, manifest.models.count { it.type == ModelType.llm })
 
         val indic = manifest.find("sherpa-asr-indic")
         assertNotNull(indic)
@@ -120,7 +122,8 @@ class ModelManifestTest {
     @Test
     fun findByFolderUsesNormalizedV2Paths() {
         val manifest = loader.parse(sample)
-        assertEquals("gemma-4-e2b", manifest.findByFolder("brain/gemma-4-e2b")!!.id)
+        assertEquals("gemma-4-e4b", manifest.findByFolder("brain/gemma-4-e4b")!!.id)
+        assertNull(manifest.findByFolder("brain/gemma-4-e2b"))
         assertEquals("sherpa-asr-indic", manifest.findByFolder("speech/shared/sherpa-asr-indic")!!.id)
         assertEquals("sherpa-tts-en", manifest.findByFolder("speech/languages/en-IN/tts")!!.id)
     }
@@ -128,11 +131,11 @@ class ModelManifestTest {
     @Test
     fun unknownKeysAreIgnoredWithoutChangingKnownFields() {
         val withUnknownField = sample.replace(
-            "\"manifestVersion\": 2,",
-            "\"manifestVersion\": 2, \"futureMetadata\": { \"ignored\": true },"
+            "\"manifestVersion\": 3,",
+            "\"manifestVersion\": 3, \"futureMetadata\": { \"ignored\": true },"
         )
         val manifest = loader.parse(withUnknownField)
-        assertEquals(2, manifest.manifestVersion)
+        assertEquals(3, manifest.manifestVersion)
         assertEquals(3, manifest.models.size)
     }
 
