@@ -1,22 +1,22 @@
 {
   "catalogVersion": 1,
   "channel": "beta",
-  "generatedAt": "2026-07-12T00:00:00Z",
+  "generatedAt": "2026-07-21T00:00:00Z",
   "minimumInstallerVersion": 1,
   "apps": [],
   "models": [
     {
-      "id": "gemma-4-e2b",
-      "version": "gemma-4-E2B-it-litert-lm-main-6e5c4f1",
+      "id": "gemma-4-e4b",
+      "version": "gemma-4-E4B-it-litert-lm-main-28299f3",
       "runtime": "litertlm",
       "qualificationStatus": "integrity-verified",
-      "minimumRamMb": 6144,
-      "recommendedRamMb": 8192,
+      "minimumRamMb": 8192,
+      "recommendedRamMb": 12288,
       "license": "Apache-2.0",
       "artifact": {
-        "path": "brain/gemma-4-e2b/gemma-4-E2B-it.litertlm",
-        "sizeBytes": 2588147712,
-        "sha256": "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+        "path": "brain/gemma-4-e4b/gemma-4-E4B-it.litertlm",
+        "sizeBytes": 3659530240,
+        "sha256": "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
         "mimeType": "application/octet-stream"
       }
     }
