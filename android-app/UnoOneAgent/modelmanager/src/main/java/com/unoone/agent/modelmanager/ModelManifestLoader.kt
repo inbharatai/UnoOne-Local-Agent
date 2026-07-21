@@ -9,7 +9,7 @@ import kotlinx.serialization.json.Json
  *
  * The manifest is part of the signed APK. Downloaded artifacts are independently checked by exact
  * size and SHA-256, while public releases are governed by the signed distribution catalogue. Read or
- * parse failure returns an empty manifest so no model installation proceeds.
+ * parse failure returns an empty current-version manifest so no model installation proceeds.
  */
 class ModelManifestLoader {
 
@@ -41,9 +41,10 @@ class ModelManifestLoader {
         cached = null
     }
 
-    private fun empty() = ModelManifest(manifestVersion = 2, models = emptyList())
+    private fun empty() = ModelManifest(manifestVersion = CURRENT_MANIFEST_VERSION, models = emptyList())
 
     companion object {
         const val ASSET_NAME = "models_manifest.json"
+        const val CURRENT_MANIFEST_VERSION = 3
     }
 }
