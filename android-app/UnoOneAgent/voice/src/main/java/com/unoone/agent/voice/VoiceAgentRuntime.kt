@@ -27,6 +27,8 @@ enum class VoiceAgentState {
 data class VoiceAgentDiagnostics(
     val state: VoiceAgentState = VoiceAgentState.INITIALISING,
     val rawTranscript: String = "",
+    val stablePartialTranscript: String = "",
+    val finalTranscript: String = "",
     val normalizedTranscript: String = "",
     val wakePhrase: String = "",
     val wakeConfidence: Float = 0f,
@@ -68,6 +70,7 @@ object VoiceAgentRuntime {
     fun recordWake(rawTranscript: String, match: WakePhraseMatch) {
         _diagnostics.value = _diagnostics.value.copy(
             rawTranscript = rawTranscript.take(500),
+            finalTranscript = rawTranscript.take(500),
             normalizedTranscript = match.normalizedTranscript.take(500),
             wakePhrase = match.matchedPhrase,
             wakeConfidence = match.confidence,
@@ -84,6 +87,7 @@ object VoiceAgentRuntime {
     ) {
         _diagnostics.value = _diagnostics.value.copy(
             rawTranscript = rawTranscript.take(500),
+            finalTranscript = rawTranscript.take(500),
             normalizedTranscript = WakePhraseNormalizer.normalize(rawTranscript).take(500),
             extractedCommand = WakePhrases.stripFromCommand(rawTranscript).take(500),
             detectedLanguage = language,

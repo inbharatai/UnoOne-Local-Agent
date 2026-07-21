@@ -39,6 +39,12 @@ class WakePhrasesTest {
     }
 
     @Test
+    fun shortUnoWakePhraseHasANativeKwsEntry() {
+        assertTrue(WakePhrases.LIST.contains("uno"))
+        assertTrue(WakePhrases.KWS_ENTRIES.any { it.endsWith("@uno") })
+    }
+
+    @Test
     fun everyWakePhraseHasAnEncodedKwsEntry() {
         assertEquals(WakePhrases.LIST.size, WakePhrases.KWS_ENTRIES.size)
         WakePhrases.KWS_ENTRIES.forEach { entry ->
@@ -84,8 +90,12 @@ class WakePhrasesTest {
     @Test
     fun naturalActivationVariantsMatch() {
         val positives = listOf(
-            "Uno", "Uno One", "Uno start", "Uno One start", "Uno on", "Start Uno",
-            "Hey Uno", "You know start", "Unone", "Uno chalu karo"
+            "Uno", "Uno One", "UnoOne", "Hey Uno", "Hello Uno", "Hi Uno", "Okay Uno",
+            "Start Uno", "Start Uno One", "Uno start", "Uno One start", "Uno on",
+            "Uno One on", "Turn on Uno", "Wake up Uno", "Uno listen", "Uno help",
+            "Uno open", "Uno please", "Uno suno", "Uno chalu karo", "Uno shuru karo",
+            "Uno start karo", "You know start", "You no", "You know one", "You no one",
+            "Uno won", "Uno 1", "Unone", "U no", "Un o"
         )
         positives.forEach { utterance ->
             assertTrue("$utterance should activate", WakePhraseMatcher.match(utterance) != null)

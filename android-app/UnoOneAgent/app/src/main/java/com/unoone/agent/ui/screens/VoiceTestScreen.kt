@@ -1,5 +1,8 @@
 package com.unoone.agent.ui.screens
 
+import android.Manifest
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,12 +42,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.unoone.agent.accessibilitycontrol.UnoOneAccessibilityService
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.ui.theme.DoneGreen
 import com.unoone.agent.ui.theme.FailedRed
 import com.unoone.agent.ui.theme.SafetyOrange
 import com.unoone.agent.ui.viewmodel.VoiceTestViewModel
 import com.unoone.agent.voice.VoiceRuntimeState
 import com.unoone.agent.voice.VoiceLanguage
+import com.unoone.agent.voice.VoiceAgentRuntime
 
 /**
  * STT/TTS test screen: verifies offline voice works before relying on it. Records 3s → transcribes
@@ -57,9 +64,12 @@ fun VoiceTestScreen(viewModel: VoiceTestViewModel, onBack: () -> Unit) {
     val engine by viewModel.engine.collectAsState()
     val transcript by viewModel.transcript.collectAsState()
     val confidence by viewModel.confidence.collectAsState()
+    val wakeMatch by viewModel.wakeMatch.collectAsState()
     val isRecording by viewModel.isRecording.collectAsState()
     val message by viewModel.message.collectAsState()
     val context = LocalContext.current
+    val isDebuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+    val diagnostics by VoiceAgentRuntime.diagnostics.collectAsState()
     var ttsText by remember { mutableStateOf(VoiceLanguage.testPhrase(engine.language)) }
 
     LaunchedEffect(engine.language) {
@@ -116,6 +126,62 @@ fun VoiceTestScreen(viewModel: VoiceTestViewModel, onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        if (isDebuggable) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "Developer Voice Diagnostics",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "Debug build only. Transcript fields are memory-only and clear when UnoOne is disabled.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    DiagnosticLine("Agent enabled", AgentRuntimeGate.isEnabled().toString())
+                    DiagnosticLine("State", diagnostics.state.name)
+                    DiagnosticLine(
+                        "Microphone permission",
+                        permissionState(context, Manifest.permission.RECORD_AUDIO)
+                    )
+                    DiagnosticLine(
+                        "Accessibility",
+                        if (UnoOneAccessibilityService.isEnabled()) "enabled" else "off"
+                    )
+                    DiagnosticLine(
+                        "Calendar read permission",
+                        permissionState(context, Manifest.permission.READ_CALENDAR)
+                    )
+                    DiagnosticLine("Contacts", "not requested; name lookup is unavailable")
+                    DiagnosticLine("Selected language", diagnostics.preferredReplyLanguage)
+                    DiagnosticLine("Raw/final transcript", diagnostics.finalTranscript)
+                    DiagnosticLine("Stable partial", diagnostics.stablePartialTranscript)
+                    DiagnosticLine("Normalised", diagnostics.normalizedTranscript)
+                    DiagnosticLine("Wake phrase", diagnostics.wakePhrase)
+                    DiagnosticLine(
+                        "Wake confidence",
+                        "${(diagnostics.wakeConfidence * 100).toInt()}%"
+                    )
+                    DiagnosticLine("Extracted command", diagnostics.extractedCommand)
+                    DiagnosticLine("Parsed intent", diagnostics.parsedIntent)
+                    DiagnosticLine(
+                        "Intent confidence",
+                        "${(diagnostics.intentConfidence * 100).toInt()}%"
+                    )
+                    DiagnosticLine("Action result", diagnostics.actionResult)
+                    DiagnosticLine("Verification", diagnostics.verificationResult)
+                    DiagnosticLine("Error", diagnostics.errorCode)
+                    DiagnosticLine("Recovery", diagnostics.recoveryAction)
+                    DiagnosticLine("Transition", diagnostics.transitionReason)
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         // STT test
         Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -152,6 +218,11 @@ fun VoiceTestScreen(viewModel: VoiceTestViewModel, onBack: () -> Unit) {
                         "Confidence: $pct%",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (confidence >= 0.6f) DoneGreen else if (confidence > 0f) SafetyOrange else FailedRed
+                    )
+                    Text(
+                        wakeMatch,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (wakeMatch.startsWith("Wake matched")) DoneGreen else SafetyOrange
                     )
                 }
             }
@@ -207,3 +278,23 @@ private fun EngineLine(label: String, state: VoiceRuntimeState, ready: Boolean) 
         Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
     }
 }
+
+@Composable
+private fun DiagnosticLine(label: String, value: String) {
+    if (value.isBlank()) return
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(0.42f))
+        Text(value, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(0.58f))
+    }
+}
+
+private fun permissionState(context: android.content.Context, permission: String): String =
+    if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) {
+        "granted"
+    } else {
+        "denied"
+    }

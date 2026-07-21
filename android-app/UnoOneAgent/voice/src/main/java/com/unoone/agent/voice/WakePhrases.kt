@@ -9,7 +9,7 @@ package com.unoone.agent.voice
  * initializes KWS successfully but does not detect a real spoken phrase reliably.
  */
 object WakePhrases {
-    val LIST: List<String> = listOf("uno one", "listen", "listen to me")
+    val LIST: List<String> = listOf("uno one", "uno", "listen", "listen to me")
 
     /**
      * BPE-tokenized keyword entries for the English streaming Zipformer model declared in
@@ -20,6 +20,9 @@ object WakePhrases {
      */
     val KWS_ENTRIES: List<String> = listOf(
         "▁UN O ▁ONE :2.0 #0.25 @uno_one",
+        // Uses the already-verified first two tokens of the Uno One entry. A stricter threshold
+        // limits false positives; the independent transcript matcher still validates the burst.
+        "▁UN O :2.2 #0.38 @uno",
         "▁LI S TEN :1.5 #0.35 @listen",
         "▁LI S TEN ▁TO ▁ME :1.5 #0.25 @listen_to_me"
     )

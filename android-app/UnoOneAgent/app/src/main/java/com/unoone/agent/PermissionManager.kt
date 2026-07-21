@@ -17,12 +17,14 @@ import com.unoone.agent.screenshot.ScreenshotPermissionActivity
 
 object PermissionManager {
 
+    /**
+     * Only permissions needed for the explicitly enabled background voice service are requested
+     * during setup. Camera and Calendar are requested by the tool safety pipeline at first use;
+     * Contacts and Calendar-write are not declared because this build does not query contacts or
+     * write directly to the provider.
+     */
     val REQUIRED_PERMISSIONS = mutableListOf(
-        Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.READ_CONTACTS,
-        Manifest.permission.READ_CALENDAR,
-        Manifest.permission.WRITE_CALENDAR,
-        Manifest.permission.CAMERA
+        Manifest.permission.RECORD_AUDIO
     ).apply {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             add(Manifest.permission.POST_NOTIFICATIONS)
@@ -51,19 +53,12 @@ object PermissionManager {
     fun hasSystemPermissions(context: Context): Boolean {
         val accessibilityEnabled = UnoOneAccessibilityService.isEnabled()
         val overlayEnabled = Settings.canDrawOverlays(context)
-        val manageStorageEnabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            android.os.Environment.isExternalStorageManager()
-        } else true
-
-        return accessibilityEnabled && overlayEnabled && manageStorageEnabled
+        return accessibilityEnabled && overlayEnabled
     }
 
     fun getNextSystemPermissionIntent(context: Context): Intent? {
         if (!Settings.canDrawOverlays(context)) {
             return Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:${context.packageName}".toUri())
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !android.os.Environment.isExternalStorageManager()) {
-            return Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, "package:${context.packageName}".toUri())
         }
         if (!UnoOneAccessibilityService.isEnabled()) {
             return Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)

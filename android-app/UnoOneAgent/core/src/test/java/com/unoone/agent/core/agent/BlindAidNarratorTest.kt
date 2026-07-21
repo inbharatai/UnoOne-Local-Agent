@@ -62,7 +62,11 @@ class BlindAidNarratorTest {
 
     @Test
     fun hindiModeMessagesAvoidGenderedVoiceWording() {
-        assertEquals("ब्लाइंड एड बंद है।", BlindAidNarrator.deactivationMessage("hi"))
+        assertEquals("ब्लाइंड मोड बंद हो गया है।", BlindAidNarrator.deactivationMessage("hi"))
+        assertTrue(
+            BlindAidNarrator.activationMessage("hi")
+                .startsWith("ब्लाइंड मोड चालू हो गया है।")
+        )
         assertFalse(BlindAidNarrator.activationMessage("hi").contains("रही"))
         assertFalse(BlindAidNarrator.activationMessage("hi").contains("करूँगी"))
     }

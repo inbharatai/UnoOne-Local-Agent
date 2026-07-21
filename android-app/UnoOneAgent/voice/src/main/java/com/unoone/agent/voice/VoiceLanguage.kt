@@ -12,6 +12,10 @@ import com.unoone.agent.voice.stt.SttMode
 data class AsrSpec(val folder: String, val mode: SttMode, val language: String)
 
 object VoiceLanguage {
+    data class LanguageRequest(
+        val code: String,
+        val remainingCommand: String
+    )
 
     const val PREF_NAME = "unoone_settings"
     const val PREF_KEY = "voice_language"
@@ -78,15 +82,7 @@ object VoiceLanguage {
      * Recognizes only explicit voice-language change requests. Merely mentioning Hindi or English
      * in a message must not rebuild the speech runtime.
      */
-    fun requestedFromCommand(command: String): String? {
-        val normalized = command
-            .lowercase()
-            .replace(Regex("""[^\p{L}\p{M}\p{N}\s]"""), " ")
-            .replace(Regex("""\s+"""), " ")
-            .trim()
-        if (normalized.isBlank()) return null
-
-        val hindiRequests = listOf(
+    private val hindiRequests = listOf(
             "speak in hindi",
             "reply in hindi",
             "answer in hindi",
@@ -101,7 +97,7 @@ object VoiceLanguage {
             "हिंदी में जवाब दो",
             "अब हिंदी में बोलो"
         )
-        val englishRequests = listOf(
+    private val englishRequests = listOf(
             "speak in english",
             "reply in english",
             "answer in english",
@@ -113,12 +109,31 @@ object VoiceLanguage {
             "अंग्रेजी में बोलो",
             "इंग्लिश में बोलो"
         )
-        return when {
-            hindiRequests.any { normalized == it || normalized.startsWith("$it ") } -> "hi"
-            englishRequests.any { normalized == it || normalized.startsWith("$it ") } -> "en"
-            else -> null
-        }
+
+    /**
+     * Extracts an explicit language instruction even when it follows a real action, for example
+     * "blind mode start karo aur Hindi mein jawab do". Only complete imperative phrases match;
+     * ordinary mentions such as "Hindi class" or "English calendar" remain untouched.
+     */
+    fun extractRequest(command: String): LanguageRequest? {
+        val candidates = (hindiRequests.map { "hi" to it } + englishRequests.map { "en" to it })
+            .sortedByDescending { it.second.length }
+        val match = candidates.firstNotNullOfOrNull { (code, phrase) ->
+            val regex = Regex(
+                "(?iu)(?<![\\p{L}\\p{M}])${Regex.escape(phrase)}(?![\\p{L}\\p{M}])"
+            )
+            regex.find(command)?.let { code to it.range }
+        } ?: return null
+
+        val remaining = command.removeRange(match.second)
+            .replace(Regex("(?iu)^\\s*(?:and|aur|और)\\s+"), "")
+            .replace(Regex("(?iu)\\s+(?:and|aur|और)\\s*$"), "")
+            .trim(' ', ',', '.', ';', ':', '-', '।')
+            .replace(Regex("\\s+"), " ")
+        return LanguageRequest(match.first, remaining)
     }
+
+    fun requestedFromCommand(command: String): String? = extractRequest(command)?.code
 
     fun changeConfirmation(code: String): String = when (normalize(code)) {
         "hi" -> "अब जवाब हिंदी में होगा।"

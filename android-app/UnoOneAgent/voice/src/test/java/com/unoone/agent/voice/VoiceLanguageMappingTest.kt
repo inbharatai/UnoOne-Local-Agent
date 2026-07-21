@@ -119,4 +119,19 @@ class VoiceLanguageMappingTest {
             "What is the Hindi word for calendar?"
         ).forEach { assertEquals(it, null, VoiceLanguage.requestedFromCommand(it)) }
     }
+
+    @Test
+    fun explicitLanguageRequestCanFollowAnActionWithoutDiscardingIt() {
+        val trailing = VoiceLanguage.extractRequest(
+            "blind mode start karo aur Hindi mein jawab do"
+        )
+        assertEquals("hi", trailing?.code)
+        assertEquals("blind mode start karo", trailing?.remainingCommand)
+
+        val leading = VoiceLanguage.extractRequest(
+            "अब हिंदी में बोलो और ब्लाइंड मोड चालू करो"
+        )
+        assertEquals("hi", leading?.code)
+        assertEquals("ब्लाइंड मोड चालू करो", leading?.remainingCommand)
+    }
 }

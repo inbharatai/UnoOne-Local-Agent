@@ -255,7 +255,10 @@ class AgentOrchestrator(
      * recorder cannot race the model swap. The preference is committed only after both offline
      * engines load; on failure the previous runtime is restored.
      */
-    private suspend fun applyVoiceLanguageCommand(requestedCode: String, inputType: InputType) {
+    private suspend fun applyVoiceLanguageCommand(
+        requestedCode: String,
+        inputType: InputType
+    ): Boolean {
         val previousCode = VoiceLanguage.normalize(currentVoiceLanguageCode())
         val requested = VoiceLanguage.normalize(requestedCode)
         val modelBaseDir =
@@ -325,6 +328,7 @@ class AgentOrchestrator(
                 status = if (switched) "success" else "failed"
             )
         )
+        return switched
     }
 
     /**
@@ -633,7 +637,7 @@ class AgentOrchestrator(
         lastNarrationAt.set(0L)
 
         // SECURITY: Sanitize user input before processing
-        val sanitizedText = InputSanitizer.sanitize(text)
+        var sanitizedText = InputSanitizer.sanitize(text)
         if (sanitizedText.isBlank()) {
             addStep(AgentStatus.FAILED, "Empty Input", "No command detected after sanitization.")
             releaseProcessingLock()
@@ -642,10 +646,17 @@ class AgentOrchestrator(
 
         // Voice language changes are deterministic and must work even while Gemma is unloaded.
         // Only explicit requests match; ordinary mentions of Hindi/English continue normally.
-        VoiceLanguage.requestedFromCommand(sanitizedText)?.let { requested ->
-            applyVoiceLanguageCommand(requested, inputType)
-            releaseProcessingLock()
-            return
+        VoiceLanguage.extractRequest(sanitizedText)?.let { request ->
+            val switched = applyVoiceLanguageCommand(request.code, inputType)
+            val remaining = InputSanitizer.sanitize(request.remainingCommand)
+            if (!switched || remaining.isBlank()) {
+                releaseProcessingLock()
+                return
+            }
+            // Continue the same command through deterministic routing after the offline speech
+            // engines switch. This makes "start blind mode and reply in Hindi" one operation
+            // instead of discarding the requested action after changing the preference.
+            sanitizedText = remaining
         }
 
         // A microphone check or greeting is a local protocol response, not an agent task. Keep this

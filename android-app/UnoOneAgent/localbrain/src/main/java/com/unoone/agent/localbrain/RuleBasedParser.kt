@@ -297,7 +297,8 @@ object RuleBasedParser {
                 "enable blind mode", "enable blind view", "blind mode on", "blind view on",
                 "turn on blind mode", "turn on blind view", "switch to blind mode",
                 "switch to blind view", "blind mode chalu karo", "blind mode shuru karo",
-                "blind view chalu karo", "andha mode chalu karo", "netraheen mode chalu karo"
+                "blind mode start karo", "blind view chalu karo", "blind view shuru karo",
+                "blind view start karo", "andha mode chalu karo", "netraheen mode chalu karo"
             ) ||
             lowered.contains("detect objects") || lowered.contains("what's in front of me") ||
             lowered.contains("detect barrier") ||
@@ -473,6 +474,7 @@ object RuleBasedParser {
 
             hasAny(
                 "ब्लाइंड एड चालू करो", "ब्लाइंड मोड शुरू करो", "ब्लाइंड मोड चालू करो",
+                "ब्लाइंड व्यू चालू करो", "नेत्रहीन मोड चालू करो",
                 "दृष्टि सहायता चालू करो", "सामने क्या है", "वस्तुओं का पता लगाओ",
                 "ব্লাইন্ড এইড চালু করো", "সামনে কী আছে",
                 "பிளைண்ட் எய்டை தொடங்கு", "எனக்கு முன்னால் என்ன இருக்கிறது",

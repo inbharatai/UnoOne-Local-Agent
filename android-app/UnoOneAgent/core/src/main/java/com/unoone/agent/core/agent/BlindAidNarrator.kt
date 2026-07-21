@@ -54,7 +54,8 @@ object BlindAidNarrator {
 
     fun activationMessage(languageCode: String): String =
         if (languageCode.isHindi()) {
-            "ब्लाइंड एड शुरू है। कैमरा सामने की चीज़ें पहचान रहा है। सुरक्षा के लिए छड़ी या सहायक का भी उपयोग करें।"
+            "ब्लाइंड मोड चालू हो गया है। अब आप आवाज़ से UnoOne को नियंत्रित कर सकते हैं। " +
+                "कैमरा सामने की चीज़ें पहचान रहा है। सुरक्षा के लिए छड़ी या सहायक का भी उपयोग करें।"
         } else {
             "Blind Aid activated. Scanning for obstacles ahead. " +
                 "This is assistive guidance only, not a certified navigation device. " +
@@ -62,7 +63,7 @@ object BlindAidNarrator {
         }
 
     fun deactivationMessage(languageCode: String): String =
-        if (languageCode.isHindi()) "ब्लाइंड एड बंद है।" else "Blind Aid deactivated."
+        if (languageCode.isHindi()) "ब्लाइंड मोड बंद हो गया है।" else "Blind Aid deactivated."
 
     fun spokenLabel(label: String, languageCode: String): String {
         val normalized = label.trim().lowercase().replace('_', ' ')

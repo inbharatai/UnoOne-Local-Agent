@@ -36,6 +36,8 @@ class RuleBasedParserTest {
             "blind mode on",
             "blind view on",
             "blind mode chalu karo",
+            "blind mode start karo",
+            "blind view shuru karo",
             "activate blind aid",
             "detect objects",
             "what's in front of me",
@@ -47,6 +49,14 @@ class RuleBasedParserTest {
             val toolCall = RuleBasedParser.parse(trigger)
             assertNotNull("Failed to parse trigger: $trigger", toolCall)
             assertEquals("detect_objects", toolCall!!.tool)
+        }
+        listOf(
+            "ब्लाइंड मोड चालू करो",
+            "ब्लाइंड मोड शुरू करो",
+            "ब्लाइंड व्यू चालू करो",
+            "नेत्रहीन मोड चालू करो"
+        ).forEach { trigger ->
+            assertEquals(trigger, "detect_objects", RuleBasedParser.parse(trigger)?.tool)
         }
     }
 

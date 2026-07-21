@@ -88,15 +88,7 @@ class PhoneControl(private val context: Context) {
         location: String? = null
     ): Result<LaunchAttempt> {
         return try {
-            val intent = Intent(Intent.ACTION_INSERT).apply {
-                data = CalendarContract.Events.CONTENT_URI
-                putExtra(CalendarContract.Events.TITLE, InputSanitizer.sanitizeForAccessibility(title))
-                putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startTime)
-                putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endTime)
-                description?.let { putExtra(CalendarContract.Events.DESCRIPTION, InputSanitizer.sanitizeForAccessibility(it)) }
-                location?.let { putExtra(CalendarContract.Events.EVENT_LOCATION, InputSanitizer.sanitizeForAccessibility(it)) }
-                addFlags(RELIABLE_LAUNCH_FLAGS)
-            }
+            val intent = calendarInsertIntent(title, startTime, endTime, description, location)
             val preferredPackages = installedPackages(CALENDAR_PACKAGES)
             preferredPackages.firstOrNull()?.let(intent::setPackage)
             val resolvedPackage = intent.resolveActivity(context.packageManager)?.packageName
@@ -112,6 +104,31 @@ class PhoneControl(private val context: Context) {
             Logger.e("Failed to open calendar insert", e)
             Result.Error("Cannot open calendar", e)
         }
+    }
+
+    /**
+     * Current Google Calendar builds advertise ACTION_INSERT by MIME type. Setting only the event
+     * content URI no longer resolves on those builds. Keep the URI and standard event-directory
+     * MIME type together so the review screen opens without calendar-write permission.
+     */
+    internal fun calendarInsertIntent(
+        title: String,
+        startTime: Long,
+        endTime: Long,
+        description: String? = null,
+        location: String? = null
+    ): Intent = Intent(Intent.ACTION_INSERT).apply {
+        setDataAndType(CalendarContract.Events.CONTENT_URI, CALENDAR_EVENT_MIME_TYPE)
+        putExtra(CalendarContract.Events.TITLE, InputSanitizer.sanitizeForAccessibility(title))
+        putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startTime)
+        putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endTime)
+        description?.let {
+            putExtra(CalendarContract.Events.DESCRIPTION, InputSanitizer.sanitizeForAccessibility(it))
+        }
+        location?.let {
+            putExtra(CalendarContract.Events.EVENT_LOCATION, InputSanitizer.sanitizeForAccessibility(it))
+        }
+        addFlags(RELIABLE_LAUNCH_FLAGS)
     }
 
     /** Opens an installed calendar directly, falling back to the platform calendar category. */
@@ -305,6 +322,7 @@ class PhoneControl(private val context: Context) {
         packages.filter { context.packageManager.getLaunchIntentForPackage(it) != null }
 
     private companion object {
+        const val CALENDAR_EVENT_MIME_TYPE = "vnd.android.cursor.dir/event"
         val CALENDAR_PACKAGES = listOf("com.google.android.calendar", "com.xiaomi.calendar")
         const val RELIABLE_LAUNCH_FLAGS =
             Intent.FLAG_ACTIVITY_NEW_TASK or

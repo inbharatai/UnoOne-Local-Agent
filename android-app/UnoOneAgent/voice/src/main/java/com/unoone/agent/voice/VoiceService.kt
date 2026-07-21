@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.runtime.AgentRuntimeGate
@@ -44,6 +45,7 @@ class VoiceService : Service() {
     private val recorder = AudioRecorder()
     private val audioManager by lazy { getSystemService(AudioManager::class.java) }
     private var keywordSpotter: KeywordSpotterEngine? = null
+    private val wakeActivationGate = WakeActivationGate()
 
     var onWakeWordDetected: (() -> Unit)? = null
     var onCommandReceived: ((String) -> Unit)? = null
@@ -390,6 +392,14 @@ class VoiceService : Service() {
                         null
                     }
                     if (keyword != null) {
+                        if (!wakeActivationGate.tryActivate(SystemClock.elapsedRealtime())) {
+                            Logger.i("VoiceService: duplicate wake detection suppressed")
+                            passiveWakeAudio.clear()
+                            kwsAudio.clear()
+                            passiveSpeechActive = false
+                            passiveSilenceChunks = 0
+                            continue
+                        }
                         Logger.i("VoiceService: wake phrase detected by keyword spotter")
                         // Keep this speech burst. The wake word and command often arrive in one
                         // utterance; stopping here used to discard "start blind mode".
@@ -419,7 +429,10 @@ class VoiceService : Service() {
                         val transcript = transcribeAudio(wakePcm)
                         val rawTranscript = (transcript as? Result.Success)?.data
                         val match = rawTranscript?.let(WakePhraseMatcher::match)
-                        if (match != null) {
+                        if (
+                            match != null &&
+                            wakeActivationGate.tryActivate(SystemClock.elapsedRealtime())
+                        ) {
                             VoiceAgentRuntime.recordWake(rawTranscript, match)
                             Logger.i("VoiceService: wake phrase detected by offline speech fallback")
                             onWakeWordDetected?.invoke()
@@ -602,6 +615,7 @@ class VoiceService : Service() {
             recorder.stop()
         }
         keywordSpotter?.release()
+        wakeActivationGate.reset()
         VoiceAgentRuntime.transition(
             if (AgentRuntimeGate.isEnabled()) VoiceAgentState.PAUSED else VoiceAgentState.DISABLED,
             "voice service stopped"

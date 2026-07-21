@@ -8,6 +8,7 @@ import com.unoone.agent.core.util.Logger
 import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceRuntimeState
 import com.unoone.agent.voice.VoiceLanguage
+import com.unoone.agent.voice.WakePhraseMatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -50,6 +51,9 @@ class VoiceTestViewModel(private val voiceModule: VoiceModule) : ViewModel() {
     private val _confidence = MutableStateFlow(0f)
     val confidence: StateFlow<Float> = _confidence.asStateFlow()
 
+    private val _wakeMatch = MutableStateFlow("")
+    val wakeMatch: StateFlow<String> = _wakeMatch.asStateFlow()
+
     private val _isRecording = MutableStateFlow(false)
     val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
 
@@ -78,6 +82,7 @@ class VoiceTestViewModel(private val voiceModule: VoiceModule) : ViewModel() {
         viewModelScope.launch {
             _transcript.value = ""
             _confidence.value = 0f
+            _wakeMatch.value = ""
             _message.value = "Listening… speak now"
             val start = voiceModule.startRecording(context, viewModelScope)
             if (start is Result.Error) {
@@ -93,6 +98,14 @@ class VoiceTestViewModel(private val voiceModule: VoiceModule) : ViewModel() {
                 is Result.Success -> {
                     _transcript.value = result.data
                     _confidence.value = voiceModule.lastSttConfidence
+                    val wake = WakePhraseMatcher.match(result.data)
+                    _wakeMatch.value = if (wake == null) {
+                        "No conservative wake phrase matched this transcript."
+                    } else {
+                        "Wake matched: ${wake.matchedPhrase} " +
+                            "(${(wake.confidence * 100).toInt()}%); command: " +
+                            wake.command.ifBlank { "[next utterance]" }
+                    }
                     _message.value = if (result.data.isBlank()) {
                         "Heard nothing. Try again in a quieter spot."
                     } else {

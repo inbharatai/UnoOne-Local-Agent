@@ -2,7 +2,7 @@
 
 UnoOne is an offline-first Android AI assistant for blind and sighted users. It combines on-device planning, hands-free speech, phone controls, Blind Aid, document tools, reusable Skills, and a Page Agent browser in one app.
 
-> **Current status — July 20, 2026:** Android lint, 519 JVM tests, debug and release assembly, Android-test compilation, repository invariants, and all Page Agent unit/browser tests pass. The prototype has also been exercised on a Xiaomi 14 running Android 15. The separate instrumentation APK compiled successfully but its latest installation was rejected by the phone's OEM security policy, so the July 17 connected-device suite remains historical evidence rather than a claim about the current source revision. UnoOne remains an alpha: second-device qualification, controlled speech and vision accuracy benchmarks, signed-release testing, and production distribution are not complete.
+> **Current status — July 21, 2026:** Android lint, 549 JVM tests, debug and release assembly, Android-test compilation, repository invariants, and all Page Agent unit/browser tests pass. The current debug APK was installed and exercised on a Xiaomi 14 running Android 15; the exact evidence and remaining limits are listed below. The separate instrumentation APK compiled successfully but installation remains blocked by the phone's OEM security policy. UnoOne remains an alpha: second-device qualification, controlled speech and vision accuracy benchmarks, signed-release testing, and production distribution are not complete.
 
 ## What works today
 
@@ -15,7 +15,7 @@ UnoOne is an offline-first Android AI assistant for blind and sighted users. It 
 - Offline Sherpa-ONNX speech recognition and speech output, with explicit model-health checks. English uses the streaming transducer; Hindi uses the Omnilingual recognizer and its own offline voice.
 - Selectable English and Hindi speech profiles. The selection controls STT routing, deterministic tool-status replies, wake acknowledgement, and TTS.
 - One-tap hands-free sessions that listen, run the command, speak the result, and re-arm. The foreground session and background wake service coordinate ownership of the microphone.
-- Background activation uses a low-latency offline keyword spotter plus an independent bounded offline-STT fallback for one-breath English and Hindi commands. Wake acknowledgement finishes before command capture begins, and foreground recording and TTS exclusively own the microphone to prevent self-transcription.
+- Background activation uses a low-latency offline keyword spotter plus an independent bounded offline-STT fallback for one-breath English and Hindi commands. The short **“Uno”** keyword and longer activation variants are supported, and a monotonic cooldown prevents the two detectors from firing twice for one speech burst. Wake acknowledgement finishes before command capture begins, and foreground recording and TTS exclusively own the microphone to prevent self-transcription.
 - Phone actions for opening apps, Calendar, Chrome, WhatsApp, the dialer, URLs, and system screens.
 - Calendar events, WhatsApp messages, and emails are prepared as reviewable drafts. UnoOne does not press the external app's final Send or Save control.
 - Local notes, memory, Skills, activity logs, browser audit records, and preferences.
@@ -27,7 +27,7 @@ UnoOne is an offline-first Android AI assistant for blind and sighted users. It 
 
 For eyes-free phone control, grant Microphone and Camera when requested, enable **UnoOne → Accessibility**, keep **Disable UnoOne** off, and let the installed offline speech models finish their health check. Accessibility is required for verified cross-app screen reading and UI actions. Updating the APK can cause some Xiaomi/HyperOS versions to switch the service off; enable it again after an update if the Agent activity panel reports that verification is unavailable.
 
-Wake UnoOne with **“Uno One,” “Hey Uno,” “Listen,”** or **“Listen to me.”** A wake phrase and command can be spoken in one breath, for example **“Uno One, start blind mode.”** Hindi fallback activation also accepts **“यूनो,” “सुनो,”** and **“मेरी बात सुनो.”** Useful deterministic commands include:
+Wake UnoOne with **“Uno,” “Uno One,” “Hey Uno,” “Listen,”** or **“Listen to me.”** A wake phrase and command can be spoken in one breath, for example **“Uno, start blind mode.”** Hindi fallback activation also accepts **“यूनो,” “सुनो,”** and **“मेरी बात सुनो.”** Useful deterministic commands include:
 
 - “Start blind mode” / “ब्लाइंड एड चालू करो”
 - “Stop blind mode” / “ब्लाइंड एड बंद करो”
@@ -38,6 +38,8 @@ Wake UnoOne with **“Uno One,” “Hey Uno,” “Listen,”** or **“Listen 
 - “Draft email to name@example.com about update with body the report is ready”
 - “Open UniAssist and fill the profile form”
 - “Speak in Hindi” / “अब हिंदी में बोलो” / “Speak in English”
+
+Language and action may be combined in one command, for example **“Speak in Hindi and start blind mode”** or **“Blind mode start karo aur Hindi mein jawab do.”** UnoOne switches both offline speech engines first and then executes the remaining action instead of discarding it.
 
 WhatsApp, email, and Calendar commands open reviewable drafts. UnoOne does not press the external app’s final Send or Save button. Say **“stop listening”** to end a foreground hands-free session. The master disable control cannot be reversed by voice; re-enabling always requires an explicit on-screen action.
 
@@ -227,6 +229,10 @@ The phone agent and Page Agent browser use an exclusive model lease. UnoOne unlo
 
 Only English and Hindi are exposed in the current app. Deterministic engine and command-routing tests do not replace a controlled acoustic benchmark; broader accents, short ambiguous utterances, background noise, microphone distance, and a second device still require qualification. See [Speech Model Qualification](docs/SPEECH_MODEL_QUALIFICATION.md).
 
+Debug builds expose **Settings → Voice Test → Developer Voice Diagnostics**. It shows the runtime state, microphone/Accessibility/calendar readiness, selected language, memory-only transcript and normalization, wake match/confidence, extracted command, parsed intent/confidence, action verification, and recovery state. It does not exist in release builds and does not persist transcript content.
+
+Setup requests only Microphone (and Notifications on Android 13+) for the explicitly enabled background voice service. Camera and calendar-read permission are requested when their tools are first used. UnoOne does not request Contacts or calendar-write permission because this build neither resolves spoken contact names nor writes calendar-provider rows directly.
+
 ## Build and test
 
 ### Page Agent runtime
@@ -292,12 +298,12 @@ python scripts/ci/check_repo_invariants.py
 
 ## Latest verified results
 
-Automated gates rerun on July 20, 2026:
+Automated gates rerun on July 21, 2026:
 
 | Gate | Result |
 |---|---|
 | Android lint | Pass; no new issues against the existing baseline |
-| Android JVM unit tests | Pass; 519 tests, 0 failures, 0 errors |
+| Android JVM unit tests | Pass; 549 tests, 0 failures, 0 errors |
 | Debug, release, and Android-test assembly/compilation | Pass |
 | Repository invariant check | Pass |
 | Page Agent TypeScript and unit tests | Pass; 8 unit tests |
@@ -317,6 +323,8 @@ Physical evidence on the Xiaomi 14 (`7f8cafef`), Android 15:
 | Hindi speech and Blind Aid | Hindi STT/TTS engines initialized; person/mobile-phone and other COCO labels were detected and spoken through native Hindi narration, with no stale narration after stop |
 | Master disable | Blocked commands and speech, survived process restart, and did not replay the old request after re-enable |
 | Crash/ANR/OOM scan | No UnoOne crash, ANR, OOM, missing crypto class, or UnoOne low-memory kill in the final inspected run |
+
+Current-revision checks on July 21 additionally verified a combined Hindi-language + Blind Aid command, real-time detection of `person`, `cell phone`, `bottle`, `book`, and other supported COCO classes, Hindi offline TTS generation, clean camera shutdown with no later detection callbacks, Accessibility-based Read Screen with spoken output, foreground opening of WhatsApp Business/Gmail/Calendar, review-only WhatsApp and Gmail drafts, a Calendar review form containing the exact title/date/5–6 PM time without pressing Save, Secure Browser handoff and local Page Agent model loading, and master-disable persistence across force-stop/restart. Installing the final APK reset Accessibility on HyperOS; it was explicitly re-enabled before the final cross-app verification.
 
 Detailed evidence and honest boundaries are recorded in [Connected-device validation](docs/DEVICE_VALIDATION_2026-07-17.md) and [Device verification](DEVICE_VERIFICATION.md).
 
