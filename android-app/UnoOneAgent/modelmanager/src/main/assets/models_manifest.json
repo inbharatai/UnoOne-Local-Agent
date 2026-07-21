@@ -1,20 +1,20 @@
 {
-  "manifestVersion": 2,
+  "manifestVersion": 3,
   "models": [
     {
-      "id": "gemma-4-e2b",
-      "folder": "brain/gemma-4-e2b",
+      "id": "gemma-4-e4b",
+      "folder": "brain/gemma-4-e4b",
       "type": "llm",
-      "version": "gemma-4-E2B-it-litert-lm-main-6e5c4f1",
-      "minRamMb": 6144,
+      "version": "gemma-4-E4B-it-litert-lm-main-28299f3",
+      "minRamMb": 8192,
       "backend": "any",
       "defaultLanguage": "en",
       "files": [
         {
-          "name": "gemma-4-E2B-it.litertlm",
-          "url": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-          "sha256": "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
-          "sizeBytes": 2588147712,
+          "name": "gemma-4-E4B-it.litertlm",
+          "url": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
+          "sha256": "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
+          "sizeBytes": 3659530240,
           "archive": false
         }
       ]
@@ -111,7 +111,7 @@
       "defaultLanguage": "ta",
       "files": [
         {"name":"model.onnx","url":"https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tam/model.onnx","sha256":"c86cf0a0657d57577d937b806d7b63d638cff522b5687cb650dde24bc71c5c88","sizeBytes":114032312,"archive":false},
-        {"name":"tokens.txt","url":"https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tam/tokens.txt","sha256":"0b3f692319bb5fae8658e2f84bf252bca92450d0207bbba7273caa1a182d81b8","sizeBytes":375,"archive":false}
+        {"name":"tokens.txt","url":"https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tam/tokens.txt","sha256":"0b3f692319bb5fae8658e2f84bf252bca92450d0207bbba7273caa1a182d81b8a","sizeBytes":375,"archive":false}
       ]
     },
     {
@@ -124,7 +124,7 @@
       "defaultLanguage": "te",
       "files": [
         {"name":"model.onnx","url":"https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tel/model.onnx","sha256":"e82525ab1e662ba96ef81346ff1943c5bb731853c1f96d02fbff2e7a0284824c","sizeBytes":114037688,"archive":false},
-        {"name":"tokens.txt","url":"https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tel/tokens.txt","sha256":"528152cb4121272e6e71f7a1d91c8d4922b92fae414ae599db608cb92a738bb7","sizeBytes":435,"archive":false}
+        {"name":"tokens.txt","url":"https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tel/tokens.txt","sha256":"528152bc4121272e6e71f7a1d91c8d4922b92fae414ae599db608cb92a738bb7","sizeBytes":435,"archive":false}
       ]
     },
     {
