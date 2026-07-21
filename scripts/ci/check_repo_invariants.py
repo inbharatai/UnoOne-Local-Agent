@@ -47,10 +47,13 @@ PROHIBITED_PATTERNS = {
     r'"manifestSignature"\s*:': "blank/dead bundled-manifest signature field",
 }
 
-GEMMA_ID = "gemma-4-e2b"
-GEMMA_FILE = "gemma-4-E2B-it.litertlm"
-GEMMA_SIZE = 2_588_147_712
-GEMMA_SHA256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c"
+GEMMA_ID = "gemma-4-e4b"
+GEMMA_FILE = "gemma-4-E4B-it.litertlm"
+GEMMA_SIZE = 3_659_530_240
+GEMMA_SHA256 = "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0"
+LEGACY_GEMMA_ID = "gemma-4-e2b"
+LEGACY_GEMMA_FILE = "gemma-4-E2B-it.litertlm"
+LEGACY_GEMMA_SHA256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c"
 
 
 def iter_active_files() -> Iterable[Path]:
@@ -109,8 +112,8 @@ def validate_model_manifest(errors: list[str]) -> set[str]:
     if not isinstance(value, dict) or set(value) != {"manifestVersion", "models"}:
         errors.append(f"{relative}: expected only manifestVersion and models top-level fields")
         return set()
-    if value.get("manifestVersion") != 2:
-        errors.append(f"{relative}: manifestVersion must be 2")
+    if value.get("manifestVersion") != 3:
+        errors.append(f"{relative}: manifestVersion must be 3 for the E4B-only catalogue")
     models = value.get("models")
     if not isinstance(models, list) or not models:
         errors.append(f"{relative}: models must be a non-empty array")
@@ -118,6 +121,7 @@ def validate_model_manifest(errors: list[str]) -> set[str]:
 
     ids: set[str] = set()
     folders: set[str] = set()
+    llm_models: list[dict[str, object]] = []
     gemma: dict[str, object] | None = None
     for model in models:
         if not isinstance(model, dict):
@@ -162,9 +166,15 @@ def validate_model_manifest(errors: list[str]) -> set[str]:
                 errors.append(f"{relative}: {model_id}/{name} has invalid SHA-256")
             if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
                 errors.append(f"{relative}: {model_id}/{name} has invalid sizeBytes")
+        if model.get("type") == "llm":
+            llm_models.append(model)
         if model_id == GEMMA_ID:
             gemma = model
 
+    if LEGACY_GEMMA_ID in ids:
+        errors.append(f"{relative}: legacy {LEGACY_GEMMA_ID} must not remain installable")
+    if len(llm_models) != 1:
+        errors.append(f"{relative}: expected exactly one installable LLM, found {len(llm_models)}")
     if gemma is None:
         errors.append(f"{relative}: missing {GEMMA_ID}")
     else:
@@ -179,6 +189,17 @@ def validate_model_manifest(errors: list[str]) -> set[str]:
                 errors.append(f"{relative}: Gemma size mismatch")
             if artifact.get("sha256") != GEMMA_SHA256:
                 errors.append(f"{relative}: Gemma SHA-256 mismatch")
+            if "-web" in str(artifact.get("name")) or "-web" in str(artifact.get("url")):
+                errors.append(f"{relative}: web-specific E4B artifact must not be used by Android")
+
+    # The old production artifact must not accidentally survive in the active install catalogue.
+    manifest_text = json.dumps(value, sort_keys=True)
+    for legacy_value, label in (
+        (LEGACY_GEMMA_FILE, "legacy E2B filename"),
+        (LEGACY_GEMMA_SHA256, "legacy E2B SHA-256"),
+    ):
+        if legacy_value in manifest_text:
+            errors.append(f"{relative}: {label} remains in active catalogue")
     return ids
 
 
