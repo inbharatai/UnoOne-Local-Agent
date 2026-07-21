@@ -17,8 +17,8 @@ describe('distribution policy', () => {
 
   it('permits only explicit release prefixes', () => {
     expect(normalizeArtifactKey('apk/stable/unoone.apk')).toBe('apk/stable/unoone.apk')
-    expect(normalizeArtifactKey('brain/gemma-4-e2b/model.litertlm')).toBe(
-      'brain/gemma-4-e2b/model.litertlm'
+    expect(normalizeArtifactKey('brain/gemma-4-e4b/model.litertlm')).toBe(
+      'brain/gemma-4-e4b/model.litertlm'
     )
     expect(normalizeArtifactKey('speech/languages/as-IN/model.onnx')).toBe(
       'speech/languages/as-IN/model.onnx'
