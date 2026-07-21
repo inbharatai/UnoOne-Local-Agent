@@ -1,13 +1,13 @@
 package com.unoone.agent.core.model
 
 /**
- * UnoOne V2 has one on-device planning brain: Gemma 4 E2B.
+ * UnoOne V2 has one on-device planning brain: Gemma 4 E4B.
  *
- * Keeping an enum and registry preserves a typed contract across modules without retaining the old
- * dual-profile behaviour. Model selection is no longer a product feature; installation, health,
- * backend and device qualification remain explicit states of this single brain.
+ * The product intentionally exposes a single accuracy-first model profile. Deterministic Android
+ * handlers still execute common phone actions without model inference; E4B is reserved for
+ * ambiguity, conversation and bounded multi-step planning.
  */
-enum class BrainModelId { GEMMA_4_E2B }
+enum class BrainModelId { GEMMA_4_E4B }
 
 /** Model family used by prompt construction. */
 enum class ModelFamily { GEMMA_4 }
@@ -42,40 +42,51 @@ data class BrainModelSpec(
     val description: String
 )
 
-/** Single source of truth for the Gemma 4 E2B runtime contract. */
+/** Single source of truth for the Gemma 4 E4B runtime contract. */
 object BrainModelRegistry {
 
-    val GEMMA_4_E2B: BrainModelSpec = BrainModelSpec(
-        id = BrainModelId.GEMMA_4_E2B,
-        manifestId = "gemma-4-e2b",
-        displayName = "Gemma 4 E2B",
+    val GEMMA_4_E4B: BrainModelSpec = BrainModelSpec(
+        id = BrainModelId.GEMMA_4_E4B,
+        manifestId = "gemma-4-e4b",
+        displayName = "Gemma 4 E4B",
         modelFamily = ModelFamily.GEMMA_4,
-        modelFolder = "brain/gemma-4-e2b",
-        fileName = "gemma-4-E2B-it.litertlm",
+        modelFolder = "brain/gemma-4-e4b",
+        fileName = "gemma-4-E4B-it.litertlm",
         fileExtension = ".litertlm",
         preferredBackend = BackendPreference.GPU_FIRST,
-        minimumRamMb = 6_144,
-        recommendedRamMb = 8_192,
+        minimumRamMb = 8_192,
+        recommendedRamMb = 12_288,
         maximumContextTokens = 32_768,
-        defaultContextTokens = 4_096,
+        // Accuracy does not require wasting the full theoretical context window on a phone. Start
+        // with the same bounded context used by published mobile measurements; device qualification
+        // may raise this only after memory, latency and thermal evidence is recorded.
+        defaultContextTokens = 2_048,
         supportsNativeSystemRole = true,
         isLegacy = false,
         isDeviceVerified = false,
-        experimentalLabel = "Device qualification required",
-        description = "UnoOne's sole local planning brain. The generic Android LiteRT-LM artifact must pass integrity, tool-call, memory, thermal and real-device tests before production release."
+        experimentalLabel = "Xiaomi 14 qualification required",
+        description = "UnoOne's sole accuracy-first local planning brain. Common phone actions remain deterministic; Gemma 4 E4B handles conversation, ambiguity and bounded agent planning through LiteRT-LM with schema validation, safety checks and execution verification."
     )
 
-    val all: List<BrainModelSpec> = listOf(GEMMA_4_E2B)
-    val defaultProfile: BrainModelSpec = GEMMA_4_E2B
+    val all: List<BrainModelSpec> = listOf(GEMMA_4_E4B)
+    val defaultProfile: BrainModelSpec = GEMMA_4_E4B
 
-    fun byId(id: BrainModelId): BrainModelSpec = GEMMA_4_E2B
+    fun byId(id: BrainModelId): BrainModelSpec = GEMMA_4_E4B
 
     fun byManifestId(manifestId: String): BrainModelSpec? =
-        GEMMA_4_E2B.takeIf { manifestId == it.manifestId }
+        GEMMA_4_E4B.takeIf { manifestId == it.manifestId }
 
     fun byFolder(folder: String): BrainModelSpec? =
-        GEMMA_4_E2B.takeIf { folder == it.modelFolder }
+        GEMMA_4_E4B.takeIf { folder == it.modelFolder }
 
-    /** Older persisted values are intentionally normalized to the sole Gemma 4 E2B brain. */
-    fun resolveOrDefault(manifestId: String?): BrainModelSpec = GEMMA_4_E2B
+    /** Older persisted model identifiers are migrated to the sole E4B brain. */
+    fun resolveOrDefault(manifestId: String?): BrainModelSpec = GEMMA_4_E4B
+
+    /**
+     * Temporary source-compatibility shim for code paths that are updated independently.
+     * It resolves to E4B and can never select or load an E2B artifact.
+     */
+    @Deprecated("UnoOne is E4B-only; use GEMMA_4_E4B", ReplaceWith("GEMMA_4_E4B"))
+    val GEMMA_4_E2B: BrainModelSpec
+        get() = GEMMA_4_E4B
 }
