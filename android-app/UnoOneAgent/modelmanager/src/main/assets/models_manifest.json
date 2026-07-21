@@ -111,7 +111,7 @@
       "defaultLanguage": "ta",
       "files": [
         {"name":"model.onnx","url":"https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tam/model.onnx","sha256":"c86cf0a0657d57577d937b806d7b63d638cff522b5687cb650dde24bc71c5c88","sizeBytes":114032312,"archive":false},
-        {"name":"tokens.txt","url":"https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tam/tokens.txt","sha256":"0b3f692319bb5fae8658e2f84bf252bca92450d0207bbba7273caa1a182d81b8a","sizeBytes":375,"archive":false}
+        {"name":"tokens.txt","url":"https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tam/tokens.txt","sha256":"0b3f692319bb5fae8658e2f84bf252bca92450d0207bbba7273caa1a182d81b8","sizeBytes":375,"archive":false}
       ]
     },
     {
