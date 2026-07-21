@@ -13,13 +13,13 @@ import {
   verifyCatalogSignature
 } from '../src/catalog'
 
-const NOW_MS = Date.parse('2026-07-12T12:00:00Z')
+const NOW_MS = Date.parse('2026-07-21T12:00:00Z')
 
 function payload(overrides: Partial<CatalogPayload> = {}): CatalogPayload {
   return {
     catalogVersion: 1,
     channel: 'stable',
-    generatedAt: '2026-07-12T00:00:00Z',
+    generatedAt: '2026-07-21T00:00:00Z',
     minimumInstallerVersion: 1,
     apps: [
       {
@@ -27,7 +27,7 @@ function payload(overrides: Partial<CatalogPayload> = {}): CatalogPayload {
         platform: 'android',
         versionName: '0.4.0-alpha-v2',
         versionCode: 4,
-        releaseDate: '2026-07-12',
+        releaseDate: '2026-07-21',
         minimumAndroidApi: 28,
         artifact: {
           path: 'apk/stable/unoone-v0.4.0-alpha-v2.apk',
@@ -39,16 +39,16 @@ function payload(overrides: Partial<CatalogPayload> = {}): CatalogPayload {
     ],
     models: [
       {
-        id: 'gemma-4-e2b',
-        version: '6e5c4f1',
+        id: 'gemma-4-e4b',
+        version: '28299f3',
         runtime: 'litertlm',
         qualificationStatus: 'integrity-verified',
-        minimumRamMb: 6144,
-        recommendedRamMb: 8192,
+        minimumRamMb: 8192,
+        recommendedRamMb: 12288,
         license: 'Apache-2.0',
         artifact: {
-          path: 'brain/gemma-4-e2b/6e5c4f1/gemma-4-E2B-it.litertlm',
-          sizeBytes: 2588147712,
+          path: 'brain/gemma-4-e4b/28299f3/gemma-4-E4B-it.litertlm',
+          sizeBytes: 3659530240,
           sha256: 'b'.repeat(64),
           mimeType: 'application/octet-stream'
         }
@@ -62,7 +62,7 @@ function payload(overrides: Partial<CatalogPayload> = {}): CatalogPayload {
         nativeName: 'English',
         version: '1.0.0-baseline',
         status: 'baseline',
-        requiredModelIds: ['gemma-4-e2b'],
+        requiredModelIds: ['gemma-4-e4b'],
         downloadable: true
       }
     ],
@@ -153,7 +153,7 @@ describe('signed catalogue', () => {
     ).toThrow(/stale/)
 
     expect(() =>
-      assertCatalogAcceptable(payload({ generatedAt: '2026-07-13T00:00:00Z' }), {
+      assertCatalogAcceptable(payload({ generatedAt: '2026-07-22T00:00:00Z' }), {
         channel: 'stable',
         installerVersion: 1,
         nowMs: NOW_MS
@@ -167,20 +167,20 @@ describe('signed catalogue', () => {
         nowMs: NOW_MS,
         previousState: {
           version: 2,
-          generatedAt: '2026-07-11T00:00:00Z',
+          generatedAt: '2026-07-20T00:00:00Z',
           keyId: 'test-key'
         }
       })
     ).toThrow(/rollback/)
 
     expect(() =>
-      assertCatalogAcceptable(payload({ generatedAt: '2026-07-12T01:00:00Z' }), {
+      assertCatalogAcceptable(payload({ generatedAt: '2026-07-21T01:00:00Z' }), {
         channel: 'stable',
         installerVersion: 1,
         nowMs: NOW_MS,
         previousState: {
           version: 1,
-          generatedAt: '2026-07-12T00:00:00Z',
+          generatedAt: '2026-07-21T00:00:00Z',
           keyId: 'test-key'
         }
       })
@@ -191,7 +191,7 @@ describe('signed catalogue', () => {
     expect(artifactUrl('https://models.example/', 'apk/stable/unoone-v0.4.0.apk')).toBe(
       'https://models.example/v1/artifacts/apk/stable/unoone-v0.4.0.apk'
     )
-    expect(formatBytes(2588147712)).toBe('2.4 GB')
+    expect(formatBytes(3659530240)).toBe('3.4 GB')
   })
 
   it('rejects unsafe artifact path traversal', () => {
