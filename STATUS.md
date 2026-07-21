@@ -1,137 +1,136 @@
 # UnoOne V2 Status
 
-**Updated:** 2026-07-13  
-**Branch:** `main`  
-**Pull request:** PR #1 merged  
-**Release state:** **Alpha / not production-ready**
+**Updated:** 2026-07-21  
+**Development branch:** `feat/e4b-agentic-runtime`  
+**Draft pull request:** #2  
+**Target branch:** `main`  
+**Release state:** **Alpha / E4B physical-device qualification pending**
 
-The full mandatory completion plan is maintained in [README.md](README.md). This file records the current evidence state and must not contain unverified claims.
-
-## Status legend
-
-- **Implemented** — code exists on `main`.
-- **Automated gate** — CI/test exists; only the latest green head counts.
-- **Device pending** — requires physical Android evidence.
-- **Blocked** — release must not proceed.
+The repository [README](README.md) is the product-level source of truth. This file records only the current evidence and release gates. Historical E2B validation remains historical and must not be represented as E4B evidence.
 
 ## Current architecture
 
-| Area | Current state | Evidence still required |
+| Area | Current branch state | Evidence still required |
 |---|---|---|
-| Android project | Implemented, 15 Gradle modules | automated lint, JVM tests and debug APK build are green; physical-device matrix pending |
-| Planning brain | Gemma 4 E2B only | Xiaomi 14 + secondary-device load/performance tests |
-| Model artifact | exact filename, size and SHA-256 recorded | self-hosted production mirror and device qualification |
-| Phone tools | preserved in V2 | regression matrix on devices |
-| Offline speech | baseline English + six Indic packs | per-language accuracy, latency and thermal evidence |
-| Assamese | planned, non-downloadable | exact STT/TTS artifacts, licence and benchmarks |
-| Blind Aid | preserved independently of Gemma | camera/object/haptic/spoken device tests |
-| Language packs | dependency-aware manager and UI implemented | clean-device install/repair/uninstall tests |
-| Secure Browser | Alibaba PageAgent + local Gemma bridge implemented | controlled workflows + approved-domain device tests |
-| Browser safety | native authorization implemented | bypass/prompt-injection/device testing |
-| Installer PWA | signed-catalogue flow implemented | automated Distribution CI is green; production deployment pending |
-| Distribution API | read-only Worker/R2 design implemented | real buckets, bindings, signed catalogues and download tests |
-| Production signing | not configured | protected APK key + Ed25519 catalogue release key |
+| Android project | Native Kotlin/Compose, API 28+, 15 modules | latest Android CI and Xiaomi 14 installation |
+| Planning brain | Gemma 4 E4B is the sole installable model | physical load, latency, memory, thermal and tool-call qualification |
+| Model integrity | exact Android filename, byte size and SHA-256 pinned | verify downloaded phone bytes and successful LiteRT-LM initialization |
+| Command routing | deterministic handlers before model inference | physical English/Hindi voice matrix and latency measurements |
+| Tool execution | canonical schema, permissions, safety, confirmations and verification | real external-app and accessibility regression matrix |
+| Offline speech | English and Hindi exposed; shared Indic components retained | controlled accent, names, numbers, distance and noise benchmarks |
+| Assamese | priority planned language | exact STT/TTS artifacts, licence, integrity and device qualification |
+| Blind Aid | independent CameraX/object-detection flow | E4B unload/reload, camera stability and sustained-use test |
+| Secure Browser | local Page Agent with exclusive Gemma lease | E4B browser-plan accuracy and one-engine-at-a-time proof |
+| Distribution | signed-catalogue/API/PWA workflows implemented | production storage, protected signing keys and release artefacts |
 
-## Gemma 4 E2B
+## Gemma 4 E4B contract
 
 | Field | Value |
 |---|---|
-| Manifest id | `gemma-4-e2b` |
-| File | `gemma-4-E2B-it.litertlm` |
-| Size | `2,588,147,712` bytes |
-| SHA-256 | `181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c` |
-| Context limit | 32,768 tokens |
-| Minimum product RAM gate | 6 GB |
-| Recommended product RAM gate | 8 GB |
-| Device-qualified | **No** |
-| Production-approved | **No** |
+| Manifest id | `gemma-4-e4b` |
+| Model folder | `brain/gemma-4-e4b` |
+| Android file | `gemma-4-E4B-it.litertlm` |
+| Exact size | `3,659,530,240` bytes |
+| SHA-256 | `0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0` |
+| Runtime | LiteRT-LM `0.13.1` |
+| Backend order | GPU, then CPU fallback |
+| Default context | 2,048 tokens |
+| Maximum supported context | 32,768 tokens |
+| Minimum product RAM gate | 8,192 MB |
+| Recommended product RAM gate | 12,288 MB |
+| Xiaomi 14 qualified | **No — pending** |
+| Production approved | **No** |
 
-The phone agent and Secure Browser use an exclusive model lease. They must never hold separate Gemma engines simultaneously.
+The Android runtime rejects a wrong filename, wrong byte size, wrong checksum, `.part` file, old E2B file, web-specific artifact, or arbitrary larger `.litertlm` file.
 
-## Secure Browser policy
+## E2B migration policy
 
-| Operation | Policy |
-|---|---|
-| Read/wait/scroll | allow |
-| Ordinary input | allow after native classification |
-| Sensitive/unknown action | confirm |
-| File transfer | confirm + Android takeover |
-| Final submission | confirm |
-| Password/OTP/CAPTCHA/legal acceptance | manual takeover |
-| Payment/banking/card/UPI PIN | block |
-| Arbitrary JavaScript execution | unavailable |
+E2B is not an active selectable or downloadable production brain on this branch. Existing installed E2B bytes are preserved temporarily until all of the following succeed on the phone:
 
-The bridge is exposed only to approved exact HTTPS origins. Browser audits store bounded action summaries and decisions, not typed values.
+1. E4B download completes;
+2. exact size and SHA-256 verification passes;
+3. LiteRT-LM engine initialization succeeds;
+4. the on-device tool-calling self-test passes;
+5. the sustained Xiaomi 14 validation shows no crash, ANR, OOM or low-memory kill.
 
-## Language packs
+Only then may the guarded `ModelManager.removeLegacyE2BIfE4BVerified()` migration remove the old folder and metadata.
 
-| Language | State |
-|---|---|
-| English | required baseline |
-| Hindi | baseline |
-| Bengali | baseline |
-| Tamil | baseline |
-| Telugu | baseline |
-| Kannada | baseline |
-| Malayalam | baseline |
-| Assamese | planned, priority, disabled |
-| Marathi | planned, disabled |
-| Gujarati | planned, disabled |
-| Punjabi | planned, disabled |
-| Odia | planned, disabled |
-| Urdu | planned, disabled |
+## Agent accuracy policy
 
-A language is not promoted from `planned` or `baseline` based only on model presence. Exact integrity, licence, Android load and language benchmark evidence are required.
+- Common commands bypass Gemma when a deterministic route exists.
+- Gemma proposes one canonical tool per turn.
+- Unknown tools and malformed required arguments are rejected before execution.
+- Missing recipients, addresses, phone numbers, dates or times must trigger clarification rather than invention.
+- WhatsApp and email actions create reviewable drafts; they do not silently press Send.
+- A success response requires native verification evidence.
+- Multi-step work is bounded and re-enters safety and verification for every step.
+- The phone agent and Secure Browser must never hold two E4B engines simultaneously.
 
 ## Automated gates
 
-### Android CI
-
-- PageAgent dependency installation
-- PageAgent TypeScript typecheck
-- PageAgent unit tests
-- PageAgent Android bundle generation
-- Playwright form-fill and payment-block tests
-- Android lint
-- Android JVM unit tests
-- Debug APK assembly
-- diagnostic artifact upload on failure
-
 ### Distribution CI
 
-- distribution API typecheck and tests
-- Cloudflare Worker dry-run bundle
-- installer PWA typecheck and tests
-- installer PWA build
-- catalogue signing round-trip
-- tampered-catalogue rejection
+The latest completed Distribution CI for the E4B branch is green. It covers:
 
-Only the latest commit status is authoritative. An older green run does not make a newer head green.
+- repository invariants;
+- distribution API type checking and policy tests;
+- Cloudflare Worker bundling;
+- installer PWA type checking, catalogue tests and build;
+- signing round trip and tamper rejection.
+
+### Android CI
+
+The current branch must pass:
+
+- repository invariants;
+- Page Agent type checking, unit tests, bundle generation and Playwright tests;
+- Android lint;
+- Android JVM tests;
+- debug APK assembly.
+
+Only the latest branch head is authoritative. A green run for an older commit does not qualify a newer commit.
+
+## Xiaomi 14 gate
+
+Follow [docs/E4B_XIAOMI14_HANDOFF.md](docs/E4B_XIAOMI14_HANDOFF.md). Record:
+
+- exact phone/HyperOS build and physical memory;
+- E4B download and checksum duration;
+- actual LiteRT-LM backend;
+- model load and first-token latency;
+- process memory, heat and battery behaviour;
+- deterministic English/Hindi command results;
+- E4B tool and argument accuracy;
+- Blind Aid unload/reload behaviour;
+- Secure Browser exclusive lease behaviour;
+- a sustained 50-task run;
+- crash, ANR, native-signal and low-memory scan.
 
 ## Release blockers
 
-- [x] Latest Android CI is green.
-- [x] Latest Distribution CI is green.
-- [ ] Gemma loads and plans correctly on Xiaomi 14.
-- [ ] Secondary Android device passes the same Gemma and browser gates.
-- [ ] Offline speech baseline matrix is recorded.
-- [ ] Blind Aid regression matrix is recorded.
-- [ ] Controlled PageAgent workflows and takeover paths pass on device.
-- [ ] Production model mirror is available from UnoOne-controlled storage.
-- [ ] Real production catalogue public key is embedded in the installer build.
-- [ ] Stable and beta catalogues are signed with the protected release key.
-- [ ] Release APK is signed and locally checksum-verified.
-- [ ] Security, privacy, dependency, licence and SBOM reviews are complete.
-- [ ] Rollback instructions and archived pre-V2 branch are confirmed.
+- [ ] Latest Android CI is green on the final branch head.
+- [x] Latest Distribution CI is green on the current E4B branch head at the time recorded.
+- [ ] Exact E4B bytes load successfully on Xiaomi 14.
+- [ ] Actual GPU or CPU backend is recorded from logs.
+- [ ] E4B phone-tool and Page Agent evaluations meet the release threshold.
+- [ ] English and Hindi controlled speech matrix is recorded.
+- [ ] Blind Aid and Secure Browser transition tests pass without duplicate engines or services.
+- [ ] Sustained memory, thermal, battery and 50-task test passes.
+- [ ] Legacy E2B cleanup is verified after E4B success.
+- [ ] Secondary Android device passes the same core gates.
+- [ ] Model and speech licences/notices are reviewed for redistribution.
+- [ ] Production model mirror, signed catalogues and protected release keys are configured.
+- [ ] Signed release APK, SBOM, security review and rollback process are complete.
 
 ## Do not claim yet
 
-Until the blockers above are completed, do not claim that UnoOne V2 is:
+Until the blockers above are complete, do not claim that UnoOne is:
 
 - production-ready;
-- fully device-verified;
+- physically qualified with E4B;
+- running on the Snapdragon NPU;
+- universally accurate at autonomous tool use;
 - accurate in Assamese or any other unbenchmarked language;
-- thermally stable under sustained Gemma/PageAgent use;
-- safe for autonomous payments, credentials, OTP, CAPTCHA or legal acceptance;
-- independent of third-party model hosting in production;
+- thermally stable under sustained E4B/Page Agent use;
+- able to send messages, perform payments, enter credentials, solve CAPTCHA or accept legal declarations autonomously;
 - available as a final public installer.
