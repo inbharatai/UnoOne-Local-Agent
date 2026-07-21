@@ -3,11 +3,10 @@ package com.unoone.agent
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
-import android.os.Process
 import android.content.Intent
+import android.os.Process
 import androidx.core.content.edit
 import com.unoone.agent.browser.SecureBrowserModelLease
-import com.unoone.agent.securebrowser.SecureWebViewController
 import com.unoone.agent.core.model.BrainModelRegistry
 import com.unoone.agent.core.model.ExclusiveBrainLeaseState
 import com.unoone.agent.core.model.Result
@@ -17,10 +16,11 @@ import com.unoone.agent.core.util.Logger
 import com.unoone.agent.di.DatabaseProvider
 import com.unoone.agent.modelmanager.ModelManager
 import com.unoone.agent.safety.AuditLogger
-import com.unoone.agent.voice.VoiceModule
+import com.unoone.agent.securebrowser.SecureWebViewController
 import com.unoone.agent.voice.VoiceAgentRuntime
 import com.unoone.agent.voice.VoiceAgentState
 import com.unoone.agent.voice.VoiceLanguage
+import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceService
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -57,10 +57,10 @@ class UnoOneApplication : Application(), AgentRuntimeController {
     private val _isAgentEnabled = MutableStateFlow(true)
     override val isAgentEnabled: StateFlow<Boolean> = _isAgentEnabled.asStateFlow()
 
-    /** Remembered for restoring the main Gemma 4 brain after memory-pressure unload. */
+    /** Remembered for restoring the main Gemma 4 E4B brain after memory-pressure unload. */
     @Volatile private var lastLlmPath: String? = null
 
-    /** Prevents startup/onResume/memory-recovery callers from queueing duplicate 2.5 GB loads. */
+    /** Prevents startup/onResume/memory-recovery callers from queueing duplicate multi-GB loads. */
     private val modelLoadGate = ModelLoadGate()
     @Volatile private var modelLoadJob: Job? = null
 
@@ -113,10 +113,9 @@ class UnoOneApplication : Application(), AgentRuntimeController {
         }
         secureBrowserModelLease = SecureBrowserModelLease(this, orchestrator)
 
-        // C1: Blind Aid unloads the 2.5 GB Gemma brain to free ~800 MB RAM for the camera (the
-        // reported "system shuts down" lowmemorykiller OOM). The Application owns the Secure Browser
-        // lease + ExclusiveBrainLeaseState, so it supplies the "safe to unload" guard and the reload
-        // callback that honours those leases when Blind Aid is deactivated.
+        // Blind Aid releases the resident E4B engine before camera analysis reaches steady state.
+        // The Application owns the Secure Browser lease + ExclusiveBrainLeaseState, so it supplies
+        // the safe-to-unload guard and guarded reload callback used when Blind Aid deactivates.
         orchestrator.brainReleaseGuard = {
             !ExclusiveBrainLeaseState.isActive() && !secureBrowserModelLease.isActive()
         }
@@ -130,11 +129,16 @@ class UnoOneApplication : Application(), AgentRuntimeController {
 
         val modelManager = ModelManager(this, db.modelMetadataDao())
         modelManager.ensureModelDirectories()
-        val brainSpec = BrainModelRegistry.GEMMA_4_E2B
-        val llmPath = modelManager.getLlmModelPath(brainSpec)
-        if (llmPath != null) {
-            lastLlmPath = llmPath
-            if (persistedEnabled) scheduleLlmLoad(llmPath, brainSpec, "initial")
+        // Exact-path and integrity-related filesystem work must never block Application.onCreate.
+        appScope.launch(Dispatchers.IO) {
+            val brainSpec = BrainModelRegistry.GEMMA_4_E4B
+            val llmPath = modelManager.getLlmModelPath(brainSpec)
+            if (llmPath != null) {
+                lastLlmPath = llmPath
+                if (persistedEnabled) scheduleLlmLoad(llmPath, brainSpec, "initial")
+            } else {
+                Logger.i("UnoOneApplication: verified E4B artifact is not installed yet")
+            }
         }
 
         appScope.launch {
@@ -157,9 +161,8 @@ class UnoOneApplication : Application(), AgentRuntimeController {
         }
 
         VoiceService.voiceCommandCallback = { command -> postVoiceCommand(command) }
-        // Eyes-free (WS2): when the KWS loop fires a wake word, speak the "I'm listening" cue via the
-        // shared VoiceModule. Dispatched off the audio thread (Dispatchers.IO) so the cue does not
-        // block the spotting loop from capturing the command that follows.
+        // When the KWS loop fires a wake word, speak the listening cue through the shared voice
+        // module off the audio thread so capture and TTS retain single-owner microphone discipline.
         VoiceService.onWakeWord = {
             if (AgentRuntimeGate.isEnabled()) {
                 runCatching {
@@ -252,8 +255,16 @@ class UnoOneApplication : Application(), AgentRuntimeController {
             manager.repairVadFromVerifiedEnglishAsr()
             runCatching { VoiceService.start(this@UnoOneApplication) }
                 .onFailure { Logger.e("AgentRuntime: failed to restart voice service", it) }
+
+            // The model may have been installed while UnoOne was disabled; resolve it again instead
+            // of relying only on the path remembered at process startup.
+            val spec = BrainModelRegistry.GEMMA_4_E4B
+            val path = manager.getLlmModelPath(spec)
+            if (path != null) {
+                lastLlmPath = path
+                scheduleLlmLoad(path, spec, "enable")
+            }
         }
-        reloadLlmIfUnloaded()
         Logger.i("AgentRuntime: enabled by explicit user action")
     }
 
@@ -296,7 +307,7 @@ class UnoOneApplication : Application(), AgentRuntimeController {
         if (ExclusiveBrainLeaseState.isActive() || secureBrowserModelLease.isActive()) return
         val path = lastLlmPath ?: return
         if (orchestrator.isLlmLoaded()) return
-        val spec = BrainModelRegistry.GEMMA_4_E2B
+        val spec = BrainModelRegistry.GEMMA_4_E4B
         scheduleLlmLoad(path, spec, "recovery")
     }
 
@@ -323,7 +334,6 @@ class UnoOneApplication : Application(), AgentRuntimeController {
                 if (reason == "initial") delay(8_000L)
                 if (!AgentRuntimeGate.isEnabled()) return@launch
                 Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
-                // A browser/Blind-Aid transition may have completed between scheduling and execution.
                 if (ExclusiveBrainLeaseState.isActive() ||
                     secureBrowserModelLease.isActive() ||
                     orchestrator.isBlindAidActive.value
