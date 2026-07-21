@@ -9,8 +9,10 @@ import com.unoone.agent.localbrain.PageAgentGemmaPlanner
 import com.unoone.agent.modelmanager.ModelManager
 import com.unoone.agent.securebrowser.BrowserModelPort
 import com.unoone.agent.securebrowser.PageAgentModelDecision
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * Exclusive ownership of Gemma 4 E4B while the local Page Agent is active.
@@ -42,7 +44,7 @@ class SecureBrowserModelLease(
         if (active) return@withLock Result.Error("Secure Browser already owns the Gemma model")
 
         val spec = BrainModelRegistry.GEMMA_4_E4B
-        val path = modelManager.getLlmModelPath(spec)
+        val path = withContext(Dispatchers.IO) { modelManager.getLlmModelPath(spec) }
             ?: return@withLock Result.Error(
                 "Gemma 4 E4B is not installed or failed integrity verification. Install the exact Android .litertlm artifact before starting Secure Browser."
             )
