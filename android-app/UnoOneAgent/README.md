@@ -20,7 +20,7 @@ The repository [README](../../../README.md) is the product and architecture sour
 - Offline document reading and supported PDF/DOCX template filling.
 - Persistent master disable that stops voice, TTS, inference, camera, OCR, accessibility actions, browser work and recovery.
 
-This branch is an alpha. E4B has not yet been physically qualified on the Xiaomi 14. Existing E2B device records are historical evidence only.
+This branch is an alpha. Exact E4B integrity, CPU load and the 43-case phone-planner evaluation have passed on the Xiaomi 14. Sustained thermal/battery, strict in-app self-test, E4B-backed Page Agent planning, second-device and release gates remain. Existing E2B records are historical evidence only.
 
 ## Modules
 
@@ -79,7 +79,7 @@ The app uses app-private storage and does not require all-files access.
 | Artifact capability ceiling | 32,768 tokens; not configured on phone |
 | Minimum RAM gate | 8,192 MB |
 | Recommended RAM gate | 12,288 MB |
-| Xiaomi 14 qualification | pending |
+| Xiaomi 14 qualification | partial: CPU load + 43/43 planner cases passed; sustained/release gates pending |
 
 `ModelManager.getLlmModelPath()` returns only the exact declared file after exact size and SHA-256 verification. It does not select the largest `.litertlm` file and does not accept the web-specific E4B artifact.
 

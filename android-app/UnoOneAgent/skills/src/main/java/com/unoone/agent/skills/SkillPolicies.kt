@@ -15,25 +15,47 @@ object BuiltInSkillCatalog {
     val definitions: List<SkillDefinition> = listOf(
         SkillDefinition(
             name = "Read Screen Aloud",
-            triggers = listOf("read my screen aloud", "tell me what is on my screen"),
+            triggers = listOf(
+                "read my screen aloud", "tell me what is on my screen",
+                "मेरी स्क्रीन पढ़ो", "स्क्रीन पर क्या है बताओ", "screen padhkar batao"
+            ),
             steps = listOf("read screen"),
             riskLevel = 1
         ),
         SkillDefinition(
             name = "Start Blind Aid Guidance",
-            triggers = listOf("start blind aid guidance", "help me navigate with blind aid"),
+            triggers = listOf(
+                "start blind aid guidance", "help me navigate with blind aid",
+                "ब्लाइंड मोड चालू करो", "blind mode chalu karo"
+            ),
             steps = listOf("start blind aid"),
             riskLevel = 2
         ),
         SkillDefinition(
             name = "Fill an Offline PDF Form",
-            triggers = listOf("fill a pdf form", "complete a pdf form offline"),
+            triggers = listOf(
+                "fill a pdf form", "complete a pdf form offline",
+                "पीडीएफ फॉर्म भरो", "pdf form bharo"
+            ),
             steps = listOf("fill pdf form")
         ),
         SkillDefinition(
             name = "Fill an Offline DOCX Template",
-            triggers = listOf("fill a docx template", "complete a word template offline"),
+            triggers = listOf(
+                "fill a docx template", "complete a word template offline",
+                "वर्ड टेम्पलेट भरो", "docx template bharo"
+            ),
             steps = listOf("fill docx template")
+        ),
+        SkillDefinition(
+            name = "Open Calendar",
+            triggers = listOf("open my calendar", "कैलेंडर खोलो", "calendar kholo"),
+            steps = listOf("open calendar")
+        ),
+        SkillDefinition(
+            name = "Open WhatsApp",
+            triggers = listOf("open my whatsapp", "व्हाट्सऐप खोलो", "whatsapp kholo"),
+            steps = listOf("open whatsapp app")
         )
     )
 
@@ -113,7 +135,7 @@ object SkillTriggerMatcher {
     }
 
     internal fun normalize(value: String): String = value.lowercase()
-        .replace(Regex("[^a-z0-9]+"), " ")
+        .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
         .trim()
         .replace(Regex("\\s+"), " ")
 }

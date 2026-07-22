@@ -6,8 +6,10 @@
 
 **Existing parent draft:** #2
 
+**E4B hardening draft:** #3
+
 **Child target:** `feat/e4b-agentic-runtime`
-**Release state:** **Alpha / E4B physical-device qualification pending**
+**Release state:** **Alpha / E4B CPU accuracy passed; sustained release qualification pending**
 
 The repository [README](README.md) is the product-level source of truth. This file records only the current evidence and release gates. Historical E2B validation remains historical and must not be represented as E4B evidence.
 
@@ -15,12 +17,12 @@ The repository [README](README.md) is the product-level source of truth. This fi
 
 | Area | Current branch state | Evidence still required |
 |---|---|---|
-| Android project | Native Kotlin/Compose, API 28+, 15 modules | latest Android CI and Xiaomi 14 installation |
-| Planning brain | Gemma 4 E4B is the sole installable model | physical load, latency, memory, thermal and tool-call qualification |
-| Model integrity | exact Android filename, byte size and SHA-256 pinned | verify downloaded phone bytes and successful LiteRT-LM initialization |
-| Command routing | deterministic handlers before model inference | physical English/Hindi voice matrix and latency measurements |
+| Android project | Native Kotlin/Compose, API 28+, 15 modules; Xiaomi install passed | latest final-head Android CI |
+| Planning brain | exact Gemma 4 E4B loads on Xiaomi CPU; 43/43 fixed cases passed | strict in-app self-test, latency policy, thermal and second-device qualification |
+| Model integrity | exact phone filename, byte size and SHA-256 verified | production acquisition/mirror release evidence |
+| Command routing | deterministic handlers before model inference; sequential English/Hindi/Hinglish planner probes passed | real-room acoustic wake/recognition matrix and latency measurements |
 | Tool execution | canonical schema, permissions, safety, confirmations and verification | real external-app and accessibility regression matrix |
-| Offline speech | English and Hindi exposed; shared Indic components retained | controlled accent, names, numbers, distance and noise benchmarks |
+| Offline speech | real English/Hindi PCM synthesis, ASR initialization and Hindi round trip passed | controlled accent, names, numbers, distance and noise benchmarks |
 | Assamese | priority planned language | exact STT/TTS artifacts, licence, integrity and device qualification |
 | Blind Aid | independent CameraX/object-detection flow | E4B unload/reload, camera stability and sustained-use test |
 | Secure Browser | local Page Agent with exclusive Gemma lease | E4B browser-plan accuracy and one-engine-at-a-time proof |
@@ -41,7 +43,7 @@ The repository [README](README.md) is the product-level source of truth. This fi
 | Artifact capability ceiling | 32,768 tokens; not configured on phone |
 | Minimum product RAM gate | 8,192 MB |
 | Recommended product RAM gate | 12,288 MB |
-| Xiaomi 14 qualified | **No — pending** |
+| Xiaomi 14 qualified | **Partial — CPU load and planner accuracy passed; sustained/release gates pending** |
 | Production approved | **No** |
 
 The Android runtime rejects a wrong filename, wrong byte size, wrong checksum, `.part` file, old E2B file, web-specific artifact, or arbitrary larger `.litertlm` file.
@@ -94,10 +96,15 @@ Local child-branch evidence on 2026-07-22:
 - distribution API: type check and 3 tests passed;
 - installer PWA: type check, 8 tests, and production build passed;
 - Android: lint found no new issues, JVM tests passed, and app plus instrumentation APKs assembled;
-- connected Xiaomi 14/API 35: full instrumentation `OK (56 tests)` and focused voice,
-  master-disable, Blind Aid, OCR/camera, document-fill and Page Agent matrix `OK (22 tests)`;
-- exact E4B-dependent inference/evaluation tests: skipped because the verified artifact is absent,
-  so they are not counted as an E4B accuracy or performance pass.
+- connected Xiaomi 14/API 35: exact E4B bytes are present and hash-verified; LiteRT-LM CPU load and
+  direct basic probes passed;
+- post-fix E4B phone-planner evaluation: `43/43` fully correct and `43/43` tool-match;
+- physical voice/master-disable/Blind Aid/OCR/camera/document/Page Agent matrix: `OK (27 tests)`;
+- physical storage/memory/Skills/safety/language-pack matrix: `OK (23 tests)`;
+- real English/Hindi TTS generated PCM, English/Indic STT initialized, and Hindi TTS→STT returned
+  a non-empty Devanagari transcript;
+- continuous CPU evaluation completed without an UnoOne exception or ANR, but warmed PSS was about
+  `3.73–3.82 GB` with about `0.77 GB` swap and CPU thermal status reached 3 near `95 °C`.
 
 ## Xiaomi 14 gate
 
@@ -119,10 +126,12 @@ Follow [docs/E4B_XIAOMI14_HANDOFF.md](docs/E4B_XIAOMI14_HANDOFF.md). Record:
 
 - [ ] Latest Android CI is green on the final branch head.
 - [x] Latest Distribution CI is green on the current E4B branch head at the time recorded.
-- [ ] Exact E4B bytes load successfully on Xiaomi 14.
-- [ ] Actual GPU or CPU backend is recorded from logs.
-- [ ] E4B phone-tool and Page Agent evaluations meet the release threshold.
-- [ ] English and Hindi controlled speech matrix is recorded.
+- [x] Exact E4B bytes load successfully on Xiaomi 14.
+- [x] Actual CPU backend is recorded from logs.
+- [x] E4B phone-tool evaluation meets the fixed-set threshold (43/43).
+- [ ] E4B-backed Page Agent planning meets its release threshold and proves exclusive leasing.
+- [x] English and Hindi engine/round-trip speech matrix is recorded.
+- [ ] Real-room wake-word, accent, distance, names and numbers speech matrix is recorded.
 - [ ] Blind Aid and Secure Browser transition tests pass without duplicate engines or services.
 - [ ] Sustained memory, thermal, battery and 50-task test passes.
 - [ ] Legacy E2B cleanup is verified after E4B success.

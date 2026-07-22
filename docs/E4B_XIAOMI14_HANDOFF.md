@@ -10,18 +10,24 @@ Do not merge the branch into `main` and do not delete the existing E2B files unt
 - UnoOne accessibility service: enabled.
 - Camera, microphone and Calendar runtime permissions: granted.
 - `/data` available space observed: approximately 382 GB.
-- Exact E4B artifact: **absent** from the app-private model root.
+- Exact E4B artifact: **present and verified** (`3,659,530,240` bytes; SHA-256 `0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0`).
 - Historical E2B artifact: present and intentionally preserved.
 - Debug app and instrumentation APKs: installed with `adb install -r`; app data retained.
-- Debug APK SHA-256: `b08be9ef5fc0442fffeef53524de5c608545472ac866bd8756a14e88270b84b2`.
-- Instrumentation result: `OK (56 tests)`; focused voice, master-disable, Blind Aid,
-  OCR/camera, DOCX/PDF and Page Agent matrix: `OK (22 tests)`.
-- English and Hindi language-pack installation/verification passed. Acoustic wake-word and
-  real-room recognition accuracy still require a human-spoken test; an injected offline transcript
-  passed through the private hands-free command route.
+- Debug APK SHA-256: `701cc0dc734f0a95296bc9e7c9cafe23c8a0dac13f21e29154bfefc1a24dc5ee`.
+- E4B loaded on CPU. Direct load/basic planner probes passed; the post-fix fixed planner set scored
+  `43/43` fully correct and `43/43` tool-match.
+- Focused physical matrices passed: voice/master-disable/Blind Aid/OCR/document/Page Agent
+  `OK (27 tests)` and storage/memory/Skills/safety/language-pack health `OK (23 tests)`.
+- English and Hindi TTS generated real PCM; English and Indic STT engines loaded; Hindi TTS→STT
+  produced a non-empty Devanagari transcript. Acoustic wake-word and real-room recognition accuracy
+  still require a human-spoken test; an injected offline transcript passed the private route.
 - Installed app launched successfully after the test run, Accessibility remained enabled, and the
   current log buffer contained no matching UnoOne fatal exception or ANR.
-- Result: E4B load, CPU/GPU evaluation, Page Agent model accuracy, memory, thermal and 50-task claims remain pending.
+- Sustained CPU evidence: warmed process PSS about `3.73–3.82 GB`, swap about `0.77 GB`, battery
+  `40.8–41.6 °C`, skin about `41.5 °C`, and CPU thermal status 3 near `95 °C`. Functional accuracy
+  passed, but thermal/50-task production qualification did not.
+- Result: exact E4B CPU load and phone-planner accuracy passed. Strict in-app self-test, GPU/NPU,
+  E4B-backed Page Agent accuracy/lease, second device, thermal/battery and legacy cleanup remain pending.
 
 ## 1. Update the local clone
 

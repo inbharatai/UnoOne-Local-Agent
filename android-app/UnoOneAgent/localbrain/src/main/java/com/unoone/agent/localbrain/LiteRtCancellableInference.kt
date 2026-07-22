@@ -77,6 +77,11 @@ internal class LiteRtCancellableInference(private val owner: String) {
                     }
 
                     override fun onDone() {
+                        // Publish native idleness before waking the response waiter. Completing the
+                        // response first lets its coroutine run `finally` while nativeDone is still
+                        // false, leaving activeCompletion stuck forever and rejecting the next
+                        // sequential voice command as "already in flight".
+                        nativeDone.complete(Unit)
                         if (outputCancelled.get()) {
                             response.completeExceptionally(OutputTokenLimitException(maxOutputTokens))
                         } else {
@@ -85,12 +90,11 @@ internal class LiteRtCancellableInference(private val owner: String) {
                                 IllegalStateException("LiteRT-LM completed without a response")
                             ) else response.complete(final)
                         }
-                        nativeDone.complete(Unit)
                     }
 
                     override fun onError(throwable: Throwable) {
-                        response.completeExceptionally(throwable)
                         nativeDone.complete(Unit)
+                        response.completeExceptionally(throwable)
                     }
                 }
             )

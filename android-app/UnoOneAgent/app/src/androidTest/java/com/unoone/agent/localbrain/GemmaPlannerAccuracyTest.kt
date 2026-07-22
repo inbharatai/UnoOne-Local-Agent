@@ -91,4 +91,33 @@ class GemmaPlannerAccuracyTest {
         assert(toolCall.args["content"]?.toString()?.contains("milk", ignoreCase = true) == true)
         planner.close()
     }
+
+    @Test
+    fun routesHindiBlindStartAndMissingFieldsSafelyInSequence() = runBlocking {
+        val path = modelManager.getLlmModelPath()
+        assumeTrue("No integrity-verified E4B model found — skipping accuracy test", path != null)
+
+        val planner = GemmaPlanner()
+        assert(planner.load(path!!) is Result.Success)
+        val snapshot = ContextSnapshot(currentPackage = "com.unoone.agent")
+        val probes = listOf(
+            "ब्लाइंड मोड चालू करो" to "detect_objects",
+            "draft an email with subject status and body the build is ready" to "speak_response",
+            "schedule a dentist appointment" to "speak_response",
+            "open" to "speak_response",
+            "Open Chrome" to "open_chrome"
+        )
+
+        probes.forEach { (command, expected) ->
+            val result = planner.plan(command, snapshot)
+            check(result is Result.Success) {
+                "Planning '$command' failed: ${(result as? Result.Error)?.message}"
+            }
+            assert(result.data.tool == expected) {
+                "Expected '$expected' for '$command' but got '${result.data.tool}'"
+            }
+        }
+        planner.close()
+    }
+
 }

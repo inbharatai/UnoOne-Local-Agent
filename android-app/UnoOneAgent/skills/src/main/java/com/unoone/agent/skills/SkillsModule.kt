@@ -49,10 +49,16 @@ class SkillsModule(
         )
     }
 
-    /** Idempotently installs a minimal set of immediately useful, fully safety-routed routines. */
+    /**
+     * Idempotently installs and refreshes source-controlled built-ins. The user's enabled/disabled
+     * choice is preserved, while new bilingual triggers and corrected safe steps reach existing
+     * installations instead of only fresh installs.
+     */
     suspend fun ensureBuiltIns() {
+        val existingByName = skillDao.getAll().first().associateBy { it.name }
         BuiltInSkillCatalog.definitions.forEach { definition ->
-            if (skillDao.getAll().first().none { it.name == definition.name }) {
+            val existing = existingByName[definition.name]
+            if (existing == null) {
                 runCatching {
                     saveSkill(
                         name = definition.name,
@@ -62,6 +68,24 @@ class SkillsModule(
                         enabled = true
                     )
                 }.onFailure { Logger.w("Skills: could not seed '${definition.name}': ${it.message}") }
+            } else {
+                val refreshed = existing.copy(
+                    triggerPhrases = definition.triggers.distinct().joinToString(","),
+                    stepsJson = json.encodeToString(
+                        ListSerializer(serializer<String>()),
+                        definition.steps
+                    ),
+                    riskLevel = definition.riskLevel.coerceIn(0, 3),
+                    updatedAt = System.currentTimeMillis()
+                )
+                if (
+                    refreshed.triggerPhrases != existing.triggerPhrases ||
+                    refreshed.stepsJson != existing.stepsJson ||
+                    refreshed.riskLevel != existing.riskLevel
+                ) {
+                    skillDao.update(refreshed)
+                    Logger.i("Skills: refreshed built-in '${definition.name}'")
+                }
             }
         }
     }

@@ -1,7 +1,7 @@
 package com.unoone.agent.localbrain
 
 import com.unoone.agent.core.model.CanonicalToolRegistry
-import com.unoone.agent.core.model.ModelFamily
+import com.unoone.agent.core.eval.EvalPromptSet
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,31 +15,47 @@ import org.junit.Test
  */
 class ToolRegistryAgreementTest {
 
-    private fun advertisedNames(instruction: String): Set<String> =
-        instruction.lineSequence()
-            .map { it.trim() }
-            .filter { it.startsWith("- ") }
-            .map { it.removePrefix("- ").substringBefore('(').trim() }
-            .filter { it.isNotBlank() }
-            .toSet()
-
     @Test
-    fun gemma4InstructionAdvertisesExactlyTheCanonicalTools() {
-        val advertised = advertisedNames(PromptBuilder.buildSystemInstruction(ModelFamily.GEMMA_4))
+    fun evaluationCommandsExposeTheirExpectedCanonicalTool() {
         assertEquals(29, CanonicalToolRegistry.names.size)
-        assertEquals(
-            "Gemma 4 instruction must advertise exactly the canonical 29 tools (no more, no less)",
-            CanonicalToolRegistry.names,
-            advertised
-        )
+        EvalPromptSet.cases.forEach { case ->
+            val routed = PlannerToolRouter.schemasFor(case.prompt).map { it.name }.toSet()
+            assertTrue("${case.id} must expose ${case.expectedTool}; routed=$routed", case.expectedTool in routed)
+        }
     }
 
     @Test
-    fun gemma4InstructionAdvertisesNoNonCanonicalTool() {
-        val advertised = advertisedNames(PromptBuilder.buildSystemInstruction(ModelFamily.GEMMA_4))
-        assertTrue(
-            "advertised-but-non-canonical tools: ${advertised - CanonicalToolRegistry.names}",
-            CanonicalToolRegistry.names.containsAll(advertised)
-        )
+    fun everyRoutedToolIsCanonicalAndTurnsStayBounded() {
+        EvalPromptSet.cases.forEach { case ->
+            val routed = PlannerToolRouter.schemasFor(case.prompt)
+            assertTrue("No command should expose more than seven tools", routed.size <= 7)
+            assertTrue(CanonicalToolRegistry.names.containsAll(routed.map { it.name }))
+        }
     }
+
+    @Test
+    fun prohibitedSecretsExposeOnlySpeech() {
+        listOf(
+            "enter OTP 123456",
+            "type my password hunter2",
+            "transfer 5000 rupees by UPI"
+        ).forEach { prompt ->
+            assertEquals(
+                setOf("speak_response"),
+                PlannerToolRouter.schemasFor(prompt).map { it.name }.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun requiredFieldsAndBlindDirectionAreDeterministic() {
+        assertEquals(setOf("speak_response"), names("draft an email with subject status"))
+        assertEquals(setOf("speak_response"), names("schedule a dentist appointment"))
+        assertEquals(setOf("speak_response", "detect_objects"), names("ब्लाइंड मोड चालू करो"))
+        assertEquals(setOf("speak_response", "deactivate_blind_aid"), names("ब्लाइंड मोड बंद करो"))
+        assertEquals(setOf("speak_response"), names("open"))
+    }
+
+    private fun names(command: String): Set<String> =
+        PlannerToolRouter.schemasFor(command).map { it.name }.toSet()
 }

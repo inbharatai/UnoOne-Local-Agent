@@ -23,6 +23,18 @@ class SkillPoliciesTest {
     }
 
     @Test
+    fun triggerMatchingPreservesHindiAndHinglishText() {
+        val hindi = SkillEntity(
+            id = 3,
+            name = "Hindi screen",
+            triggerPhrases = "मेरी स्क्रीन पढ़ो,screen padhkar batao",
+            stepsJson = "[]"
+        )
+        assertEquals(hindi, SkillTriggerMatcher.bestMatch("कृपया मेरी स्क्रीन पढ़ो अभी", listOf(hindi)))
+        assertEquals(hindi, SkillTriggerMatcher.bestMatch("please screen padhkar batao", listOf(hindi)))
+    }
+
+    @Test
     fun learningOnlySuggestsBoundedNonSensitiveRoutines() {
         assertTrue(SkillLearningPolicy.shouldSuggest(3))
         assertEquals("open calendar", SkillLearningPolicy.suggestionFor("open calendar", "open_calendar")!!.steps.single())
@@ -36,5 +48,8 @@ class SkillPoliciesTest {
         assertTrue(BuiltInSkillCatalog.names.contains("Fill an Offline DOCX Template"))
         assertEquals("fill pdf form", BuiltInSkillCatalog.definitions.first { it.name.contains("PDF") }.steps.single())
         assertEquals("fill docx template", BuiltInSkillCatalog.definitions.first { it.name.contains("DOCX") }.steps.single())
+        assertTrue(BuiltInSkillCatalog.names.contains("Open Calendar"))
+        assertTrue(BuiltInSkillCatalog.names.contains("Open WhatsApp"))
+        assertTrue(BuiltInSkillCatalog.definitions.any { "ब्लाइंड मोड चालू करो" in it.triggers })
     }
 }

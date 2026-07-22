@@ -2,7 +2,7 @@
 
 UnoOne is an offline-first Android AI assistant for blind and sighted users. It combines hands-free speech, deterministic Android actions, an on-device planning model, Blind Aid, document tools, reusable Skills, and a guarded Page Agent browser.
 
-> **Current development status — E4B migration branch:** `feat/e4b-agentic-runtime` replaces the installable E2B brain with the verified Android LiteRT-LM build of Gemma 4 E4B. The branch must pass CI and then be tested on the Xiaomi 14 before it is merged into `main`. Historical E2B device results remain historical and are not presented as E4B evidence.
+> **Current development status — E4B hardening:** the exact Gemma 4 E4B Android artifact is installed and hash-verified on the Xiaomi 14. It loads on CPU and the post-fix physical planner evaluation scored 43/43 tool and argument cases. UnoOne is still an alpha: sustained back-to-back CPU inference warmed the process to about 3.82 GB PSS and reached severe CPU thermal status, while the strict in-app self-test, E4B-backed browser planning, 50-task thermal/battery gate, second device and release supply chain remain open. Historical E2B evidence remains historical.
 
 ## Product design
 
@@ -52,7 +52,7 @@ UnoOne has one production model profile.
 | Minimum RAM gate | 8,192 MB |
 | Recommended RAM gate | 12,288 MB |
 | Production `AUTO` backend | CPU until a device/hash/build qualification record approves another backend |
-| Device qualification | Pending on the current E4B branch |
+| Device qualification | Partial: Xiaomi 14 CPU load and 43/43 planner evaluation passed; sustained/release gates remain |
 
 The Android app must load only the exact manifest-declared filename after exact size and SHA-256 verification. It must never select an arbitrary `.litertlm` file based on filename similarity or file size. The smaller web-specific E4B artifact is not valid for the Android runtime.
 
@@ -121,6 +121,10 @@ After successful E4B device qualification, this legacy directory should no longe
 - Offline fillable PDF and DOCX template workflows.
 - Guarded WebView Page Agent with native action authorisation.
 - Persistent master disable that stops listening, inference, TTS, accessibility actions, browser automation, and recovery work.
+
+## Local Skills
+
+UnoOne seeds six reviewable, safety-routed routines: Read Screen Aloud, Start Blind Aid Guidance, Fill an Offline PDF Form, Fill an Offline DOCX Template, Open Calendar and Open WhatsApp. Their triggers include English, Hindi and common Hinglish forms. User-created skills remain visible and editable. Repeated successful low-risk use may create a disabled suggestion, but UnoOne never auto-enables it and never learns recipients, message/email bodies or form values.
 
 ## Security boundaries
 

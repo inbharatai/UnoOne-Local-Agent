@@ -8,19 +8,11 @@ import org.junit.Test
 class PromptBuilderTest {
 
     @Test
-    fun systemInstructionContainsAllToolNames() {
+    fun systemInstructionStaysCompactAndKeepsPlannerContract() {
         val instruction = PromptBuilder.buildSystemInstruction()
-        val expectedTools = listOf(
-            "create_note", "search_notes", "summarize_text", "speak_response",
-            "open_chrome", "open_app", "open_url", "open_camera",
-            "system_control", "read_screen", "ocr_screen", "create_skill",
-            "draft_email", "send_whatsapp", "check_calendar", "open_calendar", "open_calendar_insert",
-            "open_dialer", "share_text", "delete_notes", "delete_all_notes",
-            "export_data", "detect_objects", "deactivate_blind_aid"
-        )
-        for (tool in expectedTools) {
-            assertTrue("System instruction should mention $tool", instruction.contains(tool))
-        }
+        assertTrue(instruction.contains("exactly one provided tool", ignoreCase = true))
+        assertTrue(instruction.contains("Never invent", ignoreCase = true))
+        assertTrue("instruction must leave room in E4B's 2K context", instruction.length < 1_800)
     }
 
     @Test
@@ -65,6 +57,7 @@ class PromptBuilderTest {
         val snapshot = ContextSnapshot(visibleText = longText)
         val message = PromptBuilder.buildUserMessage("read screen", snapshot)
         assertTrue(message.length < 10_000)
+        assertTrue(message.length <= 3_000)
     }
 
     // === CHAT lane prompts ===

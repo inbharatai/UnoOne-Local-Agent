@@ -228,9 +228,12 @@ class GemmaPlanner(
      * — never executed). Returns null never: a no-tool answer becomes a `speak_response` ToolCall.
      */
     suspend fun plan(command: String, context: ContextSnapshot): Result<ToolCall> {
+        if (PlannerToolRouter.speechOnly(command)) {
+            return Result.Success(speechFallback(command))
+        }
         return runPhoneInference("plan") { activeEngine, spec ->
             resetPlanningConversation()
-            val conv = createPlanningConversation(activeEngine, spec).also { conversation = it }
+            val conv = createPlanningConversation(activeEngine, spec, command).also { conversation = it }
             val message = Message.user(
                 Contents.of(PromptBuilder.buildUserMessage(command, context, ContextBudget.forCommand(command)))
             )
@@ -272,10 +275,13 @@ class GemmaPlanner(
         context: ContextSnapshot,
         onDelta: (String) -> Unit
     ): Result<ToolCall> {
+        if (PlannerToolRouter.speechOnly(command)) {
+            return Result.Success(speechFallback(command))
+        }
         val reducer = com.unoone.agent.core.agent.StreamingTextReducer()
         return runPhoneInference("streaming plan") { activeEngine, spec ->
             resetPlanningConversation()
-            val conv = createPlanningConversation(activeEngine, spec).also { conversation = it }
+            val conv = createPlanningConversation(activeEngine, spec, command).also { conversation = it }
             val message = Message.user(
                 Contents.of(PromptBuilder.buildUserMessage(command, context, ContextBudget.forCommand(command)))
             )
@@ -461,11 +467,15 @@ class GemmaPlanner(
         }
     }
 
-    private fun createPlanningConversation(activeEngine: Engine, spec: BrainModelSpec): Conversation =
+    private fun createPlanningConversation(
+        activeEngine: Engine,
+        spec: BrainModelSpec,
+        command: String
+    ): Conversation =
         activeEngine.createConversation(
             ConversationConfig(
                 systemInstruction = Contents.of(PromptBuilder.buildSystemInstruction(spec.modelFamily)),
-                tools = listOf(tool(UnoOneToolSet())),
+                tools = PlannerToolRouter.schemasFor(command).map { tool(CanonicalOpenApiTool(it)) },
                 automaticToolCalling = false
             )
         )
@@ -474,6 +484,11 @@ class GemmaPlanner(
         runCatching { conversation?.close() }
         conversation = null
     }
+
+    private fun speechFallback(command: String): ToolCall = ToolCall(
+        "speak_response",
+        JsonObject(mapOf("text" to JsonPrimitive(PlannerToolRouter.safeFallbackText(command))))
+    )
 
     /** Builds the action description sent to the judge conversation. [inputText] is truncated. */
     private fun buildSafetyJudgePrompt(toolName: String, argsJson: String, inputText: String): String =
