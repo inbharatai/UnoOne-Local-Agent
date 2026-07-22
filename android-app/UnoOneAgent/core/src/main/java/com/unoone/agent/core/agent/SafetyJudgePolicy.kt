@@ -55,19 +55,18 @@ object SafetyJudgePolicy {
      *  - the user's security level is below STANDARD ([judgeEnabled] false),
      *  - the global judge flag is off ([judgeFlagEnabled] false),
      *  - the brain is not loaded ([modelLoaded] false; the judge conversation shares the engine),
-     *  - the keyword tier already classified the tool as [RiskLevel.DIRECT] — the judge's value is
-     *    catching paraphrased harm the keyword tier UNDER-rates, and DIRECT is the inert/launch tier
-     *    (speak_response, open_chrome, open_app, open_calendar, check_calendar, create_note,
-     *    search_notes, summarize_text, deactivate_blind_aid). Running the judge there (with its
-     *    "when unsure, choose the stricter verdict" bias) is what escalated harmless answers into a
-     *    confirmation popup.
+     *  - the deterministic tier is anything except [RiskLevel.CONFIRM]. DIRECT operations need no
+     *    second pass; STRONG_CONFIRM already requires the highest explicit approval; and BLOCK is
+     *    already rejected. The judge is useful only in the middle tier, where it can catch disguised
+     *    harm and escalate CONFIRM to BLOCK without adding a full model inference before routine
+     *    launch or Blind Aid commands.
      *
-     * The judge still runs for every CONFIRM / STRONG_CONFIRM / BLOCK tier, where escalation matters.
+     * The judge runs for CONFIRM, where escalation materially changes the decision.
      */
     fun shouldRun(
         judgeEnabled: Boolean,
         judgeFlagEnabled: Boolean,
         modelLoaded: Boolean,
         riskLevel: RiskLevel
-    ): Boolean = judgeEnabled && judgeFlagEnabled && modelLoaded && riskLevel != RiskLevel.DIRECT
+    ): Boolean = judgeEnabled && judgeFlagEnabled && modelLoaded && riskLevel == RiskLevel.CONFIRM
 }

@@ -15,7 +15,7 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Real on-device, HEADLESS proof of [OcrControl] (the bundled on-device ML Kit Latin text
+ * Real on-device, HEADLESS proof of [OcrControl] (the bundled on-device ML Kit Devanagari text
  * recognizer — no model download, no network). Constructs the real [OcrControl] and:
  *
  * - `recognizeText(Bitmap)`: renders a known Latin string onto a synthetic high-contrast Bitmap
@@ -60,6 +60,24 @@ class OcrControlHeadlessTest {
             "Bundled ML Kit must recognize the rendered Latin text on the device. " +
                 "expected to contain '$rendered', got: \"$text\"",
             text.uppercase().replace(" ", "").contains(rendered.replace(" ", ""))
+        )
+    }
+
+    @Test
+    fun recognizesRenderedHindiText() = runBlocking {
+        val rendered = "नमस्ते भारत"
+        val bitmap = renderText(rendered, width = 1000, height = 320, textSizePx = 104f)
+
+        val result = ocr.recognizeText(bitmap)
+
+        assertTrue("recognizeText must succeed on rendered Hindi (got: $result)", result is Result.Success)
+        val actual = (result as Result.Success).data
+            .replace(Regex("\\s+"), "")
+            .replace("।", "")
+        val expected = rendered.replace(" ", "")
+        assertTrue(
+            "Bundled OCR must recognize rendered Devanagari. expected '$expected', got '$actual'",
+            actual.contains(expected)
         )
     }
 

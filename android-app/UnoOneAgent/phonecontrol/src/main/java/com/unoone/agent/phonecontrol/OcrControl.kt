@@ -4,7 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
 import kotlin.coroutines.resume
@@ -15,7 +15,11 @@ class OcrControl(private val context: Context) {
     // Lazily initialized so ML Kit is only spun up if OCR is actually used — avoids the cost (and
     // the MlKitContext requirement) on devices/paths that never run OCR, and lets this class be
     // constructed in unit tests.
-    private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    // Bundled model: no Play Services download and no network. It recognizes Latin plus
+    // Devanagari, matching UnoOne's currently supported English/Hindi language surface.
+    private val recognizer by lazy {
+        TextRecognition.getClient(DevanagariTextRecognizerOptions.Builder().build())
+    }
     private val screenshotCapture = ScreenshotCapture(context)
 
     suspend fun recognizeText(bitmap: Bitmap): Result<String> = suspendCoroutine { continuation ->

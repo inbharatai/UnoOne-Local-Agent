@@ -90,7 +90,9 @@ Wake phrases include **“Uno,” “Uno One,” “Hey Uno,” “Uno on,”** 
 
 Enabled voice baselines are English and Hindi. Assamese remains a priority language but must not be represented as production-ready until exact STT and TTS artifacts pass licensing, integrity, accuracy, Android loading, and physical-device qualification.
 
-Blind Aid uses CameraX and an offline object detector. Starting Blind Aid releases the resident language model when needed to reduce memory pressure; stopping it closes camera/detector state before a guarded model reload. Read Screen uses Accessibility text and the existing screenshot/OCR fallback.
+The floating assistant microphone is a one-tap utterance capture: it gives an audible listening cue, stops after trailing silence or an eight-second limit, transcribes locally and routes the command through the same guarded tool pipeline. Android intentionally pauses wake capture during a phone or VoIP call and resumes it afterward; opening UnoOne or tapping its bubble also recovers the microphone foreground service after an OEM process kill.
+
+Blind Aid uses CameraX and an offline EfficientDet-Lite2 object detector. Spoken names require three confident sightings in a short rolling window, which rejects one-frame guesses without failing on ordinary frame flicker. Starting Blind Aid releases the resident language model when needed to reduce memory pressure; stopping it clears all scene evidence and closes camera/detector state before a guarded model reload. Read Screen first uses Accessibility text, then falls back to bundled, fully offline Latin + Devanagari OCR for English and Hindi screenshots.
 
 If a voice action needs confirmation, UnoOne narrates the required reply. Say **“Uno, yes”** for an ordinary confirmation, or **“Uno, confirm”** for a strong confirmation such as starting Blind Aid under Standard safety. The reply is handled locally before the serial command queue, so it cannot be stuck behind the action it is authorising.
 

@@ -45,7 +45,7 @@ private data class BlindDetection(
  * This subsystem is deliberately independent of Gemma. It must continue detecting obstacles and
  * producing haptic, tone and spoken feedback when the LLM is absent, unloaded or recovering from
  * memory pressure. A custom detector may be installed under `models/vision/blind-aid/`; otherwise
- * the bundled offline EfficientDet-Lite0 detector is used.
+ * the bundled offline EfficientDet-Lite2 detector is used.
  */
 class BlindAidManager(
     private val context: Context,
@@ -117,7 +117,7 @@ class BlindAidManager(
                     .build()
             } else {
                 // The stock ML Kit classifier only returns broad groups such as "home good".
-                // EfficientDet-Lite0 carries COCO labels, so Blind Aid can say person, car,
+                // EfficientDet-Lite2 carries COCO labels, so Blind Aid can say person, car,
                 // bicycle, chair, dog, etc. while remaining fully offline.
                 Logger.i("BlindAidManager: using bundled labeled EfficientDet-Lite2 detector")
                 BaseOptions.builder()
@@ -158,7 +158,7 @@ class BlindAidManager(
     private var lastLoggedDetections: Set<String> = emptySet()
     private var lastDetectionLogTime = 0L
     private var lastNonEmptyDetectionTime = 0L
-    private val labelConfirmationCounts = mutableMapOf<String, Int>()
+    private val labelEvidence = ObjectLabelEvidence()
 
     fun getAnalyzer(): ImageAnalysis.Analyzer {
         return object : ImageAnalysis.Analyzer {
@@ -171,7 +171,7 @@ class BlindAidManager(
                     return
                 }
                 frameCount++
-                // Lite0 runs comfortably on the Xiaomi's NPU/CPU; sampling every third camera
+                // Lite2 runs comfortably on the Xiaomi's NPU/CPU; sampling every third camera
                 // frame keeps the overlay near-real-time while KEEP_ONLY_LATEST prevents backlog.
                 if (frameCount % 3 != 0) {
                     imageProxy.close()
@@ -250,7 +250,7 @@ class BlindAidManager(
                             // off. Keep the last good scene briefly, then clear if it is genuinely
                             // gone. This is visual persistence only; no stale warning is spoken.
                             if (System.currentTimeMillis() - lastNonEmptyDetectionTime > 1_500L) {
-                                labelConfirmationCounts.clear()
+                                labelEvidence.clear()
                                 _overlay.value = DetectionOverlay(
                                     emptyList(),
                                     uprightW.toFloat() / uprightH.toFloat()
@@ -303,26 +303,20 @@ class BlindAidManager(
             .map { it.label }
             .filterNot { it == "Obstacle" }
             .toSet()
-        // Speech is stricter than the visual overlay: require the same reasonably confident label
-        // in three consecutive analyzed frames. Brief guesses can still appear as exploratory boxes
-        // but never become spoken facts.
-        labelConfirmationCounts.keys.retainAll(currentLabels)
-        currentLabels.forEach { label ->
-            labelConfirmationCounts[label] = (labelConfirmationCounts[label] ?: 0) + 1
-        }
-        val confirmedLabels = labelConfirmationCounts
-            .filterValues { it >= 3 }
-            .keys
-            .toSet()
-        val diagnosticLabels = boxes.map { it.label }.toSet()
+        // Speech is stricter than the visual overlay: require three reasonably confident sightings
+        // in a short window. This rejects one-frame guesses while tolerating normal detector flicker,
+        // which previously left visible boxes silent because evidence was reset after every miss.
         val now = System.currentTimeMillis()
+        val confirmedLabels = labelEvidence.update(now, currentLabels)
+        val diagnosticLabels = boxes.map { it.label }.toSet()
         // The generic fallback classifier can alternate between broad labels on adjacent frames.
         // Keep diagnostic logging useful without flooding logcat while the spoken narrator applies
         // its own, longer scene-stability throttle.
         if (diagnosticLabels != lastLoggedDetections && now - lastDetectionLogTime >= 3_500L) {
             lastLoggedDetections = diagnosticLabels
             lastDetectionLogTime = now
-            Logger.i("BlindAidManager: detected ${boxes.size} object(s): ${diagnosticLabels.joinToString()}")
+            val scored = objects.joinToString { "${it.label}=${"%.2f".format(it.confidence)}" }
+            Logger.i("BlindAidManager: detected ${boxes.size} object(s): $scored")
         }
         if (BlindAidNarrator.shouldNarrateScene(
                 nowMs = now,
@@ -439,8 +433,11 @@ class BlindAidManager(
 
     private companion object {
         /** Visual boxes may be exploratory; spoken labels need materially stronger evidence. */
-        const val SPEECH_SCORE_THRESHOLD = 0.42f
-        const val SMALL_OBJECT_SPEECH_SCORE_THRESHOLD = 0.30f
+        // EfficientDet scores on a live, moving phone camera are materially lower than on still
+        // images. Temporal evidence supplies the false-positive protection, so the speech gate can
+        // stay close to the detector gate and actually narrate stable person/phone labels.
+        const val SPEECH_SCORE_THRESHOLD = 0.28f
+        const val SMALL_OBJECT_SPEECH_SCORE_THRESHOLD = 0.25f
     }
 
     private fun speechScoreThreshold(label: String): Float =
@@ -452,7 +449,7 @@ class BlindAidManager(
         // Blind Aid scene state is intentionally session-only. Closing the panel must behave like
         // a hard cache boundary: no old TV/person label, confirmation, reminder timestamp, or box
         // can leak into the next activation.
-        labelConfirmationCounts.clear()
+        labelEvidence.clear()
         lastSpokenObject = ""
         lastSpokenRiskBand = 0
         lastSpokenTime = 0L

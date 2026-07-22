@@ -18,6 +18,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -34,7 +35,7 @@ class VoiceModule(private val context: Context) {
     @Volatile private var sttEngine: SherpaSttEngine? = null
     @Volatile private var ttsEngine: SherpaTtsEngine? = null
     @Volatile private var androidStt: AndroidSttEngine? = null
-    private val ttsPlayer = TtsPlayer()
+    private val ttsPlayer = TtsPlayer(context)
 
     // Sherpa is the default. The Android system SpeechRecognizer is used ONLY as an explicit,
     // opt-in emergency fallback — never silently. This keeps the "fully offline" promise honest.
@@ -62,17 +63,39 @@ class VoiceModule(private val context: Context) {
 
     private val activeSttJob = AtomicReference<Deferred<Result<String>>?>(null)
     private val isRecordingFlag = AtomicBoolean(false)
+    private val amplitudeListeners = CopyOnWriteArraySet<(Float) -> Unit>()
+
+    @Volatile
+    private var primaryAmplitudeListener: ((Float) -> Unit)? = null
 
     init {
         // Initialize the universal Android TTS player immediately (used as the emergency TTS path).
         ttsPlayer.initialize(context)
+        recorder.onAmplitude = ::dispatchAmplitude
     }
 
-    var onAmplitude: ((Float) -> Unit)? = null
+    var onAmplitude: ((Float) -> Unit)?
+        get() = primaryAmplitudeListener
         set(value) {
-            field = value
-            recorder.onAmplitude = value
+            primaryAmplitudeListener = value
         }
+
+    /**
+     * Floating UI and the main Agent screen share one recorder. Additional listeners let the
+     * overlay observe end-of-speech without replacing the AgentViewModel waveform callback.
+     */
+    fun addAmplitudeListener(listener: (Float) -> Unit) {
+        amplitudeListeners += listener
+    }
+
+    fun removeAmplitudeListener(listener: (Float) -> Unit) {
+        amplitudeListeners -= listener
+    }
+
+    private fun dispatchAmplitude(amplitude: Float) {
+        primaryAmplitudeListener?.invoke(amplitude)
+        amplitudeListeners.forEach { listener -> listener(amplitude) }
+    }
 
     /**
      * Initialize Sherpa STT for [modelDir] using the given [mode] and whisper [language].
@@ -168,7 +191,7 @@ class VoiceModule(private val context: Context) {
             activeSttJob.set(scope.async(Dispatchers.Main) {
                 engine.transcribeOnce(
                     locale = Locale.forLanguageTag(VoiceLanguage.localeTag(currentLanguage())),
-                    onAmplitude = onAmplitude
+                    onAmplitude = ::dispatchAmplitude
                 )
             })
             Result.Success(Unit)
@@ -252,7 +275,7 @@ class VoiceModule(private val context: Context) {
             val engine = androidStt ?: AndroidSttEngine(context).also { androidStt = it }
             val initResult = engine.initialize()
             if (initResult is Result.Error) return@withContext initResult
-            engine.transcribeOnce(locale, onAmplitude)
+            engine.transcribeOnce(locale, ::dispatchAmplitude)
         }
     }
 

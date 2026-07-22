@@ -26,8 +26,9 @@ dependencies {
     implementation(project(":core"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     
-    // On-device OCR via bundled ML Kit text-recognition.
-    implementation("com.google.mlkit:text-recognition:16.0.0")
+    // Bundled, fully offline English + Hindi OCR. The Devanagari recognizer supports both Latin
+    // and Devanagari scripts, so one model covers the two production languages without downloads.
+    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
 
     // Labeled, fully offline COCO object detection for Blind Aid.
     //noinspection GradleDependency -- Google publishes a legacy date-version that sorts above

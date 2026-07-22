@@ -34,6 +34,17 @@ object RuleBasedParser {
             RegexOption.IGNORE_CASE
         ).containsMatchIn(value)
 
+    /**
+     * Conservative recovery for common offline-ASR renderings such as "open blinded" and
+     * "open blind it". An explicit activation verb is required, so ordinary mentions of a blind
+     * person or accessibility never start the camera.
+     */
+    private fun isSpokenBlindAidStart(value: String): Boolean =
+        Regex(
+            "\\b(?:open|launch|start|activate|enable|turn\\s+on)\\s+(?:the\\s+)?(?:blind|blinded)(?:\\s+(?:aid|aide|it|mode|view))?\\b",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(value)
+
     private fun explicitWebTarget(value: String): String? =
         Regex(
             "(?<![@\\w])(?:https?://)?(?:www\\.)?[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)+(?:/[^\\s]*)?",
@@ -305,6 +316,7 @@ object RuleBasedParser {
             lowered.contains("start blind aid") || lowered.contains("activate blind aid") ||
             lowered.contains("open blind aid") || lowered.contains("launch blind aid") ||
             lowered.contains("turn on blind aid") || lowered.contains("blind aid on") ||
+            isSpokenBlindAidStart(lowered) ||
             lowered in setOf(
                 "start blind", "start blind mode", "start blind view",
                 "enable blind mode", "enable blind view", "blind mode on", "blind view on",

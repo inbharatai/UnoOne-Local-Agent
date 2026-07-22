@@ -1416,14 +1416,10 @@ class AgentOrchestrator(
         // stands unchanged, so this never creates a safety hole. Gated by a flag so the per-step
         // latency cost of an extra inference can be turned off if needed.
         //
-        // DIRECT tools are also skipped: the judge's value is catching paraphrased harm the keyword
-        // tier UNDER-rates, and DIRECT is by definition the inert/launch tier (speak_response,
-        // open_chrome, open_app, open_calendar, check_calendar, create_note, search_notes,
-        // summarize_text, deactivate_blind_aid). Running a second inference + "stricter verdict"
-        // bias on these is what produced the "speak_response → CONFIRM" confirmation popup for plain
-        // answers. The keyword tier (SafetyGuard.classify + classifyFromInput) still classifies
-        // them, so no safety hole is created; the judge still runs for every CONFIRM/STRONG_CONFIRM/
-        // BLOCK tier where escalation matters.
+        // Run the judge only for CONFIRM. DIRECT needs no second pass, STRONG_CONFIRM already asks
+        // for the highest explicit approval, and BLOCK is already rejected. This also keeps Blind
+        // Aid activation responsive instead of putting an 18-second E4B pass before its spoken
+        // confirmation. The deterministic tool/input classifier remains active for every tier.
         if (SafetyJudgePolicy.shouldRun(judgeEnabled, SAFETY_JUDGE_ENABLED, commandParser.isModelLoaded(), riskLevel)) {
             val judgeStart = System.currentTimeMillis()
             val verdict = commandParser.judgeSafety(toolCall.tool, toolCall.args.toString(), sanitizedText)

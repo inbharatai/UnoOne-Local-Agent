@@ -15,6 +15,7 @@ The repository [README](../../../README.md) is the product and architecture sour
 - Canonical tool-name and argument validation before execution.
 - Offline Sherpa-ONNX speech with English and Hindi exposed.
 - Accessibility-based phone control and screen reading.
+- Bundled offline Latin + Devanagari OCR for English and Hindi screen text.
 - CameraX/MediaPipe Blind Aid independent of the language model.
 - Secure Browser Page Agent using an exclusive lease on the same E4B artifact.
 - Offline document reading and supported PDF/DOCX template filling.
@@ -124,6 +125,8 @@ Wake phrases include:
 Wake and command may be spoken together. The voice service and foreground recorder maintain single microphone ownership, and TTS must not become a new command.
 
 Examples: “Uno, open Google Chrome,” “Uno, open Blind Aid,” and “Uno, read the screen.” Common offline-STT renderings of Chrome — “crome”, “crohm”, and “crope” — route to Chrome rather than a Google search. When an action needs confirmation, UnoOne says how to reply: say “Uno, yes” for an ordinary confirmation or “Uno, confirm” for a strong confirmation. The reply is resolved before the serial command queue so an eyes-free user is not locked behind the pending action.
+
+The floating assistant microphone captures one utterance per tap, stops on trailing silence or after eight seconds, and uses the same local command/tool route as hands-free wake input. Wake capture is privacy-paused during phone and VoIP calls and resumes when the call ends.
 
 English and Hindi are currently exposed. Assamese remains planned until exact speech artifacts pass licence, integrity, Android load and accuracy qualification.
 

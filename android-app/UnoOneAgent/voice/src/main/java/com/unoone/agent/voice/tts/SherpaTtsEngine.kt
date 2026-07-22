@@ -46,7 +46,7 @@ data class SynthesizedSpeech(
  */
 class SherpaTtsEngine(private val context: Context, private val modelDir: String) {
 
-    private val player = TtsPlayer()
+    private val player = TtsPlayer(context)
     // Native generation is blocking and ignores coroutine cancellation. Serialize requests and
     // invalidate every pre-stop request so cached Blind Aid speech cannot play after the camera is
     // closed. New speech (including "Blind Aid deactivated") uses the new epoch normally.
@@ -167,6 +167,7 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
             val result = withContext(Dispatchers.IO) { speakAtEpoch(text, requestEpoch) }
             if (result is Result.Success && requestEpoch == speechEpoch.get()) {
                 delay((lastPlaybackDurationMs + 100L).coerceAtMost(timeoutMs))
+                player.finishPcmPlayback()
             }
             result
         }

@@ -102,16 +102,14 @@ class SafetyJudgePolicyTest {
     }
 
     @Test
-    fun shouldRunsForConfirmAndStrongConfirmAndBlockWhenEnabled() {
-        for (level in listOf(RiskLevel.CONFIRM, RiskLevel.STRONG_CONFIRM, RiskLevel.BLOCK)) {
-            assertTrue(
-                "$level must run the judge when enabled + model loaded",
-                SafetyJudgePolicy.shouldRun(
-                    judgeEnabled = true,
-                    judgeFlagEnabled = true,
-                    modelLoaded = true,
-                    riskLevel = level
-                )
+    fun shouldRunOnlyForConfirmWhenEnabled() {
+        assertTrue(
+            SafetyJudgePolicy.shouldRun(true, true, true, RiskLevel.CONFIRM)
+        )
+        for (level in listOf(RiskLevel.DIRECT, RiskLevel.STRONG_CONFIRM, RiskLevel.BLOCK)) {
+            assertFalse(
+                "$level must not add a redundant model inference",
+                SafetyJudgePolicy.shouldRun(true, true, true, level)
             )
         }
     }

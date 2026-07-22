@@ -2,7 +2,9 @@ package com.unoone.agent.voice.tts
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -11,23 +13,31 @@ import com.unoone.agent.core.util.Logger
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.Locale
 import kotlin.coroutines.resume
+import kotlin.math.sqrt
 
 /**
  * Universal, highly robust TextToSpeech engine supporting English and Indian languages (Hindi, Tamil, etc.).
  * Fully offline-first.
  */
-class TtsPlayer : TextToSpeech.OnInitListener {
+class TtsPlayer(context: Context? = null) : TextToSpeech.OnInitListener {
 
     private var tts: TextToSpeech? = null
     private var isReady = false
     private var pendingText: String? = null
     private var activeTrack: AudioTrack? = null
+    private var audioManager: AudioManager? = context?.getSystemService(AudioManager::class.java)
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private val speechAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
 
     // 0C-9: UtteranceProgressListener for tracking TTS completion
     private var onUtteranceDone: ((String) -> Unit)? = null
 
     fun initialize(context: Context): Result<Unit> {
         return try {
+            audioManager = context.getSystemService(AudioManager::class.java)
             tts = TextToSpeech(context, this)
             Result.Success(Unit)
         } catch (e: Exception) {
@@ -122,6 +132,25 @@ class TtsPlayer : TextToSpeech.OnInitListener {
             // Stop any currently playing AudioTrack first
             stopPcmTrack()
 
+            val rms = sqrt(samples.fold(0.0) { sum, sample -> sum + sample * sample } / samples.size)
+            val peak = samples.maxOf { kotlin.math.abs(it) }
+            if (peak < 0.001f || rms < 0.0001) {
+                Logger.e("TTS Player: synthesized PCM is effectively silent (peak=$peak rms=$rms)")
+                return Result.Error("Synthesized speech was silent")
+            }
+
+            val manager = audioManager
+            if (manager != null) {
+                val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(speechAttributes)
+                    .setAcceptsDelayedFocusGain(false)
+                    .build()
+                audioFocusRequest = focusRequest
+                if (manager.requestAudioFocus(focusRequest) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                    Logger.w("TTS Player: audio focus was not granted; attempting direct playback")
+                }
+            }
+
             // Convert FloatArray [-1.0, 1.0] → Int16 PCM bytes
             val pcmBytes = ByteArray(samples.size * 2)
             for (i in samples.indices) {
@@ -141,10 +170,7 @@ class TtsPlayer : TextToSpeech.OnInitListener {
 
             val track = AudioTrack.Builder()
                 .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
+                    speechAttributes
                 )
                 .setAudioFormat(
                     AudioFormat.Builder()
@@ -158,9 +184,10 @@ class TtsPlayer : TextToSpeech.OnInitListener {
                 .build()
 
             track.write(pcmBytes, 0, pcmBytes.size)
+            track.setVolume(1.0f)
             track.play()
             activeTrack = track
-            Logger.i("TTS Player: PCM playback started (${samples.size} samples at ${sampleRate}Hz)")
+            Logger.i("TTS Player: audible PCM playback started (${samples.size} samples at ${sampleRate}Hz, peak=${"%.3f".format(peak)}, rms=${"%.3f".format(rms)})")
             Result.Success(Unit)
         } catch (e: Exception) {
             Logger.e("TTS Player: PCM playback failed", e)
@@ -202,6 +229,11 @@ class TtsPlayer : TextToSpeech.OnInitListener {
         stopPcmTrack()
     }
 
+    /** Release the static AudioTrack and transient focus after a suspending caller heard it. */
+    fun finishPcmPlayback() {
+        stopPcmTrack()
+    }
+
     fun release() {
         stop()
         stopPcmTrack()
@@ -227,5 +259,9 @@ class TtsPlayer : TextToSpeech.OnInitListener {
             Logger.e("TTS Player: Error releasing AudioTrack", e)
         }
         activeTrack = null
+        audioFocusRequest?.let { request ->
+            runCatching { audioManager?.abandonAudioFocusRequest(request) }
+        }
+        audioFocusRequest = null
     }
 }

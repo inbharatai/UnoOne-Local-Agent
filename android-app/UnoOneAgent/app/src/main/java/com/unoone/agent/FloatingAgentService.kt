@@ -46,9 +46,17 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.unoone.agent.di.DatabaseProvider
+import com.unoone.agent.core.model.InputType
+import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.runtime.AgentRuntimeGate
+import com.unoone.agent.core.util.Logger
 import com.unoone.agent.ui.theme.UnoOneTheme
+import com.unoone.agent.voice.VoiceActivityPolicy
 import com.unoone.agent.voice.VoiceModule
+import com.unoone.agent.voice.VoiceService
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -172,6 +180,11 @@ class FloatingAgentService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
     }
 
     private fun toggleChatOverlay() {
+        // A bubble tap is an explicit user interaction. Use it to recover the microphone FGS when
+        // Android/HyperOS killed an earlier sticky instance; background Application startup is not
+        // always allowed to launch a microphone foreground service on Android 14+.
+        runCatching { VoiceService.start(this) }
+            .onFailure { Logger.w("FloatingAgentService: voice service restart failed: ${it.message}") }
         if (chatOverlayView == null) showChatOverlay() else hideChatOverlay()
     }
 
@@ -308,8 +321,106 @@ fun ChatOverlayCard(
 ) {
     var text by remember { mutableStateOf("") }
     var isListening by remember { mutableStateOf(false) }
+    var captureJob by remember { mutableStateOf<Job?>(null) }
+    val ownsCapture = remember { mutableStateOf(false) }
+    val latestAmplitude = remember { mutableFloatStateOf(0f) }
     val scope = rememberCoroutineScope()
     val steps by orchestrator.timelineSteps.collectAsState()
+
+    val amplitudeListener = remember<(Float) -> Unit> {
+        { amplitude -> latestAmplitude.floatValue = amplitude }
+    }
+    DisposableEffect(voiceModule) {
+        voiceModule.addAmplitudeListener(amplitudeListener)
+        onDispose {
+            voiceModule.removeAmplitudeListener(amplitudeListener)
+            captureJob?.cancel()
+            if (ownsCapture.value) {
+                ownsCapture.value = false
+                runCatching { voiceModule.stopRecording() }
+                VoiceService.foregroundSessionActive = false
+            }
+        }
+    }
+
+    fun finishVoiceCapture() {
+        if (!ownsCapture.value) return
+        ownsCapture.value = false
+        isListening = false
+        captureJob?.cancel()
+        captureJob = null
+        scope.launch {
+            try {
+                when (val result = voiceModule.stopAndTranscribe()) {
+                    is Result.Success -> {
+                        val command = result.data.trim()
+                        if (command.isBlank()) {
+                            voiceModule.speakAwait("I didn't hear a command. Tap the microphone and try again.")
+                        } else {
+                            VoiceService.beginForegroundTask()
+                            try {
+                                orchestrator.processCommand(command, InputType.VOICE)
+                            } finally {
+                                VoiceService.endForegroundTask()
+                            }
+                        }
+                    }
+                    is Result.Error -> {
+                        Logger.w("FloatingAgentService: transcription failed: ${result.message}")
+                        voiceModule.speakAwait("I couldn't understand that. Tap the microphone and try again.")
+                    }
+                }
+            } finally {
+                VoiceService.foregroundSessionActive = false
+            }
+        }
+    }
+
+    fun startVoiceCapture() {
+        if (ownsCapture.value) return
+        scope.launch {
+            // Pause the passive wake recorder before the audible cue and one-shot capture so the
+            // two AudioRecord owners never contend or transcribe UnoOne's own voice.
+            VoiceService.foregroundSessionActive = true
+            runCatching { VoiceService.start(serviceContext) }
+                .onFailure { Logger.w("FloatingAgentService: voice service unavailable: ${it.message}") }
+            runCatching { voiceModule.stopSpeaking() }
+            voiceModule.speakAwait("Listening. Say one command.")
+            latestAmplitude.floatValue = 0f
+            when (val result = voiceModule.startRecording(serviceContext, scope)) {
+                is Result.Success -> {
+                    ownsCapture.value = true
+                    isListening = true
+                    captureJob = scope.launch {
+                        var speechStarted = false
+                        var silenceSince = 0L
+                        val startedAt = System.currentTimeMillis()
+                        while (
+                            isActive && ownsCapture.value &&
+                            System.currentTimeMillis() - startedAt < VoiceActivityPolicy.MAX_UTTERANCE_MS
+                        ) {
+                            delay(100L)
+                            if (VoiceActivityPolicy.isSpeech(latestAmplitude.floatValue)) {
+                                speechStarted = true
+                                silenceSince = 0L
+                            } else if (speechStarted) {
+                                if (silenceSince == 0L) silenceSince = System.currentTimeMillis()
+                                if (System.currentTimeMillis() - silenceSince >= VoiceActivityPolicy.TRAILING_SILENCE_MS) {
+                                    break
+                                }
+                            }
+                        }
+                        finishVoiceCapture()
+                    }
+                }
+                is Result.Error -> {
+                    VoiceService.foregroundSessionActive = false
+                    Logger.w("FloatingAgentService: record start failed: ${result.message}")
+                    voiceModule.speakAwait("The microphone could not start. Open UnoOne and check voice settings.")
+                }
+            }
+        }
+    }
 
     // Reactive mic permission check — re-evaluated on every recomposition
     val hasMicPermission = ContextCompat.checkSelfPermission(
@@ -385,16 +496,9 @@ fun ChatOverlayCard(
                             return@IconButton
                         }
                         if (isListening) {
-                            isListening = false
-                            scope.launch {
-                                val result = voiceModule.stopAndTranscribe()
-                                if (result is com.unoone.agent.core.model.Result.Success) {
-                                    orchestrator.processCommand(result.data, com.unoone.agent.core.model.InputType.VOICE)
-                                }
-                            }
+                            finishVoiceCapture()
                         } else {
-                            isListening = true
-                            voiceModule.startRecording(serviceContext, scope)
+                            startVoiceCapture()
                         }
                     },
                     colors = IconButtonDefaults.iconButtonColors(

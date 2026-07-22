@@ -34,6 +34,7 @@ import com.unoone.agent.ui.viewmodel.SecureBrowserViewModel
 import com.unoone.agent.ui.viewmodel.SettingsViewModel
 import com.unoone.agent.ui.viewmodel.SkillsViewModel
 import com.unoone.agent.ui.viewmodel.VoiceTestViewModel
+import com.unoone.agent.voice.VoiceService
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -234,6 +235,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Starting a microphone FGS from Application.onCreate can be rejected after process death
+        // on Android 14+. Activity resume is a visible, legal recovery point for wake listening.
+        if (AgentRuntimeGate.isEnabled()) {
+            runCatching { VoiceService.start(this) }
+                .onFailure { com.unoone.agent.core.util.Logger.e("MainActivity: failed to resume voice activation", it) }
+        }
         if (AgentRuntimeGate.isEnabled() && Settings.canDrawOverlays(this)) {
             startService(Intent(this, FloatingAgentService::class.java))
         }

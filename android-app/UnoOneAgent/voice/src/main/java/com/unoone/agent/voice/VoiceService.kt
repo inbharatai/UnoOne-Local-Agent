@@ -638,11 +638,11 @@ class VoiceService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Restart service if killed by aggressive battery optimization (Xiaomi, Huawei, Oppo, etc.)
-        if (AgentRuntimeGate.isEnabled()) {
-            val restartIntent = Intent(this, VoiceService::class.java)
-            startForegroundService(restartIntent)
-        }
+        // START_STICKY handles ordinary system recreation. Calling startForegroundService() from
+        // this background callback is rejected for microphone services on Android 14+ and left a
+        // dead ServiceRecord on HyperOS. MainActivity resume and a bubble tap are the legal,
+        // user-visible recovery points.
+        Logger.i("VoiceService: task removed; awaiting sticky or visible-UI recovery")
         super.onTaskRemoved(rootIntent)
     }
 }
