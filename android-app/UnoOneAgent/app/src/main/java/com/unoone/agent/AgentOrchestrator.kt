@@ -52,6 +52,7 @@ import com.unoone.agent.voice.VoiceConfirmationPolicy
 import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceService
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,7 +62,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -1527,49 +1527,45 @@ class AgentOrchestrator(
 
     private suspend fun awaitConfirmation(message: String): Boolean {
         val requiresExplicitConfirm = message.startsWith("SECURITY CHECK")
-        val response = AtomicReference<PendingVoiceConfirmation?>(null)
+        val response = CompletableDeferred<Boolean>()
+        val responded = AtomicBoolean(false)
+        fun respond(result: Boolean) {
+            if (responded.compareAndSet(false, true)) response.complete(result)
+        }
+        val pending = PendingVoiceConfirmation(requiresExplicitConfirm, ::respond)
         val canAnswerByVoice = currentInputType == InputType.VOICE && AgentRuntimeGate.isEnabled()
         if (canAnswerByVoice) {
             VoiceService.awaitingVoiceConfirmation = true
-            // Confirmation narration is deliberately unthrottled: it is the only instruction a
-            // blind user receives while the command lock is held.
-            speakAnswer(VoiceConfirmationPolicy.prompt(requiresExplicitConfirm))
+        }
+        // Publish the decision slot before narration. Hindi synthesis can take several seconds;
+        // registering it afterward dropped an early spoken "confirm" even though the UI already
+        // showed Confirmation Required.
+        pendingVoiceConfirmation.set(pending)
+        if (onConfirmationRequiredMulticast.hasListeners) {
+            onConfirmationRequiredMulticast.invokeAll { listener -> listener(message, ::respond) }
+        } else {
+            onConfirmationRequired?.invoke(message, ::respond) ?: run {
+                Logger.w("Orchestrator: confirmation listener missing — denying")
+                respond(false)
+            }
         }
         return try {
-            withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) {
-                suspendCancellableCoroutine { cont ->
-                    // UI, floating assistant and voice may race. Exactly one decision resumes the
-                    // waiting command; the other delivery paths become harmless no-ops.
-                    val responded = AtomicBoolean(false)
-                    fun respond(result: Boolean) {
-                        if (responded.compareAndSet(false, true)) {
-                            cont.resumeWith(kotlin.Result.success(result))
-                        }
-                    }
-                    val pending = PendingVoiceConfirmation(requiresExplicitConfirm, ::respond)
-                    response.set(pending)
-                    pendingVoiceConfirmation.set(pending)
-                    cont.invokeOnCancellation {
-                        pendingVoiceConfirmation.compareAndSet(pending, null)
-                    }
-
-                    if (onConfirmationRequiredMulticast.hasListeners) {
-                        onConfirmationRequiredMulticast.invokeAll { listener ->
-                            listener(message, ::respond)
-                        }
-                    } else {
-                        onConfirmationRequired?.invoke(message, ::respond) ?: run {
-                            Logger.w("Orchestrator: confirmation listener missing — denying")
-                            respond(false)
-                        }
-                    }
-                }
-            } ?: run {
+            // A UI tap or already-decoded local voice reply may win immediately. Give that path one
+            // polling interval before synthesizing a long prompt; repeating the instruction after
+            // approval makes the agent sound stuck and delays execution.
+            val earlyDecision = withTimeoutOrNull(250L) { response.await() }
+            if (earlyDecision != null) return earlyDecision
+            if (canAnswerByVoice) {
+                // Confirmation narration is deliberately unthrottled: it is the only instruction a
+                // blind user receives while the command lock is held.
+                speakAnswer(VoiceConfirmationPolicy.prompt(requiresExplicitConfirm))
+            }
+            withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) { response.await() } ?: run {
                 Logger.w("Orchestrator: confirmation timed out after ${CONFIRMATION_TIMEOUT_MS}ms — denying for safety")
                 false
             }
         } finally {
-            response.get()?.let { pendingVoiceConfirmation.compareAndSet(it, null) }
+            pendingVoiceConfirmation.compareAndSet(pending, null)
             if (canAnswerByVoice) VoiceService.awaitingVoiceConfirmation = false
         }
     }
@@ -1609,6 +1605,12 @@ class AgentOrchestrator(
      */
     private fun narrateMilestone(status: AgentStatus, label: String, detail: String) {
         if (currentInputType != InputType.VOICE && !narrateTextCommands) return
+        // awaitConfirmation() immediately delivers the exact, unthrottled eyes-free instruction.
+        // Speaking the generic milestone too created two back-to-back prompts and delayed Blind Aid
+        // execution long enough to look unresponsive after the user had already confirmed.
+        if (status == AgentStatus.SAFETY_CHECK && label in setOf(
+                "Security Level", "Safety Filter", "Safety Judge", "Confirmation Required"
+            )) return
         val phrase = NarrationPolicy.narrationFor(status, label, detail) ?: return
         val localizedPhrase = VoiceResponseLocalizer.milestone(
             phrase,
