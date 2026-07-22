@@ -10,6 +10,8 @@ import com.unoone.agent.modelmanager.ModelManager
 import com.unoone.agent.securebrowser.BrowserModelPort
 import com.unoone.agent.securebrowser.PageAgentModelDecision
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -58,19 +60,22 @@ class SecureBrowserModelLease(
 
         restoreMainBrain = mainWasLoaded
         leasedModelPath = path
-        if (restoreMainBrain) orchestrator.unloadLlmModel()
+        try {
+            if (restoreMainBrain) orchestrator.unloadLlmModel()
 
-        val load = planner.load(path, spec)
-        if (load is Result.Error) {
-            ExclusiveBrainLeaseState.release(OWNER_ID)
-            if (restoreMainBrain) orchestrator.loadLlmModel(path, spec)
-            restoreMainBrain = false
-            leasedModelPath = null
-            return@withLock load
-        }
+            val load = planner.load(path, spec)
+            if (load is Result.Error) {
+                if (restoreMainBrain) {
+                    orchestrator.loadLlmModelUnderLease(path, spec, OWNER_ID)
+                }
+                restoreMainBrain = false
+                leasedModelPath = null
+                ExclusiveBrainLeaseState.release(OWNER_ID)
+                return@withLock load
+            }
 
-        active = true
-        Result.Success(
+            active = true
+            Result.Success(
             BrowserModelPort { invocation ->
                 when (val result = planner.plan(
                     pageAgentSystemPrompt = invocation.systemPrompt,
@@ -92,7 +97,45 @@ class SecureBrowserModelLease(
                     )
                 }
             }
-        )
+            )
+        } catch (cancelled: CancellationException) {
+            planner.requestCancel("browser acquisition cancelled")
+            withContext(NonCancellable + Dispatchers.IO) {
+                val browserClosed = runCatching { planner.close() }.getOrDefault(false)
+                if (browserClosed) {
+                    if (restoreMainBrain) {
+                        runCatching { orchestrator.loadLlmModelUnderLease(path, spec, OWNER_ID) }
+                    }
+                    active = false
+                    restoreMainBrain = false
+                    leasedModelPath = null
+                    ExclusiveBrainLeaseState.release(OWNER_ID)
+                } else {
+                    // Native work is still alive. Keep the exclusive lease so no phone engine can
+                    // be created beside it; a later explicit release will retry cancellation.
+                    active = true
+                    leasedModelPath = path
+                }
+            }
+            throw cancelled
+        } catch (error: Exception) {
+            withContext(NonCancellable + Dispatchers.IO) {
+                val browserClosed = runCatching { planner.close() }.getOrDefault(false)
+                if (browserClosed) {
+                    if (restoreMainBrain) {
+                        runCatching { orchestrator.loadLlmModelUnderLease(path, spec, OWNER_ID) }
+                    }
+                    active = false
+                    restoreMainBrain = false
+                    leasedModelPath = null
+                    ExclusiveBrainLeaseState.release(OWNER_ID)
+                } else {
+                    active = true
+                    leasedModelPath = path
+                }
+            }
+            Result.Error("Secure Browser model transition failed: ${error.message}", error)
+        }
     }
 
     suspend fun release(restore: Boolean = true): Result<Unit> = mutex.withLock {
@@ -101,17 +144,28 @@ class SecureBrowserModelLease(
             return@withLock Result.Success(Unit)
         }
 
-        planner.close()
+        planner.requestCancel("browser lease released")
+        val browserClosed = planner.close()
+        if (!browserClosed) {
+            return@withLock Result.Error(
+                "Secure Browser native inference did not stop; phone brain was not restored"
+            )
+        }
         active = false
         val path = leasedModelPath
         val shouldRestore = restore && restoreMainBrain
         leasedModelPath = null
         restoreMainBrain = false
-        ExclusiveBrainLeaseState.release(OWNER_ID)
-
         if (shouldRestore && path != null) {
-            return@withLock orchestrator.loadLlmModel(path, BrainModelRegistry.GEMMA_4_E4B)
+            val restored = orchestrator.loadLlmModelUnderLease(
+                path,
+                BrainModelRegistry.GEMMA_4_E4B,
+                OWNER_ID
+            )
+            ExclusiveBrainLeaseState.release(OWNER_ID)
+            return@withLock restored
         }
+        ExclusiveBrainLeaseState.release(OWNER_ID)
         Result.Success(Unit)
     }
 

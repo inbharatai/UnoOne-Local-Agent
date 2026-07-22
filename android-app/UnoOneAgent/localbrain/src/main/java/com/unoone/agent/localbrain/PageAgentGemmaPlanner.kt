@@ -9,6 +9,10 @@ import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
 import com.unoone.agent.core.agent.ResponseTextJoiner
 import com.unoone.agent.core.model.BrainModelSpec
+import com.unoone.agent.core.model.BackendQualificationChoice
+import com.unoone.agent.core.model.E4bRuntimeBudgets
+import com.unoone.agent.core.model.E4bRuntimeCoordinator
+import com.unoone.agent.core.model.E4bRuntimeState
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +20,6 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -44,7 +47,9 @@ data class PageAgentPlan(
  * Browser actions are returned as strict JSON and checked against [ALLOWED_ACTIONS]. PageAgent still
  * sends every action through the native [BrowserSafetyPolicy] before touching the DOM.
  */
-class PageAgentGemmaPlanner {
+class PageAgentGemmaPlanner(
+    private val backendChoice: BackendQualificationChoice = BackendQualificationChoice.AUTO
+) {
 
     // Small on-device models occasionally emit JSON-style objects with unquoted property names
     // even when explicitly asked for strict JSON. Lenient parsing accepts that harmless syntax;
@@ -55,6 +60,7 @@ class PageAgentGemmaPlanner {
         isLenient = true
     }
     private val mutex = Mutex()
+    private val nativeInference = LiteRtCancellableInference("PageAgentGemmaPlanner")
 
     private var engine: Engine? = null
     @Volatile private var loaded = false
@@ -66,16 +72,18 @@ class PageAgentGemmaPlanner {
     fun lastLoadError(): String = lastError
 
     suspend fun load(modelPath: String, spec: BrainModelSpec): Result<Unit> = withContext(Dispatchers.IO) {
+        E4bRuntimeCoordinator.operationMutex.withLock {
         mutex.withLock {
+            E4bRuntimeCoordinator.transition(E4bRuntimeState.LOADING_BROWSER, OWNER_ID, spec.manifestId)
             closeInternal()
             lastError = ""
             try {
-                val loadedPair = loadEngine(modelPath)
+                val loadedPair = loadEngine(modelPath, spec)
                     ?: return@withLock Result.Error("${spec.displayName} failed to load for Secure Browser")
                 val newEngine = loadedPair.first
                 // Validate conversation creation while loading, but do not retain it. PageAgent
                 // already sends its complete task/history/DOM on every step; retaining LiteRT-LM's
-                // native conversation would duplicate all previous prompts until the 4096-token
+                // native conversation would duplicate all previous prompts until the 2048-token
                 // context overflows after only a few browser actions.
                 val validationConversation = try {
                     newEngine.createConversation(
@@ -93,14 +101,18 @@ class PageAgentGemmaPlanner {
                 engine = newEngine
                 backend = loadedPair.second
                 loaded = true
-                Logger.i("PageAgentGemmaPlanner: loaded ${spec.displayName} on $backend")
+                val budget = E4bRuntimeBudgets.pageAgent(spec)
+                Logger.i("PageAgentGemmaPlanner: loaded ${spec.displayName} on $backend; context=${budget.contextTokens}, output=${budget.outputTokens}")
+                E4bRuntimeCoordinator.transition(E4bRuntimeState.BROWSER_READY, OWNER_ID, backend)
                 Result.Success(Unit)
             } catch (e: Exception) {
                 closeInternal()
                 lastError = e.message ?: "Unknown browser-brain load error"
                 Logger.e("PageAgentGemmaPlanner: load failed", e)
+                E4bRuntimeCoordinator.transition(E4bRuntimeState.FAILED, OWNER_ID, lastError)
                 Result.Error("Secure Browser model load failed: $lastError", e)
             }
+        }
         }
     }
 
@@ -123,7 +135,9 @@ class PageAgentGemmaPlanner {
         )
 
         return try {
-            val message = mutex.withLock {
+            val message = E4bRuntimeCoordinator.operationMutex.withLock {
+              mutex.withLock {
+                E4bRuntimeCoordinator.transition(E4bRuntimeState.BROWSER_INFERENCING, OWNER_ID)
                 val stepConversation = activeEngine.createConversation(
                     ConversationConfig(
                         systemInstruction = Contents.of(PAGE_AGENT_SYSTEM_INSTRUCTION),
@@ -132,12 +146,17 @@ class PageAgentGemmaPlanner {
                     )
                 )
                 try {
-                    withTimeout(INFERENCE_TIMEOUT_MS) {
-                        withContext(Dispatchers.IO) { stepConversation.sendMessage(prompt) }
-                    }
+                    nativeInference.send(
+                        stepConversation,
+                        Message.user(Contents.of(prompt)),
+                        INFERENCE_TIMEOUT_MS,
+                        maxOutputTokens.coerceIn(1, E4bRuntimeBudgets.PAGE_AGENT_OUTPUT_TOKENS)
+                    )
                 } finally {
                     runCatching { stepConversation.close() }
+                    E4bRuntimeCoordinator.transition(E4bRuntimeState.BROWSER_READY, OWNER_ID, backend)
                 }
+              }
             }
             val text = extractText(message).orEmpty()
             val parsed = parseAndValidate(text).let { result ->
@@ -170,8 +189,7 @@ class PageAgentGemmaPlanner {
                 }
             }
         } catch (e: TimeoutCancellationException) {
-            Logger.w("PageAgentGemmaPlanner: inference timed out; closing browser brain")
-            close()
+            Logger.w("PageAgentGemmaPlanner: inference timed out after native cancellation")
             Result.Error("Secure Browser inference timed out")
         } catch (e: Exception) {
             Logger.e("PageAgentGemmaPlanner: inference failed", e)
@@ -179,8 +197,23 @@ class PageAgentGemmaPlanner {
         }
     }
 
-    fun close() {
-        closeInternal()
+    fun requestCancel(reason: String = "browser stop") = nativeInference.cancelActive(reason)
+
+    suspend fun close(): Boolean {
+        requestCancel("browser engine close")
+        return E4bRuntimeCoordinator.operationMutex.withLock outer@{
+          mutex.withLock {
+            E4bRuntimeCoordinator.transition(E4bRuntimeState.UNLOADING, OWNER_ID)
+            if (!nativeInference.awaitNativeIdle()) {
+                lastError = "Native browser inference did not stop; engine close refused"
+                E4bRuntimeCoordinator.transition(E4bRuntimeState.FAILED, OWNER_ID, lastError)
+                return@outer false
+            }
+            withContext(Dispatchers.IO) { closeInternal() }
+            E4bRuntimeCoordinator.transition(E4bRuntimeState.UNLOADED)
+          }
+          true
+        }
     }
 
     private fun closeInternal() {
@@ -191,11 +224,22 @@ class PageAgentGemmaPlanner {
         backend = ""
     }
 
-    private fun loadEngine(modelPath: String): Pair<Engine, String>? {
-        for ((candidateBackend, name) in listOf(Backend.GPU() to "GPU", Backend.CPU() to "CPU")) {
+    private fun loadEngine(modelPath: String, spec: BrainModelSpec): Pair<Engine, String>? {
+        val candidates = when (backendChoice) {
+            BackendQualificationChoice.GPU -> listOf(Backend.GPU() to "GPU")
+            BackendQualificationChoice.CPU,
+            BackendQualificationChoice.AUTO -> listOf(Backend.CPU() to "CPU")
+        }
+        for ((candidateBackend, name) in candidates) {
             var candidate: Engine? = null
             try {
-                candidate = Engine(EngineConfig(modelPath = modelPath, backend = candidateBackend))
+                candidate = Engine(
+                    EngineConfig(
+                        modelPath = modelPath,
+                        backend = candidateBackend,
+                        maxNumTokens = E4bRuntimeBudgets.pageAgent(spec).contextTokens
+                    )
+                )
                 candidate.initialize()
                 return candidate to name
             } catch (e: Exception) {
@@ -214,7 +258,7 @@ class PageAgentGemmaPlanner {
     ): String = buildString {
         // The upstream PageAgent system prompt and OpenAI tool schema are intentionally replaced
         // with this compact equivalent. Passing their full versions consumed 4342 input tokens on
-        // a 4096-token Gemma context before the first form action ran.
+        // the bounded Gemma context before the first form action ran.
         appendLine("Plan one browser action for the current task, history, and simplified DOM:")
         appendLine(compactPageContext(PromptBuilder.sanitizeContext(pageAgentUserPrompt)))
         appendLine()
@@ -246,7 +290,7 @@ class PageAgentGemmaPlanner {
             val rootResult = runCatching {
                 json.parseToJsonElement(jsonText).jsonObject
             }.getOrElse {
-                // Gemma 4 E2B has been observed on-device emitting `input_text"` (missing only the
+                // Gemma-family artifacts can emit `input_text"` (missing only the
                 // opening quote) in an otherwise valid plan. Repair only known structural keys;
                 // never rewrite arbitrary string values from the user or page.
                 runCatching {
@@ -392,7 +436,7 @@ class PageAgentGemmaPlanner {
             .lastOrNull { it.contains('<') }
 
     /**
-     * Gemma 4 E2B can choose the correct indexed text field while emitting `"text":` with no
+     * Gemma can choose the correct indexed text field while emitting `"text":` with no
      * value. Recover only when the current DOM identifies a common field and the user request
      * contains one unambiguous, explicit value for that field. Nothing is guessed or learned:
      * unknown fields, duplicate candidates and prose without a delimiter remain rejected.
@@ -605,7 +649,7 @@ class PageAgentGemmaPlanner {
      * array supplies the element index.
      */
     private fun normalizeActionObject(action: JsonObject): Pair<String, JsonObject>? {
-        // Gemma 4 E2B also emits a common typed-tool envelope on device:
+        // Gemma-family artifacts also emit a common typed-tool envelope:
         // {"action_name":"scroll","arguments":{"down":true,...}}. Accept this only when those are
         // the sole keys, the name is allow-listed, the arguments are an object and its required
         // typed fields are present. Native browser policy still authorizes the resulting action.
@@ -768,7 +812,7 @@ class PageAgentGemmaPlanner {
     }
 
     /**
-     * Last-resort typed decoding for the exact failure mode observed from Gemma 4 E2B: the action
+     * Last-resort typed decoding for a Gemma-family failure mode: the action
      * name and primitive arguments are correct, but the final string value is missing its closing
      * quote. Each supported action has an explicit schema here; unknown keys are ignored and a
      * missing required argument rejects the candidate.
@@ -1017,8 +1061,9 @@ class PageAgentGemmaPlanner {
         }.joinToString("")
 
     companion object {
+        private const val OWNER_ID = "secure-browser-page-agent"
         const val INFERENCE_TIMEOUT_MS = 45_000L
-        // Conservative character budget for Gemma 4 E2B's 4096-token input context. PageAgent's
+        // Conservative character budget for E4B's enforced 2048-token input context. PageAgent's
         // user prompt is ASCII-heavy markup, so a 6000-character cap plus the compact instructions
         // leaves substantial tokenizer and output headroom.
         const val MAX_PAGE_CONTEXT_CHARS = 6_000

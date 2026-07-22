@@ -6,6 +6,7 @@ import com.unoone.agent.core.eval.EvalPromptSet
 import com.unoone.agent.core.eval.EvalScorer
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
+import com.unoone.agent.core.model.BackendQualificationChoice
 import com.unoone.agent.modelmanager.ModelManager
 import kotlinx.coroutines.runBlocking
 import org.junit.Assume.assumeTrue
@@ -41,11 +42,20 @@ class BrainEvalHarnessTest {
     }
 
     @Test
-    fun runsPromptSetAndReportsAccuracy() = runBlocking {
+    fun runsPromptSetOnCpuAndReportsAccuracy() = runBlocking {
+        runQualification(BackendQualificationChoice.CPU)
+    }
+
+    @Test
+    fun runsPromptSetOnGpuAndReportsAccuracy() = runBlocking {
+        runQualification(BackendQualificationChoice.GPU)
+    }
+
+    private suspend fun runQualification(choice: BackendQualificationChoice) {
         val path = modelManager.getLlmModelPath()
         assumeTrue("No integrity-verified E4B model found — skipping eval harness", path != null)
 
-        val planner = GemmaPlanner()
+        val planner = GemmaPlanner(choice)
         val loadResult = planner.load(path!!)
         check(loadResult is Result.Success) {
             "Model load failed: ${(loadResult as? Result.Error)?.message}"
@@ -71,8 +81,8 @@ class BrainEvalHarnessTest {
         planner.close()
 
         val summary = EvalScorer.scoreAll(EvalPromptSet.cases, actuals)
-        println("==== UNOONE E4B BRAIN EVAL ====")
-        println("Profile: $loadedProfile | backend: $loadedBackend")
+        println("==== UNOONE E4B ${choice.name} BRAIN EVAL ====")
+        println("Profile: $loadedProfile | requested: ${choice.name} | actual backend: $loadedBackend")
         println(summary)
         println("==== END E4B BRAIN EVAL ====")
 

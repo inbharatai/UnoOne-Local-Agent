@@ -103,6 +103,12 @@ class CommandParser(
     suspend fun describeSceneWithVision(imageBytes: ByteArray, aspect: String): Result<String> =
         localBrain.describeSceneWithVision(imageBytes, aspect)
 
+    /** Direct, read-only E4B probe that deliberately bypasses deterministic command rules. */
+    suspend fun planModelOnly(text: String): Result<ToolCall> {
+        if (!localBrain.isModelLoaded()) return Result.Error("Gemma model not loaded")
+        return localBrain.runInference(text, ContextSnapshot())
+    }
+
     override fun sanitizeAndParse(rawInput: String): ToolCall? {
         val sanitized = InputSanitizer.sanitize(rawInput)
         if (sanitized.isBlank()) return null
@@ -130,7 +136,9 @@ class CommandParser(
     suspend fun loadModel(modelPath: String, spec: BrainModelSpec): Result<Unit> =
         localBrain.loadModel(modelPath, spec)
 
-    fun unloadModel() = localBrain.unloadModel()
+    suspend fun unloadModel() = localBrain.unloadModel()
+
+    fun cancelModelInference(reason: String) = localBrain.cancelInference(reason)
 
     internal suspend fun buildContextSnapshot(
         command: String,

@@ -47,10 +47,9 @@ data class EvalSummary(
 
 /**
  * Pure-JVM scorer for the calibration prompt set. No device, no LiteRT-LM — the device harness feeds
- * it raw [ToolCall]s (or null on load/parse failure) and reads the numbers. Arg matching is lenient
- * by design: a blank expected value means "present and non-empty"; a non-blank expected value must be
- * contained in the model's value (case-insensitive, trimmed) so paraphrased prompts don't score as
- * failures on wording alone.
+ * it raw [ToolCall]s (or null on load/parse failure) and reads the numbers. A blank expectation means
+ * "present and non-empty". Identity-sensitive fields (app/package, number, recipient, date/time and
+ * URL) require normalized exact equality; descriptive free text may use case-insensitive containment.
  */
 object EvalScorer {
 
@@ -62,7 +61,11 @@ object EvalScorer {
                 ?: element?.toString()
                 ?: ""
             if (expected.isBlank()) actualStr.isNotBlank()
-            else actualStr.trim().contains(expected.trim(), ignoreCase = true)
+            else if (name in STRICT_EXACT_FIELDS) {
+                normalizeExact(actualStr) == normalizeExact(expected)
+            } else {
+                actualStr.trim().contains(expected.trim(), ignoreCase = true)
+            }
         }
         val correct = toolMatch && argMatches.values.all { it }
         return EvalVerdict(
@@ -95,4 +98,10 @@ object EvalScorer {
             toolAccuracy = if (total == 0) 0.0 else toolMatches.toDouble() / total
         )
     }
+
+    private fun normalizeExact(value: String): String = value.trim().lowercase()
+
+    private val STRICT_EXACT_FIELDS = setOf(
+        "app_name", "package_name", "number", "to", "start_time", "end_time", "url"
+    )
 }

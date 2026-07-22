@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.core.content.edit
 import com.unoone.agent.core.model.AgentStatus
 import com.unoone.agent.core.model.InputType
+import com.unoone.agent.core.model.ExclusiveBrainLeaseState
 import com.unoone.agent.core.model.RiskLevel
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.runtime.AgentRuntimeGate
@@ -102,7 +103,7 @@ private const val SELF_HEAL_ENABLED = true
 private const val STREAMING_INFERENCE_ENABLED = true
 
 /**
- * Multimodal vision gate for `describe_scene`. False by default: the shipped Gemma 4 E2B
+ * Multimodal vision gate for `describe_scene`. False by default: the shipped Gemma 4 E4B
  * `.litertlm` artifact is text-only (no vision weights), so the LiteRT-LM
  * `Content.ImageBytes` path ([com.unoone.agent.localbrain.GemmaPlanner.describeSceneWithVision]) is
  * wired against the real AAR but INACTIVE. `describe_scene` instead uses the always-available OCR
@@ -198,7 +199,7 @@ class AgentOrchestrator(
         actionExecutor._setBlindAidActive = { active -> setBlindAidActiveFromTool(active) }
         actionExecutor._recordVoiceNote = { durationSeconds -> recordVoiceNote(durationSeconds) }
         // Multimodal vision for describe_scene — INACTIVE until a vision-capable .litertlm artifact
-        // ships (the loaded Gemma 4 E2B artifact is text-only). When VISION_MODEL_ENABLED
+        // ships (the loaded Gemma 4 E4B artifact is text-only). When VISION_MODEL_ENABLED
         // is false the callback stays null and describe_scene uses the always-available OCR + context
         // fallback ([com.unoone.agent.core.agent.SceneDescriptionBuilder]).
         if (VISION_MODEL_ENABLED) {
@@ -419,6 +420,9 @@ class AgentOrchestrator(
      * Should be called from a coroutine (engine init is slow).
      */
     suspend fun loadLlmModel(modelPath: String): com.unoone.agent.core.model.Result<Unit> {
+        if (ExclusiveBrainLeaseState.isActive()) {
+            return Result.Error("Gemma is reserved by ${ExclusiveBrainLeaseState.currentOwner()}")
+        }
         val result = commandParser.loadModel(modelPath)
         if (result is Result.Success) {
             lastLoadedPath = modelPath
@@ -428,14 +432,32 @@ class AgentOrchestrator(
     }
 
     /**
-     * Explicit Gemma 4 E2B load — loads [modelPath] using [spec] through the same safe
+     * Explicit Gemma 4 E4B load — loads [modelPath] using [spec] through the same safe
      * GemmaPlanner interface. Should be called from a coroutine.
      */
     suspend fun loadLlmModel(
         modelPath: String,
         spec: com.unoone.agent.core.model.BrainModelSpec
+    ): com.unoone.agent.core.model.Result<Unit> =
+        loadLlmModel(modelPath, spec, leaseOwner = null)
+
+    /** Restores the phone planner while [leaseOwner] still holds the exclusive transition lease. */
+    suspend fun loadLlmModelUnderLease(
+        modelPath: String,
+        spec: com.unoone.agent.core.model.BrainModelSpec,
+        leaseOwner: String
+    ): com.unoone.agent.core.model.Result<Unit> = loadLlmModel(modelPath, spec, leaseOwner)
+
+    private suspend fun loadLlmModel(
+        modelPath: String,
+        spec: com.unoone.agent.core.model.BrainModelSpec,
+        leaseOwner: String?
     ): com.unoone.agent.core.model.Result<Unit> {
         if (!AgentRuntimeGate.isEnabled()) return Result.Error("UnoOne is disabled")
+        val activeOwner = ExclusiveBrainLeaseState.currentOwner()
+        if (activeOwner != null && activeOwner != leaseOwner) {
+            return Result.Error("Gemma is reserved by $activeOwner")
+        }
         val result = commandParser.loadModel(modelPath, spec)
         if (result is Result.Success) {
             lastLoadedPath = modelPath
@@ -449,8 +471,12 @@ class AgentOrchestrator(
      * Unloads the Gemma brain to free native memory under system pressure
      * (see [com.unoone.agent.UnoOneApplication.onTrimMemory]). Idempotent.
      */
-    fun unloadLlmModel() {
+    suspend fun unloadLlmModel() {
         commandParser.unloadModel()
+    }
+
+    fun cancelLlmInference(reason: String = "user stop") {
+        commandParser.cancelModelInference(reason)
     }
 
     /**
@@ -507,6 +533,10 @@ class AgentOrchestrator(
         else com.unoone.agent.core.model.Result.Error("No tool call proposed for: $command")
     }
 
+    /** Self-test/evaluation-only direct planner call. It proposes but never executes an action. */
+    suspend fun planLlmToolCall(command: String): Result<ToolCall> =
+        commandParser.planModelOnly(command)
+
     fun setBlindAidActive(
         active: Boolean,
         bringToForeground: Boolean = false,
@@ -516,6 +546,7 @@ class AgentOrchestrator(
         if (active) {
             if (!blindAidActivationInFlight.compareAndSet(false, true)) return
             brainLoadCancelCallback?.invoke()
+            cancelLlmInference("Blind Aid activation")
             // C1: free the 2.5 GB Gemma brain BEFORE binding the camera. Blind Aid is a pure
             // CameraX + MediaPipe path — it never uses the brain — and on a ~5 GB-available device
             // keeping the brain resident while the camera + object detector load trips the kernel
@@ -523,13 +554,18 @@ class AgentOrchestrator(
             // for the IO handoff, then expose the camera state so camera and Gemma never overlap.
             scope.launch {
                 try {
-                    if (isLlmLoaded() && !processingLock.get() && brainReleaseGuard()) {
-                        runCatching { withContext(Dispatchers.IO) { unloadLlmModel() } }
-                            .onSuccess {
-                                Logger.i("Orchestrator: unloaded Gemma brain for Blind Aid (RAM freed for camera)")
-                            }
-                            .onFailure { Logger.e("Orchestrator: brain unload for Blind Aid failed", it) }
+                    if (!brainReleaseGuard()) {
+                        Logger.w("Orchestrator: Blind Aid start refused while another E4B mode owns the runtime")
+                        return@launch
                     }
+                    // Always run the unload barrier, even when isLlmLoaded() is false: a native load
+                    // may be in flight and non-cancellable. The process coordinator waits for it,
+                    // then closes the completed engine before CameraX is exposed.
+                    runCatching { withContext(Dispatchers.IO) { unloadLlmModel() } }
+                        .onSuccess {
+                            Logger.i("Orchestrator: E4B unload barrier completed for Blind Aid")
+                        }
+                        .onFailure { Logger.e("Orchestrator: brain unload for Blind Aid failed", it) }
                     _isBlindAidActive.value = true
                     if (bringToForeground) bringAppToForegroundIfNeeded()
                     // Accessibility disclaimer: Blind Aid is assistive guidance, not a certified
@@ -1615,6 +1651,7 @@ class AgentOrchestrator(
         pendingInputType.set(null)
         pendingRequiredPermission.set(null)
         cancelledRunId.set(currentRunId.get())
+        cancelLlmInference("command cancelled")
         _timelineSteps.value = emptyList()
         _isProcessing.value = false
         processingLock.set(false)
@@ -1633,6 +1670,7 @@ class AgentOrchestrator(
 
     /** Silent, non-recovering teardown used only by the persistent master disable control. */
     fun shutdownForDisable() {
+        cancelLlmInference("master disable")
         cancelCurrentCommand(speak = false)
         blindAidActivationInFlight.set(false)
         _isBlindAidActive.value = false

@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.test.core.app.ApplicationProvider
 import com.unoone.agent.core.model.BrainModelRegistry
 import com.unoone.agent.modelmanager.ModelManager
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
 /**
@@ -17,13 +18,14 @@ class ModelPathDiagnosticTest {
 
     @Test
     fun dumpModelPathResolution() {
-        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val manager = ModelManager(context)
-        manager.ensureModelDirectories()
-        val spec = BrainModelRegistry.GEMMA_4_E4B
-        val externalRoot = context.getExternalFilesDir("models")
-        val modelRoot = externalRoot ?: context.filesDir.resolve("models")
-        val tag = "UnoOneDiag"
+        runBlocking {
+            val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+            val manager = ModelManager(context)
+            manager.ensureModelDirectories()
+            val spec = BrainModelRegistry.GEMMA_4_E4B
+            val externalRoot = context.getExternalFilesDir("models")
+            val modelRoot = externalRoot ?: context.filesDir.resolve("models")
+            val tag = "UnoOneDiag"
 
         Log.i(tag, "getExternalFilesDir(models)=${externalRoot?.absolutePath}")
         Log.i(tag, "filesDir=${context.filesDir.absolutePath}")
@@ -42,6 +44,7 @@ class ModelPathDiagnosticTest {
             tag,
             "exact file exists=${exact.exists()} len=${exact.length()} canRead=${exact.canRead()}"
         )
-        Log.i(tag, "getLlmModelPath()=${manager.getLlmModelPath(spec)}")
+            Log.i(tag, "getLlmModelPath()=${manager.getLlmModelPath(spec)}")
+        }
     }
 }

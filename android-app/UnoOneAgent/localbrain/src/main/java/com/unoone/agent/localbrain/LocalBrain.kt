@@ -40,10 +40,12 @@ class LocalBrain {
     suspend fun loadModel(modelPath: String, spec: BrainModelSpec): Result<Unit> =
         planner.load(modelPath, spec)
 
-    fun unloadModel() {
+    suspend fun unloadModel() {
         Logger.i("LocalBrain: unloading Gemma model")
         planner.close()
     }
+
+    fun cancelInference(reason: String = "external stop") = planner.requestCancel(reason)
 
     /** Runs one planning turn with a bounded context snapshot. */
     suspend fun runInference(prompt: String, context: ContextSnapshot): Result<ToolCall> =

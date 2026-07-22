@@ -15,6 +15,9 @@ enum class ModelFamily { GEMMA_4 }
 /** Hardware backend preference. LiteRT-LM backend mapping lives in `:localbrain`. */
 enum class BackendPreference { GPU_FIRST, CPU_ONLY, ANY }
 
+/** Developer qualification override. AUTO uses only a recorded-qualified backend. */
+enum class BackendQualificationChoice { AUTO, CPU, GPU }
+
 /**
  * Authoritative specification of the UnoOne planning brain.
  *
@@ -53,7 +56,9 @@ object BrainModelRegistry {
         modelFolder = "brain/gemma-4-e4b",
         fileName = "gemma-4-E4B-it.litertlm",
         fileExtension = ".litertlm",
-        preferredBackend = BackendPreference.GPU_FIRST,
+        // AUTO stays on the conservative CPU baseline until device/hash/build qualification records
+        // prove another backend meets the same strict accuracy and stability gates.
+        preferredBackend = BackendPreference.ANY,
         minimumRamMb = 8_192,
         recommendedRamMb = 12_288,
         maximumContextTokens = 32_768,

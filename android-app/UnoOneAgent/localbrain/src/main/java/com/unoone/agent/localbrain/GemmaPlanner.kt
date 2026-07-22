@@ -10,8 +10,12 @@ import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.tool
 import com.unoone.agent.core.model.BackendPreference
+import com.unoone.agent.core.model.BackendQualificationChoice
 import com.unoone.agent.core.model.BrainModelSpec
 import com.unoone.agent.core.model.CanonicalToolRegistry
+import com.unoone.agent.core.model.E4bRuntimeBudgets
+import com.unoone.agent.core.model.E4bRuntimeCoordinator
+import com.unoone.agent.core.model.E4bRuntimeState
 import com.unoone.agent.core.model.ModelFamily
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
@@ -20,10 +24,8 @@ import com.unoone.agent.core.agent.SafetyVerdict
 import com.unoone.agent.core.model.ToolParamType
 import com.unoone.agent.core.util.Logger
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -34,10 +36,10 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * Model-profile aware: [load] takes a [BrainModelSpec] so it can build the correct
  * family-specific system instruction ([PromptBuilder.buildSystemInstruction]) and try the
- * Gemma 4 E2B profile's preferred backend order. No secondary or legacy brain is accepted by
+ * Gemma 4 E4B profile's qualified backend choice. No secondary or legacy brain is accepted by
  * this runtime contract.
  *
- * - Loads a `.litertlm` model once and keeps a reusable [Conversation].
+ * - Loads one `.litertlm` engine; conversations are lazy and bounded to the operation that needs them.
  * - Registers [UnoOneToolSet] so Gemma can plan phone actions.
  * - Uses **manual** tool calling (`automaticToolCalling = false`): the model only *proposes* tool
  *   calls; the app executes them after safety checks. The planner additionally **rejects** any
@@ -47,28 +49,26 @@ import kotlinx.serialization.json.JsonPrimitive
  * - Caps one tool call per turn (the compound-step architecture, not the model, handles multi-step).
  * - Surfaces the actual loaded backend + last load error + loaded profile to the UI/diagnostics.
  */
-class GemmaPlanner {
+class GemmaPlanner(
+    private var backendChoice: BackendQualificationChoice = BackendQualificationChoice.AUTO
+) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
     private var engine: Engine? = null
     private var conversation: Conversation? = null
     /**
-     * A separate conversation used only by [judgeSafety]. It is created from the same engine (so it
-     * shares model weights — only the KV-cache differs) but has no tools and a classifier system
+     * A temporary conversation used only by [judgeSafety]. It is created lazily from the same engine
+     * and has no tools plus a classifier system
      * instruction, so a safety judgment never pollutes the planning conversation's multi-turn ReAct
-     * context. Null when the brain is not loaded or if the device could not create a second
-     * conversation (best-effort: planning still works without it).
+     * context. It is closed after the judgment so its KV cache does not remain resident.
      */
     private var judgeConversation: Conversation? = null
     /**
-     * A third conversation, used only by [chat] — the CHAT lane. Like [judgeConversation] it is
-     * created from the same engine (shared weights, own KV-cache) but carries a tool-less,
+     * A temporary conversation used only by [chat] — the CHAT lane. It carries a tool-less,
      * conversational system instruction ([PromptBuilder.buildChatSystemInstruction]). It never
      * pollutes the planning conversation's ReAct context, and a conversational answer never reaches
-     * the safety/confirm gates (a tool-less answer has nothing to gate). Null when the brain is not
-     * loaded or the device could not create a third conversation (best-effort: the chat lane then
-     * falls back to the agent pipeline).
+     * the safety/confirm gates (a tool-less answer has nothing to gate). It is closed after the turn.
      */
     private var chatConversation: Conversation? = null
     @Volatile
@@ -86,19 +86,7 @@ class GemmaPlanner {
     @Volatile
     private var loadedSpec: BrainModelSpec? = null
 
-    /** Serializes loads so two concurrent callers can't both close + reinitialize (leaking an engine). */
-    private val loadMutex = Mutex()
-
-    /**
-     * Serializes inference. LiteRT-LM `Conversation.sendMessage` is not guaranteed thread-safe, and
-     * UnoOne now has concurrent planners: the live command path ([com.unoone.agent.AgentOrchestrator]
-     * via [com.unoone.agent.parsing.CommandParser]) and the read-only self-test probe
-     * ([com.unoone.agent.AgentOrchestrator.planToolCall] via [com.unoone.agent.brain.BrainSelfTest]).
-     * Without this, a background voice command and a Settings self-test could call `sendMessage` on
-     * the same conversation from two threads. Callers wait their turn; each is still bounded by its
-     * own [INFERENCE_TIMEOUT_MS], so a stuck call releases the lock within 30s (then closes the brain).
-     */
-    private val inferenceMutex = Mutex()
+    private val nativeInference = LiteRtCancellableInference("GemmaPlanner")
 
     fun isLoaded(): Boolean = isLoaded
 
@@ -109,8 +97,13 @@ class GemmaPlanner {
     /** The currently loaded brain profile, or null. */
     fun loadedProfile(): BrainModelSpec? = loadedSpec
 
+    fun setBackendQualificationChoice(choice: BackendQualificationChoice) {
+        check(!isLoaded) { "Unload E4B before changing backend qualification mode" }
+        backendChoice = choice
+    }
+
     /**
-     * Convenience single-arg load — loads [modelPath] with the sole Gemma 4 E2B profile. Callers
+     * Convenience single-arg load — loads [modelPath] with the sole Gemma 4 E4B profile. Callers
      * that already hold the model specification should use the explicit overload below.
      */
     suspend fun load(modelPath: String): Result<Unit> =
@@ -127,84 +120,42 @@ class GemmaPlanner {
         // Guard against concurrent loads / model replacement: two callers could both pass the
         // isLoaded check, both close the existing engine, and both initialize — leaking one engine.
         // Also prevents simultaneous inference and model replacement.
-        loadMutex.withLock {
+        E4bRuntimeCoordinator.operationMutex.withLock {
+            E4bRuntimeCoordinator.transition(E4bRuntimeState.LOADING_PHONE, PHONE_OWNER, spec.manifestId)
             if (isLoaded) {
-                close()
+                closeInternal()
             }
             lastLoadError = ""
             try {
                 Logger.i("GemmaPlanner: loading ${spec.displayName} (${spec.manifestId}) from $modelPath")
                 val backends = backendsToTry(spec.preferredBackend)
-                val (newEngine, backend) = tryLoadBackends(modelPath, backends)
+                val (newEngine, backend) = tryLoadBackends(modelPath, backends, spec)
                     ?: run {
                         lastLoadError = "${spec.displayName} failed to load on any backend (${backendsNames(backends)})"
                         return@withLock Result.Error(lastLoadError)
                     }
 
-                val conversationConfig = ConversationConfig(
-                    systemInstruction = Contents.of(PromptBuilder.buildSystemInstruction(spec.modelFamily)),
-                    tools = listOf(tool(UnoOneToolSet())),
-                    automaticToolCalling = false
-                )
-
-                // createConversation can throw on some devices; if it does, close the engine we
-                // just built (it isn't assigned to the `engine` field yet, so close() later wouldn't
-                // release it — that would leak the native LiteRT engine + GPU delegate).
-                val newConversation = try {
-                    newEngine.createConversation(conversationConfig)
-                } catch (e: Exception) {
-                    runCatching { newEngine.close() }
-                    throw e
-                }
-
                 engine = newEngine
-                conversation = newConversation
-                // Best-effort second conversation for the safety judge. Shares the engine (model
-                // weights) but has no tools and a classifier system prompt, so judging an action
-                // never pollutes the planning conversation's ReAct context. If the device cannot
-                // create a second conversation, planning still works — the judge is simply disabled.
-                judgeConversation = try {
-                    newEngine.createConversation(
-                        ConversationConfig(
-                            systemInstruction = Contents.of(SAFETY_JUDGE_SYSTEM_INSTRUCTION),
-                            tools = emptyList(),
-                            automaticToolCalling = false
-                        )
-                    )
-                } catch (e: Exception) {
-                    Logger.w("GemmaPlanner: safety-judge conversation unavailable (${e.message}); judge disabled")
-                    null
-                }
-                // Best-effort third conversation for the CHAT lane — same engine, tool-less
-                // conversational system prompt. If the device cannot create a third conversation,
-                // chat falls back to the agent pipeline (planning a speak_response). Mirrors the
-                // judge-conversation discipline above.
-                chatConversation = try {
-                    newEngine.createConversation(
-                        ConversationConfig(
-                            systemInstruction = Contents.of(PromptBuilder.buildChatSystemInstruction()),
-                            tools = emptyList(),
-                            automaticToolCalling = false
-                        )
-                    )
-                } catch (e: Exception) {
-                    Logger.w("GemmaPlanner: chat conversation unavailable (${e.message}); chat falls back to agent path")
-                    null
-                }
+                conversation = null
+                judgeConversation = null
+                chatConversation = null
                 activeBackend = backend
                 loadedSpec = spec
                 isLoaded = true
-                Logger.i("GemmaPlanner: ${spec.displayName} loaded on $backend backend, conversation ready")
+                val budget = E4bRuntimeBudgets.phone(spec)
+                Logger.i("GemmaPlanner: ${spec.displayName} loaded on $backend; context=${budget.contextTokens}, output=${budget.outputTokens}")
+                E4bRuntimeCoordinator.transition(E4bRuntimeState.PHONE_READY, PHONE_OWNER, backend)
                 com.unoone.agent.observability.Diagnostics.recordModelLoadTime(System.currentTimeMillis() - loadStart)
                 Result.Success(Unit)
             } catch (e: Exception) {
                 Logger.e("GemmaPlanner: failed to load ${spec.displayName}", e)
                 // Full cleanup on any partial failure — never leave isLoaded true with no engine.
-                runCatching { close() }
+                closeInternal()
                 isLoaded = false
                 activeBackend = ""
                 loadedSpec = null
                 lastLoadError = e.message ?: "Unknown load error"
+                E4bRuntimeCoordinator.transition(E4bRuntimeState.FAILED, PHONE_OWNER, lastLoadError)
                 Result.Error("Failed to load ${spec.displayName}: ${e.message}", e)
             }
         }
@@ -213,7 +164,13 @@ class GemmaPlanner {
     /** Maps a profile's [BackendPreference] to the ordered LiteRT-LM backends to attempt. */
     private fun backendsToTry(pref: BackendPreference): List<Backend> = when (pref) {
         BackendPreference.CPU_ONLY -> listOf(Backend.CPU())
-        BackendPreference.GPU_FIRST, BackendPreference.ANY -> listOf(Backend.GPU(), Backend.CPU())
+        BackendPreference.GPU_FIRST, BackendPreference.ANY -> when (backendChoice) {
+            BackendQualificationChoice.CPU -> listOf(Backend.CPU())
+            BackendQualificationChoice.GPU -> listOf(Backend.GPU())
+            // No E4B GPU qualification record exists yet. AUTO therefore uses CPU rather than
+            // treating successful allocation as proof of accuracy/stability.
+            BackendQualificationChoice.AUTO -> listOf(Backend.CPU())
+        }
     }
 
     private fun backendsNames(backends: List<Backend>): String =
@@ -229,9 +186,9 @@ class GemmaPlanner {
      * Tries each backend in order; returns (engine, backendName) for the first that constructs +
      * initializes, or null if all fail. Any partially-created engine is released to avoid leaks.
      */
-    private fun tryLoadBackends(modelPath: String, backends: List<Backend>): Pair<Engine, String>? {
+    private fun tryLoadBackends(modelPath: String, backends: List<Backend>, spec: BrainModelSpec): Pair<Engine, String>? {
         for (backend in backends) {
-            val result = tryLoadBackend(modelPath, backend)
+            val result = tryLoadBackend(modelPath, backend, spec)
             if (result != null) return result
         }
         return null
@@ -242,10 +199,16 @@ class GemmaPlanner {
      * Returns (engine, backendName) on success, or null on failure (so the caller can try the
      * next backend). Any partially-created engine is released to avoid resource leaks.
      */
-    private fun tryLoadBackend(modelPath: String, backend: Backend): Pair<Engine, String>? {
+    private fun tryLoadBackend(modelPath: String, backend: Backend, spec: BrainModelSpec): Pair<Engine, String>? {
         var candidate: Engine? = null
         return try {
-            candidate = Engine(EngineConfig(modelPath = modelPath, backend = backend))
+            candidate = Engine(
+                EngineConfig(
+                    modelPath = modelPath,
+                    backend = backend,
+                    maxNumTokens = E4bRuntimeBudgets.phone(spec).contextTokens
+                )
+            )
             candidate.initialize()
             candidate to backendName(backend)
         } catch (e: Exception) {
@@ -265,34 +228,20 @@ class GemmaPlanner {
      * — never executed). Returns null never: a no-tool answer becomes a `speak_response` ToolCall.
      */
     suspend fun plan(command: String, context: ContextSnapshot): Result<ToolCall> {
-        val conv = conversation ?: return Result.Error("Gemma model not loaded")
-
-        return try {
-            Logger.d("GemmaPlanner: planning for: $command")
-            val userMessage = PromptBuilder.buildUserMessage(command, context, ContextBudget.forCommand(command))
-
-            // Inference is serialized by [inferenceMutex] (LiteRT-LM Conversation is not guaranteed
-            // thread-safe, and the live command path and the read-only self-test probe can both run
-            // inference concurrently). Then a timeout bounds observable latency: Kotlin coroutine
-            // cancellation cannot interrupt a blocking JNI call, so on timeout we abandon the result
-            // and close the engine (its conversation may be in an indeterminate state) so the next
-            // load rebuilds cleanly. The native call may run to completion on the IO dispatcher.
-            val responseMessage = try {
-                inferenceMutex.withLock {
-                    withTimeout(INFERENCE_TIMEOUT_MS) {
-                        withContext(Dispatchers.IO) { conv.sendMessage(userMessage) }
-                    }
-                }
-            } catch (e: TimeoutCancellationException) {
-                Logger.w("GemmaPlanner: inference timed out after ${INFERENCE_TIMEOUT_MS}ms; closing brain")
-                runCatching { close() }
-                return Result.Error("Gemma inference timed out")
-            }
-
-            extractValidatedToolCall(responseMessage)
-        } catch (e: Exception) {
-            Logger.e("GemmaPlanner: inference failed", e)
-            Result.Error("Gemma inference failed: ${e.message}", e)
+        return runPhoneInference("plan") { activeEngine, spec ->
+            resetPlanningConversation()
+            val conv = createPlanningConversation(activeEngine, spec).also { conversation = it }
+            val message = Message.user(
+                Contents.of(PromptBuilder.buildUserMessage(command, context, ContextBudget.forCommand(command)))
+            )
+            extractValidatedToolCall(
+                nativeInference.send(
+                    conv,
+                    message,
+                    INFERENCE_TIMEOUT_MS,
+                    E4bRuntimeBudgets.phone(spec).outputTokens
+                )
+            )
         }
     }
 
@@ -323,43 +272,23 @@ class GemmaPlanner {
         context: ContextSnapshot,
         onDelta: (String) -> Unit
     ): Result<ToolCall> {
-        val conv = conversation ?: return Result.Error("Gemma model not loaded")
-
-        return try {
-            Logger.d("GemmaPlanner: streaming plan for: $command")
-            val userMessage = PromptBuilder.buildUserMessage(command, context, ContextBudget.forCommand(command))
-            val reducer = com.unoone.agent.core.agent.StreamingTextReducer()
-
-            // Collect the cold Flow inside the inference lock + timeout, mirroring [plan]. Each emitted
-            // Message is a (cumulative) snapshot: feed its text to the reducer and forward the delta.
-            // The last emission is the complete message, validated identically to the sync path.
-            val finalMessage = try {
-                inferenceMutex.withLock {
-                    withTimeout(INFERENCE_TIMEOUT_MS) {
-                        withContext(Dispatchers.IO) {
-                            val flow = conv.sendMessageAsync(userMessage)
-                            var last: Message? = null
-                            flow.collect { partial ->
-                                last = partial
-                                val text = extractText(partial) ?: ""
-                                val delta = reducer.onSnapshot(text)
-                                if (delta.isNotEmpty()) onDelta(delta)
-                            }
-                            last
-                        }
-                    }
-                }
-            } catch (e: TimeoutCancellationException) {
-                Logger.w("GemmaPlanner: streaming inference timed out after ${INFERENCE_TIMEOUT_MS}ms; closing brain")
-                runCatching { close() }
-                return Result.Error("Gemma inference timed out")
+        val reducer = com.unoone.agent.core.agent.StreamingTextReducer()
+        return runPhoneInference("streaming plan") { activeEngine, spec ->
+            resetPlanningConversation()
+            val conv = createPlanningConversation(activeEngine, spec).also { conversation = it }
+            val message = Message.user(
+                Contents.of(PromptBuilder.buildUserMessage(command, context, ContextBudget.forCommand(command)))
+            )
+            val final = nativeInference.send(
+                conv,
+                message,
+                INFERENCE_TIMEOUT_MS,
+                E4bRuntimeBudgets.phone(spec).outputTokens
+            ) { partial ->
+                val delta = reducer.onSnapshot(extractText(partial).orEmpty())
+                if (delta.isNotEmpty()) onDelta(delta)
             }
-
-            finalMessage?.let { extractValidatedToolCall(it) }
-                ?: Result.Error("Gemma streaming produced no response")
-        } catch (e: Exception) {
-            Logger.e("GemmaPlanner: streaming inference failed", e)
-            Result.Error("Gemma streaming inference failed: ${e.message}", e)
+            extractValidatedToolCall(final)
         }
     }
 
@@ -369,7 +298,7 @@ class GemmaPlanner {
      * (`Message.user(Contents.of(Content.Text(prompt), Content.ImageBytes(bytes)))`), and returns the
      * model's free-text scene description.
      *
-     * **Honesty (INACTIVE with the shipped model):** the loaded Gemma 4 E2B `.litertlm`
+     * **Honesty (INACTIVE with the shipped model):** the loaded Gemma 4 E4B `.litertlm`
      * artifact is text-only — they have no vision weights — so this method either
      * errors or ignores the image. The orchestrator does NOT call it unless a vision-capable model
      * is loaded (gated by `VISION_MODEL_ENABLED`); when it is called and fails, the caller falls
@@ -382,31 +311,27 @@ class GemmaPlanner {
      * [Mutex] + [INFERENCE_TIMEOUT_MS] bound + close-on-timeout discipline as [plan] applies.
      */
     suspend fun describeSceneWithVision(imageBytes: ByteArray, aspect: String): Result<String> {
-        val conv = conversation ?: return Result.Error("Gemma model not loaded")
-        return try {
+        return runPhoneInference("vision") { activeEngine, spec ->
             val prompt = if (aspect.isBlank()) {
                 "Describe what is on the phone screen in one or two short sentences for a user who cannot see it."
             } else {
                 "Describe what is on the phone screen in one or two short sentences, focusing on: $aspect"
             }
             val userMessage = Message.user(Contents.of(Content.Text(prompt), Content.ImageBytes(imageBytes)))
+            val conv = activeEngine.createConversation(
+                ConversationConfig(systemInstruction = Contents.of(VISION_SYSTEM_INSTRUCTION))
+            )
             val responseMessage = try {
-                inferenceMutex.withLock {
-                    withTimeout(INFERENCE_TIMEOUT_MS) {
-                        withContext(Dispatchers.IO) { conv.sendMessage(userMessage) }
-                    }
-                }
-            } catch (e: TimeoutCancellationException) {
-                Logger.w("GemmaPlanner: vision inference timed out after ${INFERENCE_TIMEOUT_MS}ms; closing brain")
-                runCatching { close() }
-                return Result.Error("Gemma vision timed out")
+                nativeInference.send(
+                    conv, userMessage, INFERENCE_TIMEOUT_MS,
+                    E4bRuntimeBudgets.chat(spec).outputTokens
+                )
+            } finally {
+                conv.close()
             }
             val text = extractText(responseMessage) ?: ""
             if (text.isBlank()) Result.Error("Gemma vision produced no description")
             else Result.Success(text)
-        } catch (e: Exception) {
-            Logger.w("GemmaPlanner: vision path unavailable (${e.message})")
-            Result.Error("Gemma vision unavailable: ${e.message}")
         }
     }
 
@@ -427,26 +352,17 @@ class GemmaPlanner {
      * multi-turn path is verified by the Brain Self-Test / device matrix, not by a JVM unit test.
      */
     suspend fun planNext(prevTool: String, observation: String): Result<ToolCall> {
-        val conv = conversation ?: return Result.Error("Gemma model not loaded")
-        return try {
+        return runPhoneInference("plan continuation") { _, spec ->
+            val conv = conversation ?: return@runPhoneInference Result.Error("Planning conversation expired")
             val trimmed = observation.take(MAX_OBSERVATION_CHARS)
             Logger.d("GemmaPlanner: planNext after '$prevTool', observation=${trimmed.length} chars")
             val toolMessage = Message.tool(Contents.of(Content.ToolResponse(prevTool, mapOf("result" to trimmed))))
-            val responseMessage = try {
-                inferenceMutex.withLock {
-                    withTimeout(INFERENCE_TIMEOUT_MS) {
-                        withContext(Dispatchers.IO) { conv.sendMessage(toolMessage) }
-                    }
-                }
-            } catch (e: TimeoutCancellationException) {
-                Logger.w("GemmaPlanner: planNext timed out after ${INFERENCE_TIMEOUT_MS}ms; closing brain")
-                runCatching { close() }
-                return Result.Error("Gemma inference timed out")
-            }
-            extractValidatedToolCall(responseMessage)
-        } catch (e: Exception) {
-            Logger.e("GemmaPlanner: planNext inference failed", e)
-            Result.Error("Gemma inference failed: ${e.message}", e)
+            extractValidatedToolCall(
+                nativeInference.send(
+                    conv, toolMessage, INFERENCE_TIMEOUT_MS,
+                    E4bRuntimeBudgets.phone(spec).outputTokens
+                )
+            )
         }
     }
 
@@ -468,25 +384,22 @@ class GemmaPlanner {
         argsJson: String,
         inputText: String
     ): Result<SafetyVerdict> {
-        val conv = judgeConversation ?: return Result.Error("Safety judge not available")
-        return try {
+        return runPhoneInference("safety judge") { activeEngine, spec ->
             val prompt = buildSafetyJudgePrompt(toolName, argsJson, inputText)
+            val conv = activeEngine.createConversation(
+                ConversationConfig(systemInstruction = Contents.of(SAFETY_JUDGE_SYSTEM_INSTRUCTION))
+            ).also { judgeConversation = it }
             val responseMessage = try {
-                inferenceMutex.withLock {
-                    withTimeout(INFERENCE_TIMEOUT_MS) {
-                        withContext(Dispatchers.IO) { conv.sendMessage(prompt) }
-                    }
-                }
-            } catch (e: TimeoutCancellationException) {
-                Logger.w("GemmaPlanner: judgeSafety timed out after ${INFERENCE_TIMEOUT_MS}ms; closing brain")
-                runCatching { close() }
-                return Result.Error("Gemma judge timed out")
+                nativeInference.send(
+                    conv, Message.user(Contents.of(prompt)), INFERENCE_TIMEOUT_MS,
+                    SAFETY_OUTPUT_TOKENS
+                )
+            } finally {
+                conv.close()
+                judgeConversation = null
             }
             val text = extractText(responseMessage) ?: ""
             Result.Success(parseVerdict(text))
-        } catch (e: Exception) {
-            Logger.e("GemmaPlanner: judgeSafety failed", e)
-            Result.Error("Gemma judge failed: ${e.message}", e)
         }
     }
 
@@ -504,27 +417,62 @@ class GemmaPlanner {
      * pipeline (fail-safe). Device-time verified (litertlm bytecode > JDK 17 test JVM).
      */
     suspend fun chat(command: String, responseLanguage: String = ""): Result<String> {
-        val conv = chatConversation ?: return Result.Error("Chat conversation not available")
-        return try {
+        return runPhoneInference("chat") { activeEngine, spec ->
             val prompt = PromptBuilder.buildChatUserMessage(command, responseLanguage)
+            val conv = activeEngine.createConversation(
+                ConversationConfig(systemInstruction = Contents.of(PromptBuilder.buildChatSystemInstruction()))
+            ).also { chatConversation = it }
             val responseMessage = try {
-                inferenceMutex.withLock {
-                    withTimeout(INFERENCE_TIMEOUT_MS) {
-                        withContext(Dispatchers.IO) { conv.sendMessage(prompt) }
-                    }
-                }
-            } catch (e: TimeoutCancellationException) {
-                Logger.w("GemmaPlanner: chat timed out after ${INFERENCE_TIMEOUT_MS}ms; closing brain")
-                runCatching { close() }
-                return Result.Error("Gemma chat timed out")
+                nativeInference.send(
+                    conv, Message.user(Contents.of(prompt)), INFERENCE_TIMEOUT_MS,
+                    E4bRuntimeBudgets.chat(spec).outputTokens
+                )
+            } finally {
+                conv.close()
+                chatConversation = null
             }
             val text = extractText(responseMessage) ?: ""
             if (text.isBlank()) Result.Error("Gemma chat produced no answer")
             else Result.Success(text)
-        } catch (e: Exception) {
-            Logger.e("GemmaPlanner: chat failed", e)
-            Result.Error("Gemma chat failed: ${e.message}", e)
         }
+    }
+
+    private suspend fun <T> runPhoneInference(
+        operation: String,
+        block: suspend (Engine, BrainModelSpec) -> Result<T>
+    ): Result<T> = E4bRuntimeCoordinator.operationMutex.withLock {
+        val activeEngine = engine ?: return@withLock Result.Error("Gemma model not loaded")
+        val spec = loadedSpec ?: return@withLock Result.Error("Gemma model profile missing")
+        E4bRuntimeCoordinator.transition(E4bRuntimeState.PHONE_INFERENCING, PHONE_OWNER, operation)
+        try {
+            block(activeEngine, spec)
+        } catch (error: TimeoutCancellationException) {
+            Logger.w("GemmaPlanner: $operation timed out after ${INFERENCE_TIMEOUT_MS}ms")
+            Result.Error("Gemma $operation timed out", error)
+        } catch (error: Exception) {
+            Logger.e("GemmaPlanner: $operation failed", error)
+            Result.Error("Gemma $operation failed: ${error.message}", error)
+        } finally {
+            E4bRuntimeCoordinator.transition(
+                if (isLoaded) E4bRuntimeState.PHONE_READY else E4bRuntimeState.FAILED,
+                PHONE_OWNER,
+                activeBackend
+            )
+        }
+    }
+
+    private fun createPlanningConversation(activeEngine: Engine, spec: BrainModelSpec): Conversation =
+        activeEngine.createConversation(
+            ConversationConfig(
+                systemInstruction = Contents.of(PromptBuilder.buildSystemInstruction(spec.modelFamily)),
+                tools = listOf(tool(UnoOneToolSet())),
+                automaticToolCalling = false
+            )
+        )
+
+    private fun resetPlanningConversation() {
+        runCatching { conversation?.close() }
+        conversation = null
     }
 
     /** Builds the action description sent to the judge conversation. [inputText] is truncated. */
@@ -625,7 +573,25 @@ class GemmaPlanner {
     /**
      * Releases the model and conversation. Safe to call multiple times. Clears [loadedSpec].
      */
-    fun close() {
+    fun requestCancel(reason: String = "external stop") {
+        nativeInference.cancelActive(reason)
+    }
+
+    suspend fun close() {
+        requestCancel("engine close")
+        E4bRuntimeCoordinator.operationMutex.withLock {
+            E4bRuntimeCoordinator.transition(E4bRuntimeState.UNLOADING, PHONE_OWNER)
+            if (!nativeInference.awaitNativeIdle()) {
+                lastLoadError = "Native inference did not stop; engine close refused to prevent a JNI use-after-free"
+                E4bRuntimeCoordinator.transition(E4bRuntimeState.FAILED, PHONE_OWNER, lastLoadError)
+                return@withLock
+            }
+            withContext(Dispatchers.IO) { closeInternal() }
+            E4bRuntimeCoordinator.transition(E4bRuntimeState.UNLOADED)
+        }
+    }
+
+    private fun closeInternal() {
         try {
             conversation?.close()
         } catch (e: Exception) {
@@ -688,6 +654,10 @@ class GemmaPlanner {
     }
 
     companion object {
+        private const val PHONE_OWNER = "phone-agent"
+        private const val SAFETY_OUTPUT_TOKENS = 16
+        private const val VISION_SYSTEM_INSTRUCTION =
+            "Describe only visible evidence from the supplied image. Never invent objects or text."
         /** Per-inference timeout. Generous for first-token on mobile, but bounded. */
         const val INFERENCE_TIMEOUT_MS: Long = 30_000L
 

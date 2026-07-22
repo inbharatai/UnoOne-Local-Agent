@@ -84,6 +84,15 @@ class EvalScorerTest {
     }
 
     @Test
+    fun sensitiveIdentifiersRequireExactValues() {
+        val phone = EvalCase("phone", "draft", "send_whatsapp", mapOf("number" to "+919876543210"))
+        assertTrue(EvalScorer.score(phone, call("send_whatsapp", "number" to "+919876543210")).correct)
+        assertFalse(EvalScorer.score(phone, call("send_whatsapp", "number" to "+9198765432100")).correct)
+        val email = EvalCase("mail", "draft", "draft_email", mapOf("to" to "a@example.com"))
+        assertFalse(EvalScorer.score(email, call("draft_email", "to" to "A@example.com.fake")).correct)
+    }
+
+    @Test
     fun summarizeCountsToolsAndFullCorrectSeparately() {
         val cases = listOf(
             EvalCase("a", "p1", "open_chrome"),
