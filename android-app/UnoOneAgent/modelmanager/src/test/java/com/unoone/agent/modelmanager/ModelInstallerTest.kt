@@ -19,6 +19,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Files
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
@@ -82,6 +83,68 @@ class ModelInstallerTest {
             assertTrue(result is ModelInstaller.InstallResult.Success)
             val target = File(modelDir, "m/big.bin")
             assertArrayEquals(full, target.readBytes())
+        } finally {
+            server.stop()
+        }
+    }
+
+    @Test
+    fun refusesAndDeletesOversizedPartialFile() {
+        val content = "expected".toByteArray()
+        File(modelDir, "m").mkdirs()
+        val part = File(modelDir, "m/model.bin.part").apply {
+            writeBytes("larger-than-the-declared-model".toByteArray())
+        }
+        val descriptor = descriptor(
+            "m", "model.bin", "http://invalid.invalid/model.bin", sha256(content), content.size.toLong()
+        )
+
+        val result = runBlocking { installer.install(descriptor) }
+
+        assertTrue(result is ModelInstaller.InstallResult.Failure)
+        assertFalse(part.exists())
+        assertFalse(File(modelDir, "m/model.bin").exists())
+    }
+
+    @Test
+    fun rejectsMismatchedContentRangeAndPreservesResumablePartial() {
+        val full = "the quick brown fox jumps".toByteArray()
+        val first = full.copyOfRange(0, 8)
+        val server = MiniHttpServer(full, supportRange = true, contentRangeStartDelta = 1).apply { start() }
+        try {
+            File(modelDir, "m").mkdirs()
+            val part = File(modelDir, "m/range.bin.part").apply { writeBytes(first) }
+            val descriptor = descriptor("m", "range.bin", server.url("range.bin"), sha256(full), full.size.toLong())
+
+            val result = runBlocking { installer.install(descriptor) }
+
+            assertTrue(result is ModelInstaller.InstallResult.Failure)
+            assertArrayEquals(first, part.readBytes())
+            assertFalse(File(modelDir, "m/range.bin").exists())
+        } finally {
+            server.stop()
+        }
+    }
+
+    @Test
+    fun cooperativeCancellationPreservesOrdinaryPartialForResume() {
+        val full = ByteArray(256 * 1024) { (it % 251).toByte() }
+        val first = full.copyOfRange(0, 4096)
+        val server = MiniHttpServer(full, supportRange = true).apply { start() }
+        try {
+            File(modelDir, "m").mkdirs()
+            val part = File(modelDir, "m/cancel.bin.part").apply { writeBytes(first) }
+            val checks = AtomicInteger()
+            val descriptor = descriptor("m", "cancel.bin", server.url("cancel.bin"), sha256(full), full.size.toLong())
+
+            val result = runBlocking {
+                installer.install(descriptor, shouldCancel = { checks.incrementAndGet() > 1 })
+            }
+
+            assertTrue(result is ModelInstaller.InstallResult.Failure)
+            assertTrue(part.exists())
+            assertArrayEquals(first, part.readBytes())
+            assertFalse(File(modelDir, "m/cancel.bin").exists())
         } finally {
             server.stop()
         }
@@ -409,7 +472,11 @@ class ModelInstallerTest {
         )
 
     /** Minimal HTTP/1.1 server over a plain socket serving [body], optionally honouring Range. */
-    private class MiniHttpServer(private val body: ByteArray, private val supportRange: Boolean) {
+    private class MiniHttpServer(
+        private val body: ByteArray,
+        private val supportRange: Boolean,
+        private val contentRangeStartDelta: Int = 0
+    ) {
         private val server = ServerSocket(0)
         private val thread = Thread { runServer() }
         private var stopped = false
@@ -448,8 +515,9 @@ class ModelInstallerTest {
                 val from = range.removePrefix("bytes=").substringBefore('-').toInt()
                 if (from in 0 until body.size) {
                     val slice = body.copyOfRange(from, body.size)
+                    val reportedStart = from + contentRangeStartDelta
                     writeResponse(out, "206 Partial Content", slice,
-                        extra = "Content-Range: bytes $from-${body.size - 1}/${body.size}\r\n")
+                        extra = "Content-Range: bytes $reportedStart-${body.size - 1}/${body.size}\r\n")
                 } else {
                     writeResponse(out, "416 Range Not Satisfiable", ByteArray(0), extra = "")
                 }

@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
+import kotlinx.serialization.json.Json
 
 /**
  * Source-of-truth model filesystem facade.
@@ -23,6 +24,7 @@ class ModelManager(
 ) {
 
     private val manifestLoader = ModelManifestLoader()
+    private val artifactVerifier = ArtifactVerifier(PreferencesVerificationRecordStore(context))
     private val installer: ModelInstaller by lazy {
         ModelInstaller(appPrivateModelPath, modelMetadataDao) { name ->
             runCatching { context.assets.open(name) }.getOrNull()
@@ -77,8 +79,17 @@ class ModelManager(
                 unverified += file.name
                 continue
             }
-            if (target.length() != file.sizeBytes) sizeMismatch += file.name
-            if (computeSha256(target.absolutePath) != file.sha256.lowercase()) checksumMismatch += file.name
+            if (target.length() != file.sizeBytes) {
+                sizeMismatch += file.name
+                continue
+            }
+            val verification = artifactVerifier.verify(
+                descriptor,
+                file,
+                target,
+                loadManifest().manifestVersion
+            )
+            if (!verification.verified) checksumMismatch += file.name
         }
 
         val healthy = missing.isEmpty() && sizeMismatch.isEmpty() && checksumMismatch.isEmpty()
@@ -102,6 +113,7 @@ class ModelManager(
 
     suspend fun installModel(
         id: String,
+        shouldCancel: () -> Boolean = { false },
         onProgress: ((
             modelId: String,
             fileIndex: Int,
@@ -113,14 +125,31 @@ class ModelManager(
     ): ModelInstaller.InstallResult {
         val descriptor = findModel(id)
             ?: return ModelInstaller.InstallResult.Failure("Unknown model id: $id")
-        return installer.install(
+        val result = installer.install(
             descriptor,
             onProgress?.let { callback ->
                 ModelInstaller.ProgressListener { mid, fileIndex, totalFiles, file, downloaded, total ->
                     callback(mid, fileIndex, totalFiles, file, downloaded, total)
                 }
-            }
+            },
+            shouldCancel = shouldCancel
         )
+        if (result is ModelInstaller.InstallResult.Success) {
+            // Installer already performed the mandatory full hash before activation. Seed the
+            // metadata-bound cache immediately so startup/status/browser acquisition do not hash
+            // the same multi-gigabyte file again.
+            val manifestVersion = loadManifest().manifestVersion
+            val folder = File(appPrivateModelPath, descriptor.folder)
+            descriptor.files.filterNot { it.archive }.forEach { file ->
+                artifactVerifier.recordVerified(
+                    descriptor = descriptor,
+                    fileDescriptor = file,
+                    file = File(folder, file.name),
+                    manifestVersion = manifestVersion
+                )
+            }
+        }
+        return result
     }
 
     /** Deletes only a manifest-resolved folder beneath the app-private models root. */
@@ -137,6 +166,7 @@ class ModelManager(
             return@withContext
         }
         deleteDirectoryContents(folder)
+        artifactVerifier.invalidate(id)
         modelMetadataDao?.deleteByName(id)
         Logger.i("ModelManager: uninstalled $id")
     }
@@ -148,14 +178,22 @@ class ModelManager(
      * the active manifest. Generic uninstall cannot safely resolve an unknown legacy id, so this
      * migration uses one hard-coded historical relative path guarded by canonical-path checks.
      */
+    @Deprecated("Integrity alone is not a deletion qualification")
     suspend fun removeLegacyE2BIfE4BVerified(): LegacyCleanupResult = withContext(Dispatchers.IO) {
-        val active = BrainModelRegistry.defaultProfile
-        val health = modelHealth(active.manifestId)
-        if (!health.verified || getLlmModelPath(active) == null) {
+        LegacyCleanupResult(
+            removed = false,
+            legacyPresent = legacyE2BPresent(),
+            message = "Legacy cleanup is qualification-gated; checksum verification alone cannot remove E2B"
+        )
+    }
+
+    suspend fun removeLegacyE2BIfQualified(userApproved: Boolean): LegacyCleanupResult = withContext(Dispatchers.IO) {
+        val rejection = E4bCleanupGate.rejectionReason(readQualificationRecord(), userApproved)
+        if (rejection != null) {
             return@withContext LegacyCleanupResult(
                 removed = false,
                 legacyPresent = legacyE2BFolder().exists(),
-                message = "E4B is not integrity-verified; legacy brain was preserved"
+                message = "$rejection; legacy brain was preserved"
             )
         }
 
@@ -170,10 +208,30 @@ class ModelManager(
             return@withContext LegacyCleanupResult(false, true, "Legacy path safety check failed")
         }
 
-        deleteDirectoryContents(legacy)
+        val failures = deleteDirectoryContentsReportingFailures(legacy)
+        if (failures.isNotEmpty() || legacy.exists()) {
+            return@withContext LegacyCleanupResult(
+                removed = false,
+                legacyPresent = true,
+                message = "Legacy cleanup incomplete; ${failures.size} path(s) could not be deleted"
+            )
+        }
         modelMetadataDao?.deleteByName(LEGACY_E2B_ID)
-        Logger.i("ModelManager: removed legacy E2B after verified E4B activation")
-        LegacyCleanupResult(true, false, "Legacy E2B removed after verified E4B activation")
+        Logger.i("ModelManager: removed legacy E2B after explicit qualified approval")
+        LegacyCleanupResult(true, false, "Legacy E2B removed after complete qualification and user approval")
+    }
+
+    fun saveQualificationRecord(record: E4bQualificationRecord) {
+        val json = Json.encodeToString(E4bQualificationRecord.serializer(), record)
+        context.getSharedPreferences(QUALIFICATION_PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_E4B_QUALIFICATION, json).apply()
+    }
+
+    fun readQualificationRecord(): E4bQualificationRecord? {
+        val raw = context.getSharedPreferences(QUALIFICATION_PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_E4B_QUALIFICATION, null) ?: return null
+        return runCatching { Json.decodeFromString(E4bQualificationRecord.serializer(), raw) }
+            .getOrNull()
     }
 
     fun legacyE2BPresent(): Boolean = legacyE2BFolder().let { folder ->
@@ -262,9 +320,9 @@ class ModelManager(
      * manifest declares both models as the exact same artifacts. This avoids a redundant network
      * download while still leaving the dedicated model folder independently verifiable.
      */
-    suspend fun repairVadFromVerifiedEnglishAsr(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun repairKwsFromVerifiedEnglishAsr(): Boolean = withContext(Dispatchers.IO) {
         val source = findModel("sherpa-asr-en") ?: return@withContext false
-        val target = findModel("vad") ?: return@withContext false
+        val target = findModel("sherpa-kws-en") ?: return@withContext false
         val sourceFiles = source.files.filterNot { it.archive }.associateBy { it.name }
         val targetFiles = target.files.filterNot { it.archive }.associateBy { it.name }
         val manifestsIdentical =
@@ -276,12 +334,12 @@ class ModelManager(
                         file.sha256.equals(other.sha256, ignoreCase = true)
                 }
         if (!manifestsIdentical) {
-            Logger.w("ModelManager: refusing VAD alias repair because manifests differ")
+            Logger.w("ModelManager: refusing KWS alias repair because manifests differ")
             return@withContext false
         }
         if (modelHealth(target.id).verified) return@withContext true
         if (!modelHealth(source.id).verified) {
-            Logger.w("ModelManager: cannot repair VAD; English ASR source is not verified")
+            Logger.w("ModelManager: cannot repair KWS; English ASR source is not verified")
             return@withContext false
         }
 
@@ -318,16 +376,16 @@ class ModelManager(
                 }
             } catch (e: Exception) {
                 part.delete()
-                Logger.e("ModelManager: VAD alias repair failed for $name", e)
+                Logger.e("ModelManager: KWS alias repair failed for $name", e)
                 return@withContext false
             }
         }
         val repaired = modelHealth(target.id).verified
-        if (repaired) Logger.i("ModelManager: installed verified VAD wake pack from English ASR")
+        if (repaired) Logger.i("ModelManager: installed verified KWS wake pack from English ASR")
         repaired
     }
 
-    fun getLlmModelPath(): String? = getLlmModelPath(BrainModelRegistry.defaultProfile)
+    suspend fun getLlmModelPath(): String? = getLlmModelPath(BrainModelRegistry.defaultProfile)
 
     /**
      * Returns only the exact, manifest-declared, integrity-verified model file.
@@ -335,7 +393,7 @@ class ModelManager(
      * There is deliberately no "largest .litertlm" fallback: a stale E2B file, web artifact,
      * incomplete copy or manually dropped model must never be selected as UnoOne's brain.
      */
-    fun getLlmModelPath(spec: BrainModelSpec): String? {
+    suspend fun getLlmModelPath(spec: BrainModelSpec, forceVerify: Boolean = false): String? {
         val descriptor = findModel(spec.manifestId) ?: return null
         val artifact = descriptor.files.singleOrNull { file ->
             !file.archive && file.name.equals(spec.fileName, ignoreCase = false)
@@ -347,8 +405,21 @@ class ModelManager(
         val folder = File(appPrivateModelPath, spec.modelFolder)
         val exact = File(folder, spec.fileName)
         if (!exact.isFile || exact.name.endsWith(".part") || exact.length() != artifact.sizeBytes) return null
-        if (computeSha256(exact.absolutePath) != artifact.sha256.lowercase()) return null
+        val verified = artifactVerifier.verify(
+            descriptor,
+            artifact,
+            exact,
+            loadManifest().manifestVersion,
+            force = forceVerify
+        )
+        if (!verified.verified) return null
         return exact.absolutePath
+    }
+
+    /** User/developer explicit verification always performs a complete SHA-256 pass. */
+    suspend fun verifyLlmArtifact(spec: BrainModelSpec = BrainModelRegistry.defaultProfile): HealthResult {
+        getLlmModelPath(spec, forceVerify = true)
+        return modelHealth(spec.manifestId)
     }
 
     private fun legacyE2BFolder(): File = File(appPrivateModelPath, LEGACY_E2B_RELATIVE_FOLDER)
@@ -366,6 +437,15 @@ class ModelManager(
             runCatching { file.delete() }
         }
         runCatching { folder.delete() }
+    }
+
+    private fun deleteDirectoryContentsReportingFailures(folder: File): List<String> {
+        if (!folder.exists()) return emptyList()
+        val failures = mutableListOf<String>()
+        folder.walkTopDown().sortedByDescending { it.path }.forEach { file ->
+            if (file.exists() && !file.delete()) failures += file.name
+        }
+        return failures
     }
 
     data class ModelStatus(
@@ -400,6 +480,8 @@ class ModelManager(
     companion object {
         private const val LEGACY_E2B_ID = "gemma-4-e2b"
         private const val LEGACY_E2B_RELATIVE_FOLDER = "brain/gemma-4-e2b"
+        private const val QUALIFICATION_PREFS = "e4b_device_qualification_v1"
+        private const val KEY_E4B_QUALIFICATION = "qualified_record"
         private val RUNTIME_DIRECTORIES: List<String> = listOf(
             "vision/blind-aid",
             "staging"

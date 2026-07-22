@@ -1,5 +1,6 @@
 package com.unoone.agent.modelmanager
 
+import android.os.StatFs
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.storage.dao.ModelMetadataDao
 import com.unoone.agent.storage.entity.ModelMetadataEntity
@@ -45,6 +46,7 @@ class ModelInstaller(
      */
     private val assetReader: ((String) -> InputStream?)? = null
 ) {
+    @Volatile private var lastFailureReason: String? = null
 
     sealed class InstallResult {
         data object Success : InstallResult()
@@ -64,12 +66,17 @@ class ModelInstaller(
 
     suspend fun install(
         descriptor: ModelDescriptor,
-        listener: ProgressListener? = null
+        listener: ProgressListener? = null,
+        shouldCancel: () -> Boolean = { false }
     ): InstallResult = withContext(Dispatchers.IO) {
         val folder = File(modelBasePath, descriptor.folder).apply { mkdirs() }
         setStatus(descriptor, STATUS_DOWNLOADING, folder.absolutePath)
         try {
             descriptor.files.forEachIndexed { index, file ->
+                if (shouldCancel()) {
+                    return@withContext InstallResult.Failure("Download cancelled; partial data preserved for resume")
+                }
+                lastFailureReason = null
                 val ok = if (!file.asset.isNullOrBlank()) {
                     installFromAsset(file, folder, descriptor.id, index, descriptor.files.size, listener)
                 } else {
@@ -77,11 +84,13 @@ class ModelInstaller(
                         Logger.w("ModelInstaller: ${file.name} has no download URL — skipping (set the url in the manifest to install it)")
                         return@withContext InstallResult.Failure("No download URL for ${file.name}")
                     }
-                    downloadFile(file, folder, descriptor.id, index, descriptor.files.size, listener)
+                    downloadFile(file, folder, descriptor.id, index, descriptor.files.size, listener, shouldCancel)
                 }
                 if (!ok) {
                     setStatus(descriptor, STATUS_CORRUPT, folder.absolutePath)
-                    return@withContext InstallResult.Failure("Failed to install ${file.name}")
+                    return@withContext InstallResult.Failure(
+                        lastFailureReason ?: "Failed to install ${file.name}"
+                    )
                 }
             }
             setStatus(descriptor, STATUS_PRESENT, folder.absolutePath)
@@ -100,7 +109,8 @@ class ModelInstaller(
         modelId: String,
         index: Int,
         total: Int,
-        listener: ProgressListener?
+        listener: ProgressListener?,
+        shouldCancel: () -> Boolean
     ): Boolean {
         val target = File(folder, file.name)
 
@@ -117,11 +127,18 @@ class ModelInstaller(
             return true
         }
 
-        val ok = attemptDownloadAndVerify(file, target, modelId, index, total, listener)
+        val storageError = storagePreflight(file, target)
+        if (storageError != null) {
+            lastFailureReason = storageError
+            Logger.w("ModelInstaller: $storageError")
+            return false
+        }
+        val ok = attemptDownloadAndVerify(file, target, modelId, index, total, listener, shouldCancel)
         if (!ok) {
             // Leave no corrupt artifact behind — detectModels/health must not see a bad file as present.
             runCatching { target.delete() }
-            runCatching { File(folder, "${file.name}.part").delete() }
+            // Preserve an ordinary interrupted .part for resume. attemptDownload deletes it only
+            // when metadata proves it impossible/corrupt (for example larger than expected).
             return false
         }
         if (file.archive) {
@@ -224,19 +241,20 @@ class ModelInstaller(
         modelId: String,
         index: Int,
         total: Int,
-        listener: ProgressListener?
+        listener: ProgressListener?,
+        shouldCancel: () -> Boolean
     ): Boolean {
-        if (!attemptDownload(file, target, modelId, index, total, listener)) return false
+        if (!attemptDownload(file, target, modelId, index, total, listener, shouldCancel)) return false
 
         if (file.sizeBytes > 0 && target.length() != file.sizeBytes) {
             Logger.w("ModelInstaller: size mismatch for ${file.name} (got ${target.length()}, expected ${file.sizeBytes}); retrying once")
             target.delete()
-            return attemptDownload(file, target, modelId, index, total, listener) && verifyAfterDownload(target, file)
+            return attemptDownload(file, target, modelId, index, total, listener, shouldCancel) && verifyAfterDownload(target, file)
         }
         if (file.sha256.isNotBlank() && !verifyChecksum(target, file)) {
             Logger.w("ModelInstaller: checksum mismatch for ${file.name}; deleting and retrying once")
             target.delete()
-            return attemptDownload(file, target, modelId, index, total, listener) && verifyAfterDownload(target, file)
+            return attemptDownload(file, target, modelId, index, total, listener, shouldCancel) && verifyAfterDownload(target, file)
         }
         return true
     }
@@ -264,12 +282,19 @@ class ModelInstaller(
         modelId: String,
         index: Int,
         total: Int,
-        listener: ProgressListener?
+        listener: ProgressListener?,
+        shouldCancel: () -> Boolean
     ): Boolean {
         val temp = File(target.parentFile, "${file.name}.part")
         // Safety: a file.name with a subpath (e.g. nested under a dir) needs its parent created.
         target.parentFile?.mkdirs()
         val existingBytes = if (temp.exists()) temp.length() else 0L
+
+        if (file.sizeBytes > 0 && existingBytes > file.sizeBytes) {
+            Logger.w("ModelInstaller: deleting oversized .part for ${file.name}")
+            temp.delete()
+            return false
+        }
 
         // If a prior run finished downloading but crashed before the .part→final rename, the temp
         // is already complete. When we can verify that (sizeBytes known and reached), skip the
@@ -282,13 +307,7 @@ class ModelInstaller(
 
         var conn: HttpURLConnection? = null
         return try {
-            conn = (URL(file.url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = CONNECT_TIMEOUT_MS
-                readTimeout = READ_TIMEOUT_MS
-                requestMethod = "GET"
-                if (existingBytes > 0) setRequestProperty("Range", "bytes=$existingBytes-")
-                instanceFollowRedirects = true
-            }
+            conn = openConnection(file.url, existingBytes)
             val code = conn.responseCode
             if (code == 416 && existingBytes > 0) {
                 // Server says the range is unsatisfiable — we already hold everything it would send.
@@ -306,6 +325,16 @@ class ModelInstaller(
                 return false
             }
             val resumeSupported = code == 206
+            if (resumeSupported && existingBytes > 0) {
+                val actualStart = conn.getHeaderField("Content-Range")
+                    ?.substringAfter("bytes ", "")
+                    ?.substringBefore('-')
+                    ?.toLongOrNull()
+                if (actualStart != existingBytes) {
+                    Logger.w("ModelInstaller: Content-Range start $actualStart did not match local .part $existingBytes")
+                    return false
+                }
+            }
             val append = resumeSupported && existingBytes > 0
             if (!append && existingBytes > 0) temp.delete() // server sent full file; start over
 
@@ -322,6 +351,10 @@ class ModelInstaller(
                     var read: Int
                     var written = if (append) existingBytes else 0L
                     while (input.read(buffer).also { read = it } > 0) {
+                        if (shouldCancel()) {
+                            lastFailureReason = "Download cancelled; partial data preserved for resume"
+                            return false
+                        }
                         out.write(buffer, 0, read)
                         written += read
                         listener?.onProgress(
@@ -330,6 +363,8 @@ class ModelInstaller(
                         )
                     }
                 }
+                // Ensure the complete .part reaches storage before the atomic activation rename.
+                out.fd.sync()
             }
 
             commitTemp(temp, target)
@@ -341,6 +376,62 @@ class ModelInstaller(
             runCatching { conn?.disconnect() }
         }
     }
+
+    private fun openConnection(url: String, existingBytes: Long): HttpURLConnection {
+        var current = URL(url)
+        val original = current
+        repeat(MAX_REDIRECTS + 1) { redirectCount ->
+            val connection = (current.openConnection() as HttpURLConnection).apply {
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+                requestMethod = "GET"
+                instanceFollowRedirects = false
+                if (existingBytes > 0) setRequestProperty("Range", "bytes=$existingBytes-")
+            }
+            val code = connection.responseCode
+            if (code !in REDIRECT_CODES) return connection
+            if (redirectCount >= MAX_REDIRECTS) {
+                connection.disconnect()
+                throw java.io.IOException("Too many redirects")
+            }
+            val location = connection.getHeaderField("Location")
+                ?: run {
+                    connection.disconnect()
+                    throw java.io.IOException("Redirect without Location")
+                }
+            val next = URL(current, location)
+            val trusted = if (original.protocol.equals("https", true)) {
+                next.protocol.equals("https", true)
+            } else {
+                // Plain HTTP is retained only for local unit-test servers and existing non-E4B
+                // manifests; it may not cross hosts or downgrade a trusted request.
+                next.protocol.equals(original.protocol, true) && next.host == original.host
+            }
+            connection.disconnect()
+            if (!trusted) throw java.io.IOException("Refusing untrusted redirect to ${next.protocol}://${next.host}")
+            current = next
+        }
+        throw java.io.IOException("Redirect resolution failed")
+    }
+
+    private fun storagePreflight(file: ModelFile, target: File): String? {
+        if (file.sizeBytes <= 0L) return null
+        val parent = target.parentFile ?: return "Cannot resolve storage directory for ${file.name}"
+        val part = File(parent, "${file.name}.part")
+        val localPart = part.length().coerceAtMost(file.sizeBytes)
+        val remaining = (file.sizeBytes - localPart).coerceAtLeast(0L)
+        val replacementHeadroom = file.sizeBytes
+        val requiredAvailable = remaining + replacementHeadroom + STORAGE_RESERVE_BYTES
+        val available = runCatching { StatFs(parent.absolutePath).availableBytes }
+            .getOrNull()
+            ?.takeIf { it > 0L }
+            ?: parent.usableSpace
+        return if (available < requiredAvailable) {
+            "Insufficient storage for ${file.name}: required ${formatBytes(requiredAvailable)}, available ${formatBytes(available)}"
+        } else null
+    }
+
+    private fun formatBytes(bytes: Long): String = "%.2f GiB".format(bytes.toDouble() / (1024.0 * 1024.0 * 1024.0))
 
     /** Atomically commits the .part temp file to its final name (rename, with a copy fallback). */
     private fun commitTemp(temp: File, target: File): Boolean = try {
@@ -476,5 +567,8 @@ class ModelInstaller(
         private const val CONNECT_TIMEOUT_MS = 30_000
         private const val READ_TIMEOUT_MS = 60_000
         private const val BUFFER_SIZE = 64 * 1024
+        private const val MAX_REDIRECTS = 5
+        private const val STORAGE_RESERVE_BYTES = 512L * 1024L * 1024L
+        private val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
     }
 }

@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
  * [ModelManager] and the [com.unoone.agent.storage.entity.ModelMetadataEntity] `modelType` field.
  */
 @Serializable
-enum class ModelType { llm, asr, tts, vad, punctuation, ocr }
+enum class ModelType { llm, asr, tts, kws, vad, punctuation, ocr }
 
 /** Preferred compute backend. `any` lets the planner fall back GPU→CPU (see GemmaPlanner). */
 @Serializable

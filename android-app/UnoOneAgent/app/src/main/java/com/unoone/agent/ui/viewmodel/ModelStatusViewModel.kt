@@ -1,15 +1,25 @@
 package com.unoone.agent.ui.viewmodel
 
 import android.content.Context
+import android.net.ConnectivityManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.Observer
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.unoone.agent.AgentOrchestrator
 import com.unoone.agent.brain.BrainSelfTest
 import com.unoone.agent.brain.BrainSelfTestResult
 import com.unoone.agent.core.model.BrainModelRegistry
 import com.unoone.agent.core.model.Result
-import com.unoone.agent.modelmanager.ModelInstaller
 import com.unoone.agent.modelmanager.ModelManager
+import com.unoone.agent.model.ModelDownloadWorker
+import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.storage.dao.ModelMetadataDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +38,7 @@ class ModelStatusViewModel(
     private val appContext = context.applicationContext
     private val modelManager = ModelManager(appContext, modelMetadataDao)
     private val brainSelfTest = orchestrator?.let { BrainSelfTest(it, modelManager) }
+    private val workManager = WorkManager.getInstance(appContext)
 
     data class ModelRow(
         val id: String,
@@ -80,6 +91,9 @@ class ModelStatusViewModel(
     private val _brainBusy = MutableStateFlow(false)
     val brainBusy: StateFlow<Boolean> = _brainBusy.asStateFlow()
 
+    private val _verifying = MutableStateFlow(false)
+    val verifying: StateFlow<Boolean> = _verifying.asStateFlow()
+
     private val _progress = MutableStateFlow<InstallProgress?>(null)
     val progress: StateFlow<InstallProgress?> = _progress.asStateFlow()
 
@@ -92,7 +106,51 @@ class ModelStatusViewModel(
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
+    private val _pendingMeteredInstall = MutableStateFlow<String?>(null)
+    val pendingMeteredInstall: StateFlow<String?> = _pendingMeteredInstall.asStateFlow()
+
+    private val downloadObserver = Observer<List<WorkInfo>> { infos ->
+        val active = infos.lastOrNull { !it.state.isFinished }
+        val latest = active ?: infos.lastOrNull()
+        _busy.value = active != null
+        if (latest == null) return@Observer
+        val modelId = latest.progress.getString(ModelDownloadWorker.KEY_MODEL_ID)
+            ?: latest.outputData.getString(ModelDownloadWorker.KEY_MODEL_ID)
+            ?: latest.tags.firstOrNull { it.startsWith(ModelDownloadWorker.MODEL_TAG_PREFIX) }
+                ?.removePrefix(ModelDownloadWorker.MODEL_TAG_PREFIX)
+            ?: "model"
+        when (latest.state) {
+            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> {
+                _progress.value = InstallProgress(modelId, "", 0, 1, 0, true, "Waiting for allowed network…")
+            }
+            WorkInfo.State.RUNNING -> {
+                val percent = latest.progress.getInt(ModelDownloadWorker.KEY_PERCENT, 0)
+                val file = latest.progress.getString(ModelDownloadWorker.KEY_FILE).orEmpty()
+                val fileIndex = latest.progress.getInt(ModelDownloadWorker.KEY_FILE_INDEX, 0)
+                val totalFiles = latest.progress.getInt(ModelDownloadWorker.KEY_TOTAL_FILES, 1)
+                _progress.value = InstallProgress(
+                    modelId, file, fileIndex, totalFiles, percent, true,
+                    "Downloading $file ($percent%) — file ${fileIndex + 1}/$totalFiles"
+                )
+            }
+            WorkInfo.State.SUCCEEDED -> {
+                _progress.value = null
+                _resultMessage.value = "Installed: $modelId"
+                refresh()
+            }
+            WorkInfo.State.FAILED -> {
+                _progress.value = null
+                _resultMessage.value = "Install failed: ${latest.outputData.getString(ModelDownloadWorker.KEY_ERROR) ?: "unknown error"}"
+            }
+            WorkInfo.State.CANCELLED -> {
+                _progress.value = null
+                _resultMessage.value = "Download cancelled; partial data kept for resume."
+            }
+        }
+    }
+
     init {
+        workManager.getWorkInfosByTagLiveData(ModelDownloadWorker.TAG).observeForever(downloadObserver)
         refresh()
     }
 
@@ -106,33 +164,53 @@ class ModelStatusViewModel(
 
     fun installModel(id: String) {
         if (_busy.value) return
-        _busy.value = true
-        _resultMessage.value = null
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                modelManager.installModel(id) { modelId, fileIndex, totalFiles, file, downloaded, total ->
-                    val percent = if (total > 0) (downloaded * 100 / total).toInt().coerceIn(0, 100) else 0
-                    _progress.value = InstallProgress(
-                        modelId = modelId,
-                        file = file,
-                        fileIndex = fileIndex,
-                        totalFiles = totalFiles,
-                        percent = percent,
-                        active = true,
-                        message = "Downloading $file ($percent%) — file ${fileIndex + 1}/$totalFiles"
-                    )
-                }
-            }
-            _progress.value = null
-            _busy.value = false
-            _resultMessage.value = when (result) {
-                is ModelInstaller.InstallResult.Success -> {
-                    refresh()
-                    "Installed: $id"
-                }
-                is ModelInstaller.InstallResult.Failure -> "Install failed: ${result.reason}"
-            }
+        if (!AgentRuntimeGate.isEnabled()) {
+            _resultMessage.value = "UnoOne is disabled. Enable it before downloading a model."
+            return
         }
+        val connectivity = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        if (connectivity.isActiveNetworkMetered) {
+            _pendingMeteredInstall.value = id
+            return
+        }
+        enqueueModelInstall(id, allowMetered = false)
+    }
+
+    fun confirmMeteredInstall() {
+        val id = _pendingMeteredInstall.value ?: return
+        _pendingMeteredInstall.value = null
+        enqueueModelInstall(id, allowMetered = true)
+    }
+
+    fun dismissMeteredInstall() {
+        _pendingMeteredInstall.value = null
+        _resultMessage.value = "Download not started. Connect to Wi-Fi and try again."
+    }
+
+    fun cancelInstall() {
+        workManager.cancelUniqueWork(ModelDownloadWorker.UNIQUE_WORK)
+    }
+
+    private fun enqueueModelInstall(id: String, allowMetered: Boolean) {
+        _resultMessage.value = null
+        val request = OneTimeWorkRequestBuilder<ModelDownloadWorker>()
+            .setInputData(workDataOf(
+                ModelDownloadWorker.KEY_MODEL_ID to id,
+                ModelDownloadWorker.KEY_ALLOW_METERED to allowMetered
+            ))
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(if (allowMetered) NetworkType.CONNECTED else NetworkType.UNMETERED)
+                    .build()
+            )
+            .addTag(ModelDownloadWorker.TAG)
+            .addTag("${ModelDownloadWorker.MODEL_TAG_PREFIX}$id")
+            .build()
+        workManager.enqueueUniqueWork(
+            ModelDownloadWorker.UNIQUE_WORK,
+            ExistingWorkPolicy.KEEP,
+            request
+        )
     }
 
     fun uninstallModel(id: String) {
@@ -191,8 +269,29 @@ class ModelStatusViewModel(
         }
     }
 
+    fun verifyBrainArtifact() {
+        if (_brainBusy.value || _verifying.value) return
+        _verifying.value = true
+        _resultMessage.value = "Verifying the complete E4B file…"
+        viewModelScope.launch {
+            val health = withContext(Dispatchers.IO) { modelManager.verifyLlmArtifact() }
+            _verifying.value = false
+            _resultMessage.value = if (health.verified) {
+                "Gemma 4 E4B size and SHA-256 are verified."
+            } else {
+                "E4B verification failed: ${health.message}"
+            }
+            refresh()
+        }
+    }
+
     fun consumeResultMessage() {
         _resultMessage.value = null
+    }
+
+    override fun onCleared() {
+        workManager.getWorkInfosByTagLiveData(ModelDownloadWorker.TAG).removeObserver(downloadObserver)
+        super.onCleared()
     }
 
     private suspend fun buildRows(): List<ModelRow> {
@@ -220,7 +319,7 @@ class ModelStatusViewModel(
         }
     }
 
-    private fun buildBrainStatus(): BrainStatusRow {
+    private suspend fun buildBrainStatus(): BrainStatusRow {
         val spec = BrainModelRegistry.GEMMA_4_E4B
         val loaded = orchestrator?.loadedBrainProfile()
         val isLoaded = loaded?.manifestId == spec.manifestId

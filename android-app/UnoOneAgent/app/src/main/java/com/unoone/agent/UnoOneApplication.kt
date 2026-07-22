@@ -7,8 +7,12 @@ import android.content.Intent
 import android.os.Process
 import androidx.core.content.edit
 import com.unoone.agent.browser.SecureBrowserModelLease
+import com.unoone.agent.model.ModelDownloadWorker
+import androidx.work.WorkManager
 import com.unoone.agent.core.model.BrainModelRegistry
 import com.unoone.agent.core.model.ExclusiveBrainLeaseState
+import com.unoone.agent.core.model.E4bRuntimeCoordinator
+import com.unoone.agent.core.model.E4bRuntimeState
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.runtime.AgentRuntimeController
 import com.unoone.agent.core.runtime.AgentRuntimeGate
@@ -172,7 +176,7 @@ class UnoOneApplication : Application(), AgentRuntimeController {
         }
         if (persistedEnabled) {
             appScope.launch(Dispatchers.IO) {
-                modelManager.repairVadFromVerifiedEnglishAsr()
+                modelManager.repairKwsFromVerifiedEnglishAsr()
                 try {
                     VoiceService.start(this@UnoOneApplication)
                 } catch (e: Exception) {
@@ -185,7 +189,10 @@ class UnoOneApplication : Application(), AgentRuntimeController {
     fun postVoiceCommand(command: String) {
         if (!AgentRuntimeGate.isEnabled()) return
         VoiceService.beginForegroundTask()
-        if (!_commandFlow.tryEmit(command)) VoiceService.endForegroundTask()
+        if (!_commandFlow.tryEmit(command)) {
+            VoiceService.endForegroundTask()
+            VoiceAgentRuntime.transition(VoiceAgentState.WAKE_LISTENING, "voice command queue full")
+        }
     }
 
     /**
@@ -195,6 +202,8 @@ class UnoOneApplication : Application(), AgentRuntimeController {
     override fun disableAgent() {
         if (!AgentRuntimeGate.isEnabled()) return
         AgentRuntimeGate.setEnabled(false)
+        E4bRuntimeCoordinator.transition(E4bRuntimeState.DISABLED, detail = "explicit master disable")
+        WorkManager.getInstance(this).cancelUniqueWork(ModelDownloadWorker.UNIQUE_WORK)
         getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).edit(commit = true) {
             putBoolean(KEY_AGENT_ENABLED, false)
         }
@@ -235,6 +244,7 @@ class UnoOneApplication : Application(), AgentRuntimeController {
             putBoolean(KEY_AGENT_ENABLED, true)
         }
         AgentRuntimeGate.setEnabled(true)
+        E4bRuntimeCoordinator.transition(E4bRuntimeState.UNLOADED, detail = "explicit re-enable")
         _isAgentEnabled.value = true
         VoiceService.voiceCommandCallback = { command -> postVoiceCommand(command) }
         VoiceService.sharedVoiceModuleProvider = { sharedVoiceModule }
@@ -252,7 +262,7 @@ class UnoOneApplication : Application(), AgentRuntimeController {
             orchestrator.skillsModule.ensureBuiltIns()
             val manager = ModelManager(this@UnoOneApplication)
             manager.ensureModelDirectories()
-            manager.repairVadFromVerifiedEnglishAsr()
+            manager.repairKwsFromVerifiedEnglishAsr()
             runCatching { VoiceService.start(this@UnoOneApplication) }
                 .onFailure { Logger.e("AgentRuntime: failed to restart voice service", it) }
 

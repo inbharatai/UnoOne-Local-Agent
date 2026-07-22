@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,6 +29,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,6 +55,24 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
     val brainStatus by viewModel.brainStatus.collectAsState()
     val selfTest by viewModel.selfTest.collectAsState()
     val brainBusy by viewModel.brainBusy.collectAsState()
+    val verifying by viewModel.verifying.collectAsState()
+    val pendingMeteredInstall by viewModel.pendingMeteredInstall.collectAsState()
+
+    pendingMeteredInstall?.let { modelId ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissMeteredInstall,
+            title = { Text("Use mobile data?") },
+            text = {
+                Text("$modelId is a large offline model. Wi-Fi is recommended. Continue on this metered connection only if you approve the data use.")
+            },
+            confirmButton = {
+                Button(onClick = viewModel::confirmMeteredInstall) { Text("Use mobile data") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissMeteredInstall) { Text("Wait for Wi-Fi") }
+            }
+        )
+    }
 
     LaunchedEffect(resultMessage) {
         if (resultMessage != null) {
@@ -107,6 +127,7 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
                         progress = { item.percent / 100f },
                         modifier = Modifier.fillMaxWidth()
                     )
+                    TextButton(onClick = viewModel::cancelInstall) { Text("Cancel download") }
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -116,9 +137,11 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
             BrainCard(
                 row = brain,
                 selfTest = selfTest,
-                busy = brainBusy,
+                busy = brainBusy || verifying,
+                verifying = verifying,
                 onLoad = viewModel::loadBrain,
-                onSelfTest = viewModel::runBrainSelfTest
+                onSelfTest = viewModel::runBrainSelfTest,
+                onVerify = viewModel::verifyBrainArtifact
             )
         }
 
@@ -150,8 +173,10 @@ private fun BrainCard(
     row: ModelStatusViewModel.BrainStatusRow,
     selfTest: BrainSelfTestResult?,
     busy: Boolean,
+    verifying: Boolean,
     onLoad: () -> Unit,
-    onSelfTest: () -> Unit
+    onSelfTest: () -> Unit,
+    onVerify: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -203,12 +228,18 @@ private fun BrainCard(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (busy) {
                     CircularProgressIndicator(modifier = Modifier.height(24.dp), strokeWidth = 2.dp)
+                    Text(if (verifying) "Hashing the complete artifact…" else "Working…")
                 } else {
-                    OutlinedButton(onClick = onLoad, enabled = row.installed) { Text("Load Brain") }
-                    Button(onClick = onSelfTest, enabled = row.installed) { Text("Run Self-Test") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onLoad, enabled = row.installed) { Text("Load Brain") }
+                        Button(onClick = onSelfTest, enabled = row.installed) { Text("Run Self-Test") }
+                    }
+                    OutlinedButton(onClick = onVerify, enabled = row.installed) {
+                        Text("Verify complete SHA-256")
+                    }
                 }
             }
         }

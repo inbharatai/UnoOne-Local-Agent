@@ -19,14 +19,14 @@ class ModelManifestTest {
               "id": "gemma-4-e4b",
               "folder": "brain/gemma-4-e4b",
               "type": "llm",
-              "version": "gemma-4-E4B-it-litert-lm-main-28299f3",
+              "version": "gemma-4-E4B-it-litert-lm-28299f30ee4d43294517a4ac93abd6163412f07f",
               "minRamMb": 8192,
               "backend": "any",
               "defaultLanguage": "en",
               "files": [
                 {
                   "name": "gemma-4-E4B-it.litertlm",
-                  "url": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
+                  "url": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/28299f30ee4d43294517a4ac93abd6163412f07f/gemma-4-E4B-it.litertlm",
                   "sha256": "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
                   "sizeBytes": 3659530240,
                   "archive": false
@@ -101,6 +101,8 @@ class ModelManifestTest {
             "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
             gemma.files.single().sha256
         )
+        assertTrue(gemma.files.single().url.contains("28299f30ee4d43294517a4ac93abd6163412f07f"))
+        assertFalse(gemma.files.single().url.contains("/resolve/main/"))
         assertNull(manifest.find("gemma-4-e2b"))
         assertEquals(1, manifest.models.count { it.type == ModelType.llm })
 
