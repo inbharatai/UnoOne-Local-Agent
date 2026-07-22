@@ -43,12 +43,12 @@ object VoiceLanguage {
             AsrSpec("speech/shared/sherpa-asr-indic", SttMode.OMNILINGUAL, lang)
         }
 
-    const val KWS_FOLDER = "speech/shared/vad"
+    const val KWS_FOLDER = "speech/shared/sherpa-kws-en"
 
     /**
      * Wake-word models in priority order. The dedicated KWS download and the English streaming
      * ASR use the same transducer files, so the already-installed English model is a safe offline
-     * fallback when the optional `vad` model was not downloaded.
+     * fallback when the optional KWS model was not downloaded. This is not a VAD model.
      */
     fun kwsFolders(): List<String> = listOf(KWS_FOLDER, asrSpec(DEFAULT).folder).distinct()
 
@@ -76,6 +76,11 @@ object VoiceLanguage {
     fun wakeCue(code: String): String = when (normalize(code)) {
         "hi" -> "हाँ, आवाज़ सुनाई दे रही है।"
         else -> "Yes, I'm listening."
+    }
+
+    fun retryCue(code: String): String = when (normalize(code)) {
+        "hi" -> "आवाज़ साफ़ नहीं आई। कृपया फिर से बोलें।"
+        else -> "I didn't hear that clearly. Please try again."
     }
 
     /**

@@ -121,5 +121,20 @@ class WakePhrasesTest {
         assertEquals("start blind mode", WakePhrases.commandAfterWakePhrase("Uno start blind mode"))
         assertEquals("open WhatsApp", WakePhrases.commandAfterWakePhrase("Uno on, open WhatsApp"))
         assertEquals("Hindi mein jawab do", WakePhrases.commandAfterWakePhrase("Hey Uno, Hindi mein jawab do"))
+        assertEquals("start blind", WakePhrases.commandAfterWakePhrase("Uno start blind"))
+        assertEquals("start blind view", WakePhrases.commandAfterWakePhrase("Uno start blind view"))
+        assertEquals("speak in Hindi", WakePhrases.commandAfterWakePhrase("Uno speak in Hindi"))
+        assertEquals(
+            "start blind mode and reply in Hindi",
+            WakePhrases.commandAfterWakePhrase("Uno start blind mode and reply in Hindi")
+        )
+        assertEquals(
+            "ब्लाइंड मोड चालू करो",
+            WakePhrases.commandAfterWakePhrase("यूनो ब्लाइंड मोड चालू करो")
+        )
+        assertEquals(
+            "ब्लाइंड मोड शुरू करो",
+            WakePhrases.commandAfterWakePhrase("सुनो ब्लाइंड मोड शुरू करो")
+        )
     }
 }

@@ -46,9 +46,9 @@ class VoiceService : Service() {
     private val audioManager by lazy { getSystemService(AudioManager::class.java) }
     private var keywordSpotter: KeywordSpotterEngine? = null
     private val wakeActivationGate = WakeActivationGate()
+    private val speechDetector = AdaptiveSpeechDetector()
 
     var onWakeWordDetected: (() -> Unit)? = null
-    var onCommandReceived: ((String) -> Unit)? = null
 
     @Volatile
     private var isListeningForCommand = false
@@ -317,6 +317,7 @@ class VoiceService : Service() {
                     consecutiveSilenceChunks = 0
                     isListeningForCommand = false
                     captureIncludesWakePhrase = false
+                    speechDetector.reset()
                     if (!pausedForCall) {
                         pausedForCall = true
                         Logger.i("VoiceService: microphone paused while call audio is active")
@@ -345,6 +346,7 @@ class VoiceService : Service() {
                     consecutiveSilenceChunks = 0
                     isListeningForCommand = false
                     captureIncludesWakePhrase = false
+                    speechDetector.reset()
                     delay(100)
                     continue
                 }
@@ -448,8 +450,7 @@ class VoiceService : Service() {
                             } else {
                                 Logger.i("VoiceService: received one-breath wake command")
                                 if (recorder.isRecording()) recorder.stop()
-                                onCommandReceived?.invoke(match.command)
-                                voiceCommandCallback?.invoke(match.command)
+                            voiceCommandCallback?.invoke(match.command)
                                 VoiceAgentRuntime.transition(VoiceAgentState.PROCESSING, "one-breath command routed")
                                 updateNotification("Processing command locally...")
                             }
@@ -479,7 +480,7 @@ class VoiceService : Service() {
                         commandAudio.clear()
 
                         val transcript = transcribeAudio(commandPcm)
-                        if (transcript is Result.Success) {
+                        if (transcript is Result.Success && transcript.data.isNotBlank()) {
                             val match = if (captureIncludesWakePhrase) {
                                 WakePhraseMatcher.match(transcript.data)
                             } else {
@@ -524,8 +525,6 @@ class VoiceService : Service() {
                             }
                             captureIncludesWakePhrase = false
                             Logger.i("VoiceService: received wake command")
-                            onCommandReceived?.invoke(command)
-
                             // SECURITY: Use static callback instead of broadcast Intent.
                             // sendBroadcast() is visible in system logs even with setPackage(),
                             // exposing the user's transcribed speech. The callback is set by the
@@ -534,6 +533,19 @@ class VoiceService : Service() {
                             VoiceAgentRuntime.transition(
                                 VoiceAgentState.PROCESSING,
                                 "voice command routed"
+                            )
+                        } else {
+                            val language = sharedVoiceModuleProvider?.invoke()?.currentLanguage()
+                                ?: VoiceLanguage.DEFAULT
+                            VoiceAgentRuntime.recordError("STT_UNCLEAR", "retry wake listening")
+                            runCatching {
+                                sharedVoiceModuleProvider?.invoke()?.speakAwait(
+                                    VoiceLanguage.retryCue(language)
+                                )
+                            }
+                            VoiceAgentRuntime.transition(
+                                VoiceAgentState.WAKE_LISTENING,
+                                "empty or failed command recognition"
                             )
                         }
 
@@ -553,24 +565,13 @@ class VoiceService : Service() {
     }
 
     private fun hasSpeechActivity(pcmData: ByteArray): Boolean {
-        // Simple energy-based VAD: check if RMS exceeds threshold
-        if (pcmData.size < 2) return false
-        var sum = 0.0
-        for (i in 0 until pcmData.size - 1 step 2) {
-            // Little-endian signed 16-bit: mask the high byte to avoid sign-extension corruption.
-            val sample = (pcmData[i].toInt() and 0xFF) or ((pcmData[i + 1].toInt() and 0xFF) shl 8)
-            sum += sample.toDouble() * sample.toDouble()
-        }
-        val rms = sqrt(sum / (pcmData.size / 2))
-        return rms > 500 // Threshold for speech detection
+        return speechDetector.hasSpeech(pcmData)
     }
 
     private suspend fun transcribeAudio(pcmData: ByteArray): Result<String> {
         return sharedVoiceModuleProvider?.invoke()?.transcribePcm(pcmData)
             ?: Result.Error("Shared offline STT is unavailable")
     }
-
-    private fun sqrt(x: Double): Double = kotlin.math.sqrt(x)
 
     private fun updateNotification(text: String) {
         val manager = getSystemService(NotificationManager::class.java)

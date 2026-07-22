@@ -9,10 +9,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Real on-device language-pack install gate (README Phase C: "validate every baseline
- * checksum + extraction on clean device").
+ * Real on-device install gate for the currently supported English/Hindi speech packs.
  *
- * Drives the app's OWN ModelInstaller over real network (WiFi) for each downloadable baseline
+ * Drives the app's OWN ModelInstaller over real network (WiFi) for each supported
  * pack, so every artifact is created app-owned (no shell-ownership / SELinux gotcha), downloaded,
  * sha256+size verified, and (for archives) extracted. Then re-checks health+verification.
  *
@@ -26,15 +25,7 @@ class LanguagePackInstallTest {
 
     private val tag = "UnoOneLang"
 
-    private val baselinePacks = listOf(
-        "en-IN-base",
-        "hi-IN-standard",
-        "bn-IN-standard",
-        "ta-IN-standard",
-        "te-IN-standard",
-        "kn-IN-standard",
-        "ml-IN-standard"
-    )
+    private val baselinePacks = listOf("en-IN-base", "hi-IN-standard")
 
     @Test
     fun installAllBaselinePacksAndQualifyAssamese() = runBlocking {

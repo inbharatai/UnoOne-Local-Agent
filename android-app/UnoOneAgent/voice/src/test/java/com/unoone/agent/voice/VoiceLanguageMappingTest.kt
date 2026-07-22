@@ -33,13 +33,13 @@ class VoiceLanguageMappingTest {
 
     @Test
     fun kwsFolderUsesSharedVadPath() {
-        assertEquals("speech/shared/vad", VoiceLanguage.KWS_FOLDER)
+        assertEquals("speech/shared/sherpa-kws-en", VoiceLanguage.KWS_FOLDER)
     }
 
     @Test
     fun kwsFallsBackToInstalledEnglishTransducer() {
         assertEquals(
-            listOf("speech/shared/vad", "speech/shared/sherpa-asr-en"),
+            listOf("speech/shared/sherpa-kws-en", "speech/shared/sherpa-asr-en"),
             VoiceLanguage.kwsFolders()
         )
     }

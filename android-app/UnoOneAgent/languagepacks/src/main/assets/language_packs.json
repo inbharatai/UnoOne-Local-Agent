@@ -9,7 +9,7 @@
       "version": "1.0.0-baseline",
       "status": "baseline",
       "requiredModelIds": ["sherpa-asr-en", "sherpa-tts-en"],
-      "optionalModelIds": ["vad"],
+      "optionalModelIds": ["sherpa-kws-en"],
       "required": true,
       "removable": false,
       "downloadable": true,
@@ -24,7 +24,7 @@
       "version": "planned",
       "status": "planned",
       "requiredModelIds": [],
-      "optionalModelIds": ["vad"],
+      "optionalModelIds": ["sherpa-kws-en"],
       "downloadable": false,
       "minimumRamMb": 4096,
       "notes": "Priority language. STT and TTS artifacts must pass licence, integrity, Android load, accuracy and device qualification before activation."
@@ -37,7 +37,7 @@
       "version": "1.0.0-baseline",
       "status": "baseline",
       "requiredModelIds": ["sherpa-asr-indic", "sherpa-tts-hin"],
-      "optionalModelIds": ["vad"],
+      "optionalModelIds": ["sherpa-kws-en"],
       "downloadable": true,
       "minimumRamMb": 3072,
       "notes": "Omnilingual CTC and MMS VITS passed native-script offline round-trip tests on the primary device; broader accent and noise qualification remains."
@@ -50,7 +50,7 @@
       "version": "1.0.0-baseline",
       "status": "baseline",
       "requiredModelIds": ["sherpa-asr-indic", "sherpa-tts-ben"],
-      "optionalModelIds": ["vad"],
+      "optionalModelIds": ["sherpa-kws-en"],
       "downloadable": true,
       "minimumRamMb": 3072,
       "notes": "Omnilingual CTC and MMS VITS passed native-script offline round-trip tests on the primary device; broader accent and noise qualification remains."
@@ -107,7 +107,7 @@
       "version": "1.0.0-baseline",
       "status": "baseline",
       "requiredModelIds": ["sherpa-asr-indic", "sherpa-tts-tam"],
-      "optionalModelIds": ["vad"],
+      "optionalModelIds": ["sherpa-kws-en"],
       "downloadable": true,
       "minimumRamMb": 3072,
       "notes": "Omnilingual CTC and MMS VITS passed native-script offline round-trip tests on the primary device; broader accent and noise qualification remains."
@@ -120,7 +120,7 @@
       "version": "1.0.0-baseline",
       "status": "baseline",
       "requiredModelIds": ["sherpa-asr-indic", "sherpa-tts-tel"],
-      "optionalModelIds": ["vad"],
+      "optionalModelIds": ["sherpa-kws-en"],
       "downloadable": true,
       "minimumRamMb": 3072,
       "notes": "Omnilingual CTC and MMS VITS passed native-script offline round-trip tests on the primary device; broader accent and noise qualification remains."
@@ -133,7 +133,7 @@
       "version": "1.0.0-baseline",
       "status": "baseline",
       "requiredModelIds": ["sherpa-asr-indic", "sherpa-tts-kan"],
-      "optionalModelIds": ["vad"],
+      "optionalModelIds": ["sherpa-kws-en"],
       "downloadable": true,
       "minimumRamMb": 3072,
       "notes": "Omnilingual CTC and MMS VITS passed native-script offline round-trip tests on the primary device; broader accent and noise qualification remains."
@@ -146,7 +146,7 @@
       "version": "1.0.0-baseline",
       "status": "baseline",
       "requiredModelIds": ["sherpa-asr-indic", "sherpa-tts-mal"],
-      "optionalModelIds": ["vad"],
+      "optionalModelIds": ["sherpa-kws-en"],
       "downloadable": true,
       "minimumRamMb": 3072,
       "notes": "Omnilingual CTC and MMS VITS passed native-script offline round-trip tests on the primary device; broader accent and noise qualification remains."
