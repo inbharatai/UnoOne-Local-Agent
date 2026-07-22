@@ -23,6 +23,17 @@ object RuleBasedParser {
                 .containsMatchIn(value)
         }
 
+    /**
+     * Conservative speech-recognition aliases for Chrome. The final consonant and vowel are often
+     * lost by the small offline English transducer ("crome", "crohm", "crope"). Require an
+     * explicit launch verb, so an unrelated mention of a crop never opens a browser.
+     */
+    private fun isSpokenChromeLaunch(value: String): Boolean =
+        Regex(
+            "\\b(?:open|launch|start)\\s+(?:google\\s+)?(?:chrome|crome|crohm|crope)\\b",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(value)
+
     private fun explicitWebTarget(value: String): String? =
         Regex(
             "(?<![@\\w])(?:https?://)?(?:www\\.)?[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)+(?:/[^\\s]*)?",
@@ -292,6 +303,8 @@ object RuleBasedParser {
 
             // Blind Aid Activation — requires positive context like "detect" or "start"
             lowered.contains("start blind aid") || lowered.contains("activate blind aid") ||
+            lowered.contains("open blind aid") || lowered.contains("launch blind aid") ||
+            lowered.contains("turn on blind aid") || lowered.contains("blind aid on") ||
             lowered in setOf(
                 "start blind", "start blind mode", "start blind view",
                 "enable blind mode", "enable blind view", "blind mode on", "blind view on",
@@ -407,7 +420,8 @@ object RuleBasedParser {
             }
 
             // Browser & Search
-            lowered.contains("open chrome") || lowered.contains("launch browser") -> {
+            lowered.contains("open chrome") || lowered.contains("launch browser") ||
+            isSpokenChromeLaunch(lowered) -> {
                 ToolCall("open_chrome", JsonObject(emptyMap()))
             }
 

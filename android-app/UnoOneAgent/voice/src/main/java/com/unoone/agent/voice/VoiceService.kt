@@ -95,6 +95,14 @@ class VoiceService : Service() {
          */
         var foregroundSessionActive: Boolean = false
 
+        /**
+         * A voice command may be waiting for a safety decision. Keep the wake loop available for
+         * the exact follow-up (for example, "Uno confirm") even though the original command still
+         * owns the foreground-task slot. Agent speech remains an independent hard stop.
+         */
+        @Volatile
+        var awaitingVoiceConfirmation: Boolean = false
+
         private val agentSpeechOwners = AtomicInteger(0)
         private val foregroundTaskOwners = AtomicInteger(0)
 
@@ -126,6 +134,7 @@ class VoiceService : Service() {
 
         fun clearAudioOwnership() {
             foregroundSessionActive = false
+            awaitingVoiceConfirmation = false
             agentSpeechOwners.set(0)
             foregroundTaskOwners.set(0)
         }
@@ -336,7 +345,11 @@ class VoiceService : Service() {
                 // Exactly one audio owner at a time. Release and discard buffered state while an
                 // in-app recording or UnoOne TTS owns audio, otherwise the wake service can hear the
                 // app's own reply and replay an old/partial command.
-                if (foregroundSessionActive || isAgentSpeaking() || isForegroundTaskActive()) {
+                if (
+                    (foregroundSessionActive && !awaitingVoiceConfirmation) ||
+                    isAgentSpeaking() ||
+                    (isForegroundTaskActive() && !awaitingVoiceConfirmation)
+                ) {
                     if (recorder.isRecording()) recorder.stop()
                     commandAudio.clear()
                     passiveWakeAudio.clear()

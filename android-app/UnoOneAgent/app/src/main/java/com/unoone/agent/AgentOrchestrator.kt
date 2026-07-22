@@ -48,6 +48,7 @@ import com.unoone.agent.storage.entity.ActionLogEntity
 import com.unoone.agent.voice.VoiceLanguage
 import com.unoone.agent.voice.VoiceAgentRuntime
 import com.unoone.agent.voice.VoiceAgentState
+import com.unoone.agent.voice.VoiceConfirmationPolicy
 import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceService
 import kotlinx.coroutines.CoroutineScope
@@ -355,6 +356,14 @@ class AgentOrchestrator(
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
     private val processingLock = AtomicBoolean(false)
 
+    /** A voice-only response for the one safety dialog currently awaiting a decision. */
+    private data class PendingVoiceConfirmation(
+        val requiresExplicitConfirm: Boolean,
+        val respond: (Boolean) -> Unit
+    )
+
+    private val pendingVoiceConfirmation = AtomicReference<PendingVoiceConfirmation?>(null)
+
     // ---- C3: cooperative cancel via run-generation tokens ------------------------------
     // Each processCommand run increments currentRunId and captures its own generation. Cancel
     // stamps cancelledRunId with the latest run id; checkpoints compare the two so a cancel only
@@ -650,6 +659,10 @@ class AgentOrchestrator(
             Logger.i("Orchestrator: command rejected because UnoOne is disabled")
             return
         }
+        // A pending confirmation intentionally owns the command lock while it waits. Let an exact
+        // spoken yes/no/confirm resolve it before that lock check; otherwise a blind user can hear
+        // the prompt but can never answer it.
+        if (inputType == InputType.VOICE && resolvePendingVoiceConfirmation(text)) return
         // Atomic check-and-set to prevent concurrent command execution
         if (!processingLock.compareAndSet(false, true)) return
         _isProcessing.value = true
@@ -1517,20 +1530,41 @@ class AgentOrchestrator(
     }
 
     private suspend fun awaitConfirmation(message: String): Boolean {
-        // Prefer multicast if listeners are registered (both Activity and FloatingService)
-        if (onConfirmationRequiredMulticast.hasListeners) {
-            // Bounded wait: if no listener calls back (UI not foregrounded, callback swallowed),
-            // deny for safety instead of hanging the agent forever with the processing lock held.
-            return withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) {
+        val requiresExplicitConfirm = message.startsWith("SECURITY CHECK")
+        val response = AtomicReference<PendingVoiceConfirmation?>(null)
+        val canAnswerByVoice = currentInputType == InputType.VOICE && AgentRuntimeGate.isEnabled()
+        if (canAnswerByVoice) {
+            VoiceService.awaitingVoiceConfirmation = true
+            // Confirmation narration is deliberately unthrottled: it is the only instruction a
+            // blind user receives while the command lock is held.
+            speakAnswer(VoiceConfirmationPolicy.prompt(requiresExplicitConfirm))
+        }
+        return try {
+            withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) {
                 suspendCancellableCoroutine { cont ->
-                    // First listener to respond wins — others are ignored. AtomicBoolean so two
-                    // listeners invoking the callback concurrently can't double-resume the cont.
-                    val responded = java.util.concurrent.atomic.AtomicBoolean(false)
-                    onConfirmationRequiredMulticast.invokeAll { listener ->
-                        listener(message) { result ->
-                            if (responded.compareAndSet(false, true)) {
-                                cont.resumeWith(kotlin.Result.success(result))
-                            }
+                    // UI, floating assistant and voice may race. Exactly one decision resumes the
+                    // waiting command; the other delivery paths become harmless no-ops.
+                    val responded = AtomicBoolean(false)
+                    fun respond(result: Boolean) {
+                        if (responded.compareAndSet(false, true)) {
+                            cont.resumeWith(kotlin.Result.success(result))
+                        }
+                    }
+                    val pending = PendingVoiceConfirmation(requiresExplicitConfirm, ::respond)
+                    response.set(pending)
+                    pendingVoiceConfirmation.set(pending)
+                    cont.invokeOnCancellation {
+                        pendingVoiceConfirmation.compareAndSet(pending, null)
+                    }
+
+                    if (onConfirmationRequiredMulticast.hasListeners) {
+                        onConfirmationRequiredMulticast.invokeAll { listener ->
+                            listener(message, ::respond)
+                        }
+                    } else {
+                        onConfirmationRequired?.invoke(message, ::respond) ?: run {
+                            Logger.w("Orchestrator: confirmation listener missing — denying")
+                            respond(false)
                         }
                     }
                 }
@@ -1538,26 +1572,24 @@ class AgentOrchestrator(
                 Logger.w("Orchestrator: confirmation timed out after ${CONFIRMATION_TIMEOUT_MS}ms — denying for safety")
                 false
             }
+        } finally {
+            response.get()?.let { pendingVoiceConfirmation.compareAndSet(it, null) }
+            if (canAnswerByVoice) VoiceService.awaitingVoiceConfirmation = false
         }
+    }
 
-        // Fallback to legacy single-delegate callback for backward compatibility
-        if (onConfirmationRequired == null) {
-            Logger.w("Orchestrator: onConfirmationRequired is null — denying by default for safety")
-            return false
+    /**
+     * Resolves a pending voice confirmation before a serial command collector queues the phrase
+     * behind the command that is waiting for it. Returns true only for an exact local decision.
+     */
+    fun resolvePendingVoiceConfirmation(text: String): Boolean {
+        val pending = pendingVoiceConfirmation.get() ?: return false
+        val decision = VoiceConfirmationPolicy.decision(text, pending.requiresExplicitConfirm) ?: return false
+        if (pendingVoiceConfirmation.compareAndSet(pending, null)) {
+            Logger.i("Orchestrator: voice confirmation resolved (approved=$decision)")
+            pending.respond(decision)
         }
-        return withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) {
-            suspendCancellableCoroutine { cont ->
-                onConfirmationRequired?.invoke(message) { result ->
-                    cont.resumeWith(kotlin.Result.success(result))
-                } ?: run {
-                    Logger.w("Orchestrator: onConfirmationRequired became null during confirmation — denying")
-                    cont.resumeWith(kotlin.Result.success(false))
-                }
-            }
-        } ?: run {
-            Logger.w("Orchestrator: confirmation timed out after ${CONFIRMATION_TIMEOUT_MS}ms — denying for safety")
-            false
-        }
+        return true
     }
 
     private fun addStep(status: AgentStatus, label: String, detail: String = "") {

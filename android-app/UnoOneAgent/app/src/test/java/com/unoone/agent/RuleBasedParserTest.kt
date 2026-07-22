@@ -39,6 +39,10 @@ class RuleBasedParserTest {
             "blind mode start karo",
             "blind view shuru karo",
             "activate blind aid",
+            "open blind aid",
+            "launch blind aid",
+            "turn on blind aid",
+            "blind aid on",
             "detect objects",
             "what's in front of me",
             "detect barrier",
@@ -83,6 +87,19 @@ class RuleBasedParserTest {
             val toolCall = RuleBasedParser.parse(trigger)
             assertNotNull("Failed to parse deactivation trigger: $trigger", toolCall)
             assertEquals("deactivate_blind_aid", toolCall!!.tool)
+        }
+    }
+
+    @Test
+    fun routesCommonOfflineSttChromeAliasesToChromeNotGoogleSearch() {
+        listOf(
+            "open google chrome",
+            "open google crome",
+            "open google crohm",
+            "open google crope",
+            "launch crome"
+        ).forEach { phrase ->
+            assertEquals(phrase, "open_chrome", RuleBasedParser.parse(phrase)?.tool)
         }
     }
 

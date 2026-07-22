@@ -123,6 +123,8 @@ Wake phrases include:
 
 Wake and command may be spoken together. The voice service and foreground recorder maintain single microphone ownership, and TTS must not become a new command.
 
+Examples: “Uno, open Google Chrome,” “Uno, open Blind Aid,” and “Uno, read the screen.” Common offline-STT renderings of Chrome — “crome”, “crohm”, and “crope” — route to Chrome rather than a Google search. When an action needs confirmation, UnoOne says how to reply: say “Uno, yes” for an ordinary confirmation or “Uno, confirm” for a strong confirmation. The reply is resolved before the serial command queue so an eyes-free user is not locked behind the pending action.
+
 English and Hindi are currently exposed. Assamese remains planned until exact speech artifacts pass licence, integrity, Android load and accuracy qualification.
 
 ## Secure Browser model lease

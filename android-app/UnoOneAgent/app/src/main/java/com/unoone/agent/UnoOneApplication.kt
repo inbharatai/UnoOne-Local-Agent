@@ -188,6 +188,10 @@ class UnoOneApplication : Application(), AgentRuntimeController {
 
     fun postVoiceCommand(command: String) {
         if (!AgentRuntimeGate.isEnabled()) return
+        // The command collector is intentionally serial. A spoken "Uno confirm" must therefore
+        // resolve a safety prompt directly instead of waiting behind the command that is awaiting
+        // that very confirmation.
+        if (orchestrator.resolvePendingVoiceConfirmation(command)) return
         VoiceService.beginForegroundTask()
         if (!_commandFlow.tryEmit(command)) {
             VoiceService.endForegroundTask()
