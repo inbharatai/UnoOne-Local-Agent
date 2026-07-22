@@ -53,9 +53,13 @@ class ModelDownloadWorker(
         )
         return when (result) {
             ModelInstaller.InstallResult.Success -> Result.success(workDataOf(KEY_MODEL_ID to modelId))
-            is ModelInstaller.InstallResult.Failure -> Result.failure(
-                workDataOf(KEY_MODEL_ID to modelId, KEY_ERROR to result.reason)
-            )
+            is ModelInstaller.InstallResult.Failure -> {
+                if (result.retryable && runAttemptCount < MAX_TRANSIENT_ATTEMPTS && AgentRuntimeGate.isEnabled()) {
+                    Result.retry()
+                } else {
+                    Result.failure(workDataOf(KEY_MODEL_ID to modelId, KEY_ERROR to result.reason))
+                }
+            }
         }
     }
 
@@ -92,6 +96,7 @@ class ModelDownloadWorker(
         const val UNIQUE_WORK = "unoone-model-download"
         const val TAG = "unoone-model-download"
         const val MODEL_TAG_PREFIX = "unoone-model-id:"
+        internal const val MAX_TRANSIENT_ATTEMPTS = 8
         private const val CHANNEL_ID = "model_downloads"
         private const val NOTIFICATION_ID = 4102
     }

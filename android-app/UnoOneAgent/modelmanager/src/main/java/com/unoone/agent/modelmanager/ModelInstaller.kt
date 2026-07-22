@@ -47,10 +47,11 @@ class ModelInstaller(
     private val assetReader: ((String) -> InputStream?)? = null
 ) {
     @Volatile private var lastFailureReason: String? = null
+    @Volatile private var lastFailureRetryable: Boolean = false
 
     sealed class InstallResult {
         data object Success : InstallResult()
-        data class Failure(val reason: String) : InstallResult()
+        data class Failure(val reason: String, val retryable: Boolean = false) : InstallResult()
     }
 
     fun interface ProgressListener {
@@ -77,6 +78,7 @@ class ModelInstaller(
                     return@withContext InstallResult.Failure("Download cancelled; partial data preserved for resume")
                 }
                 lastFailureReason = null
+                lastFailureRetryable = false
                 val ok = if (!file.asset.isNullOrBlank()) {
                     installFromAsset(file, folder, descriptor.id, index, descriptor.files.size, listener)
                 } else {
@@ -89,7 +91,8 @@ class ModelInstaller(
                 if (!ok) {
                     setStatus(descriptor, STATUS_CORRUPT, folder.absolutePath)
                     return@withContext InstallResult.Failure(
-                        lastFailureReason ?: "Failed to install ${file.name}"
+                        lastFailureReason ?: "Failed to install ${file.name}",
+                        retryable = lastFailureRetryable
                     )
                 }
             }
@@ -321,6 +324,10 @@ class ModelInstaller(
                 return false
             }
             if (code !in 200..299) {
+                if (code == 408 || code == 429 || code in 500..599) {
+                    lastFailureRetryable = true
+                    lastFailureReason = "Temporary HTTP $code while downloading ${file.name}; partial data preserved"
+                }
                 Logger.w("ModelInstaller: HTTP $code for ${file.name}")
                 return false
             }
@@ -369,6 +376,10 @@ class ModelInstaller(
 
             commitTemp(temp, target)
         } catch (e: Exception) {
+            if (isTransientNetworkFailure(e)) {
+                lastFailureRetryable = true
+                lastFailureReason = "Network interrupted while downloading ${file.name}; partial data preserved"
+            }
             Logger.e("ModelInstaller: download error for ${file.name}", e)
             false
         } finally {
@@ -376,6 +387,15 @@ class ModelInstaller(
             runCatching { conn?.disconnect() }
         }
     }
+
+    private fun isTransientNetworkFailure(error: Throwable): Boolean =
+        generateSequence(error as Throwable?) { it.cause }.any {
+            it is java.net.SocketTimeoutException ||
+                it is java.net.ConnectException ||
+                it is java.net.UnknownHostException ||
+                it is java.net.SocketException ||
+                it is java.io.EOFException
+        }
 
     private fun openConnection(url: String, existingBytes: Long): HttpURLConnection {
         var current = URL(url)

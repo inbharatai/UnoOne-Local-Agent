@@ -151,6 +151,27 @@ class ModelInstallerTest {
     }
 
     @Test
+    fun marksConnectionFailureRetryableAndPreservesPartial() {
+        val unavailablePort = ServerSocket(0).use { it.localPort }
+        File(modelDir, "m").mkdirs()
+        val part = File(modelDir, "m/retry.bin.part").apply { writeBytes("partial".toByteArray()) }
+        val descriptor = descriptor(
+            "m",
+            "retry.bin",
+            "http://127.0.0.1:$unavailablePort/retry.bin",
+            "",
+            100L
+        )
+
+        val result = runBlocking { installer.install(descriptor) }
+
+        assertTrue(result is ModelInstaller.InstallResult.Failure)
+        assertTrue((result as ModelInstaller.InstallResult.Failure).retryable)
+        assertTrue(part.exists())
+        assertEquals(7L, part.length())
+    }
+
+    @Test
     fun corruptRecoveryFailsWhenServerServesWrongSize() {
         // Manifest declares sizeBytes = 50 but the server only ever serves 5 bytes ("short").
         val server = MiniHttpServer("short".toByteArray(), supportRange = false).apply { start() }

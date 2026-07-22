@@ -6,12 +6,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.Observer
 import androidx.work.Constraints
+import androidx.work.BackoffPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import java.util.concurrent.TimeUnit
 import com.unoone.agent.AgentOrchestrator
 import com.unoone.agent.brain.BrainSelfTest
 import com.unoone.agent.brain.BrainSelfTestResult
@@ -203,6 +205,7 @@ class ModelStatusViewModel(
                     .setRequiredNetworkType(if (allowMetered) NetworkType.CONNECTED else NetworkType.UNMETERED)
                     .build()
             )
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .addTag(ModelDownloadWorker.TAG)
             .addTag("${ModelDownloadWorker.MODEL_TAG_PREFIX}$id")
             .build()
