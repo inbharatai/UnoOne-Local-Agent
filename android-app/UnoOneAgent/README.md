@@ -10,7 +10,7 @@ The repository [README](../../../README.md) is the product and architecture sour
 - AGP 8.10.0, Gradle 8.11.1, Kotlin 2.2.21 and JDK 17.
 - 15 Gradle modules.
 - Gemma 4 E4B is the sole installable planning model.
-- LiteRT-LM manual tool calling with GPU-first and CPU fallback.
+- LiteRT-LM manual tool calling with CPU `AUTO`; GPU is an explicit developer qualification choice.
 - Deterministic command parsing before model inference.
 - Canonical tool-name and argument validation before execution.
 - Offline Sherpa-ONNX speech with English and Hindi exposed.
@@ -53,7 +53,7 @@ models/
 │   ├── shared/
 │   │   ├── sherpa-asr-en/
 │   │   ├── sherpa-asr-indic/
-│   │   └── vad/
+│   │   └── sherpa-kws-en/
 │   └── languages/
 │       ├── en-IN/tts/
 │       ├── hi-IN/tts/
@@ -74,16 +74,16 @@ The app uses app-private storage and does not require all-files access.
 | Exact size | `3,659,530,240` bytes |
 | SHA-256 | `0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0` |
 | Runtime | LiteRT-LM `0.13.1` |
-| Backend order | GPU, then CPU fallback |
-| Initial context | 2,048 tokens |
-| Maximum supported context | 32,768 tokens |
+| Production `AUTO` | CPU until exact device/build/hash qualification approves another backend |
+| Enforced engine context | 2,048 tokens |
+| Artifact capability ceiling | 32,768 tokens; not configured on phone |
 | Minimum RAM gate | 8,192 MB |
 | Recommended RAM gate | 12,288 MB |
 | Xiaomi 14 qualification | pending |
 
 `ModelManager.getLlmModelPath()` returns only the exact declared file after exact size and SHA-256 verification. It does not select the largest `.litertlm` file and does not accept the web-specific E4B artifact.
 
-Existing E2B files are retained only until E4B passes the phone self-test and sustained device validation. Cleanup must use the guarded migration rather than an unbounded filesystem deletion.
+Existing E2B files are retained until exact integrity, load, strict self-test, evaluation, sustained stability, recorded device/build/backend evidence and explicit user approval all pass. Cleanup must use the fixed-path qualified migration rather than an unbounded filesystem deletion.
 
 ## Agent execution order
 

@@ -51,6 +51,7 @@ GEMMA_ID = "gemma-4-e4b"
 GEMMA_FILE = "gemma-4-E4B-it.litertlm"
 GEMMA_SIZE = 3_659_530_240
 GEMMA_SHA256 = "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0"
+GEMMA_REVISION = "28299f30ee4d43294517a4ac93abd6163412f07f"
 LEGACY_GEMMA_ID = "gemma-4-e2b"
 LEGACY_GEMMA_FILE = "gemma-4-E2B-it.litertlm"
 LEGACY_GEMMA_SHA256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c"
@@ -189,6 +190,9 @@ def validate_model_manifest(errors: list[str]) -> set[str]:
                 errors.append(f"{relative}: Gemma size mismatch")
             if artifact.get("sha256") != GEMMA_SHA256:
                 errors.append(f"{relative}: Gemma SHA-256 mismatch")
+            url = str(artifact.get("url", ""))
+            if f"/resolve/{GEMMA_REVISION}/" not in url or "/resolve/main/" in url:
+                errors.append(f"{relative}: Gemma URL must pin immutable revision {GEMMA_REVISION}")
             if "-web" in str(artifact.get("name")) or "-web" in str(artifact.get("url")):
                 errors.append(f"{relative}: web-specific E4B artifact must not be used by Android")
 

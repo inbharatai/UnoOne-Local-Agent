@@ -1,9 +1,12 @@
 # UnoOne V2 Status
 
-**Updated:** 2026-07-21  
-**Development branch:** `feat/e4b-agentic-runtime`  
-**Draft pull request:** #2  
-**Target branch:** `main`  
+**Updated:** 2026-07-22
+
+**Development branch:** `codex/e4b-runtime-hardening` (child of `feat/e4b-agentic-runtime`)
+
+**Existing parent draft:** #2
+
+**Child target:** `feat/e4b-agentic-runtime`
 **Release state:** **Alpha / E4B physical-device qualification pending**
 
 The repository [README](README.md) is the product-level source of truth. This file records only the current evidence and release gates. Historical E2B validation remains historical and must not be represented as E4B evidence.
@@ -33,9 +36,9 @@ The repository [README](README.md) is the product-level source of truth. This fi
 | Exact size | `3,659,530,240` bytes |
 | SHA-256 | `0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0` |
 | Runtime | LiteRT-LM `0.13.1` |
-| Backend order | GPU, then CPU fallback |
-| Default context | 2,048 tokens |
-| Maximum supported context | 32,768 tokens |
+| Production `AUTO` backend | CPU (GPU is developer-qualification only) |
+| Enforced engine context | 2,048 tokens |
+| Artifact capability ceiling | 32,768 tokens; not configured on phone |
 | Minimum product RAM gate | 8,192 MB |
 | Recommended product RAM gate | 12,288 MB |
 | Xiaomi 14 qualified | **No — pending** |
@@ -53,7 +56,7 @@ E2B is not an active selectable or downloadable production brain on this branch.
 4. the on-device tool-calling self-test passes;
 5. the sustained Xiaomi 14 validation shows no crash, ANR, OOM or low-memory kill.
 
-Only then may the guarded `ModelManager.removeLegacyE2BIfE4BVerified()` migration remove the old folder and metadata.
+Only then, after strict evaluation and sustained stability evidence plus explicit user approval, may `ModelManager.removeLegacyE2BIfQualified(true)` remove the fixed legacy folder and matching metadata. The older integrity-only method always refuses deletion.
 
 ## Agent accuracy policy
 
@@ -68,27 +71,33 @@ Only then may the guarded `ModelManager.removeLegacyE2BIfE4BVerified()` migratio
 
 ## Automated gates
 
-### Distribution CI
+### Automated evidence
 
-The latest completed Distribution CI for the E4B branch is green. It covers:
+Evidence must be recorded for the exact child-branch head. Prior parent-branch CI remains useful history but does not qualify new changes. Required gates cover:
 
 - repository invariants;
 - distribution API type checking and policy tests;
 - Cloudflare Worker bundling;
 - installer PWA type checking, catalogue tests and build;
 - signing round trip and tamper rejection.
-
-### Android CI
-
-The current branch must pass:
-
-- repository invariants;
 - Page Agent type checking, unit tests, bundle generation and Playwright tests;
 - Android lint;
 - Android JVM tests;
 - debug APK assembly.
 
-Only the latest branch head is authoritative. A green run for an older commit does not qualify a newer commit.
+Only the latest branch head is authoritative. Local results and GitHub Actions results are reported separately.
+
+Local child-branch evidence on 2026-07-22:
+
+- repository invariants: passed;
+- Page Agent: type check, 8 unit tests, bundle, and 5 Playwright scenarios passed;
+- distribution API: type check and 3 tests passed;
+- installer PWA: type check, 8 tests, and production build passed;
+- Android: lint found no new issues, JVM tests passed, and app plus instrumentation APKs assembled;
+- connected Xiaomi 14/API 35: full instrumentation `OK (56 tests)` and focused voice,
+  master-disable, Blind Aid, OCR/camera, document-fill and Page Agent matrix `OK (22 tests)`;
+- exact E4B-dependent inference/evaluation tests: skipped because the verified artifact is absent,
+  so they are not counted as an E4B accuracy or performance pass.
 
 ## Xiaomi 14 gate
 

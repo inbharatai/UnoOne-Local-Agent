@@ -27,9 +27,10 @@ The distribution backend never receives prompts, speech, screenshots, documents 
 | Exact size | `3,659,530,240` bytes |
 | SHA-256 | `0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0` |
 | Engineering source | `litert-community/gemma-4-E4B-it-litert-lm` |
+| Immutable revision | `28299f30ee4d43294517a4ac93abd6163412f07f` |
 | Runtime | LiteRT-LM |
-| Initial context | 2,048 tokens |
-| Maximum supported context | 32,768 tokens |
+| Enforced phone context | 2,048 tokens |
+| Artifact capability ceiling | 32,768 tokens; not configured on phone |
 | Minimum RAM product gate | 8,192 MB |
 | Recommended RAM product gate | 12,288 MB |
 | Physical-device qualification | pending |

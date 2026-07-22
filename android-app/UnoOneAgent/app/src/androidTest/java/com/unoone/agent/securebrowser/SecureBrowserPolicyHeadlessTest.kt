@@ -120,7 +120,7 @@ class SecureBrowserPolicyHeadlessTest {
             .joinToString("") { "%02x".format(it) }
         assertEquals(
             "PageAgent asset SHA-256 must match the laptop-built bundle (Phase 2)",
-            "d798e06e95e3cbab1f71aac4498d428bde76ec1eec6e9c13b99852a6b2cf6369",
+            "3547a7404ede64d4116d6a14cd5aad2547a1a336d160f1ad77e9005dca4f9dd2",
             sha
         )
 

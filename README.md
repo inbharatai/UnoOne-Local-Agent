@@ -47,16 +47,16 @@ UnoOne has one production model profile.
 | Runtime | LiteRT-LM |
 | Exact size | `3,659,530,240` bytes |
 | SHA-256 | `0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0` |
-| Maximum supported context | 32,768 tokens |
-| Initial configured context | 2,048 tokens |
+| Artifact capability ceiling | 32,768 tokens (not used on phone) |
+| Enforced phone context | 2,048 tokens |
 | Minimum RAM gate | 8,192 MB |
 | Recommended RAM gate | 12,288 MB |
-| Backend order | GPU, then CPU fallback |
+| Production `AUTO` backend | CPU until a device/hash/build qualification record approves another backend |
 | Device qualification | Pending on the current E4B branch |
 
 The Android app must load only the exact manifest-declared filename after exact size and SHA-256 verification. It must never select an arbitrary `.litertlm` file based on filename similarity or file size. The smaller web-specific E4B artifact is not valid for the Android runtime.
 
-A legacy E2B installation is preserved until E4B has downloaded, passed integrity checks, loaded successfully, and completed the on-device self-test. Only then may the guarded migration remove `brain/gemma-4-e2b`.
+A legacy E2B installation is preserved until exact E4B integrity, load, strict self-test, evaluation, sustained stability, device/build/backend evidence, and explicit user approval are all recorded. It is neither selectable nor loaded by this branch.
 
 ## Agent accuracy rules
 
@@ -92,7 +92,7 @@ Blind Aid uses CameraX and an offline object detector. Starting Blind Aid releas
 
 ## Android model storage
 
-Models are stored below the app-private models root. Large downloads use `.part` files, HTTP range resume where supported, exact size validation, SHA-256 validation, and atomic final rename.
+Models are stored below the app-private models root. Large downloads run as a foreground WorkManager job, default to unmetered networking, survive Activity recreation, expose progress/cancellation, preserve ordinary interrupted `.part` files, validate redirects and `Content-Range`, perform storage preflight, fsync, exact size/SHA-256 verification, and only then atomically activate the final file. The immutable E4B upstream revision is `28299f30ee4d43294517a4ac93abd6163412f07f`.
 
 Expected E4B path on the phone:
 
@@ -109,7 +109,7 @@ After successful E4B device qualification, this legacy directory should no longe
 ## Main Android capabilities
 
 - Native Kotlin and Jetpack Compose application for Android API 28+.
-- LiteRT-LM on-device planning with GPU-first and CPU fallback.
+- LiteRT-LM on-device planning with a 2,048-token engine cap, cancellable callback inference, and conservative CPU `AUTO`; CPU/GPU developer qualification uses the same evaluation set.
 - Offline Sherpa-ONNX STT/TTS with explicit model-health checks.
 - Background foreground-service voice listening with microphone ownership controls.
 - Android application opening and system navigation.
@@ -182,7 +182,7 @@ The E4B branch is not complete until the physical phone test proves:
 7. Blind Aid unloads and restores the brain safely;
 8. Secure Browser leases one model engine at a time;
 9. a sustained task loop produces no crash, ANR, OOM, or false success announcement;
-10. legacy E2B files are removed only after the E4B self-test passes.
+10. legacy E2B files remain until every qualification gate passes and the user explicitly approves removal.
 
 See [`docs/E4B_XIAOMI14_HANDOFF.md`](docs/E4B_XIAOMI14_HANDOFF.md) for tomorrow's exact pull, build, install, logging, and verification steps.
 

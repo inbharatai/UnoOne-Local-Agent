@@ -40,11 +40,11 @@ UnoOne has one installable language-model profile:
 | Folder | `brain/gemma-4-e4b` |
 | File | `gemma-4-E4B-it.litertlm` |
 | Runtime | LiteRT-LM |
-| Backend order | GPU, then CPU fallback |
+| Production `AUTO` | CPU until qualified evidence approves another backend |
 | Exact size | `3,659,530,240` bytes |
 | SHA-256 | `0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0` |
 | Initial context | 2,048 tokens |
-| Maximum supported context | 32,768 tokens |
+| Artifact capability ceiling | 32,768 tokens; not configured on phone |
 | Minimum RAM gate | 8,192 MB |
 | Recommended RAM gate | 12,288 MB |
 | Physical-device qualification | pending |
@@ -69,10 +69,10 @@ That folder must be retained until E4B has:
 4. passed the phone self-test;
 5. completed the Xiaomi 14 sustained validation without crash, ANR, OOM or low-memory kill.
 
-After those gates pass, the guarded migration may call:
+After exact integrity, load, strict self-test, evaluation, sustained stability, recorded device/build/backend evidence and explicit user approval all pass, the guarded migration may call:
 
 ```text
-ModelManager.removeLegacyE2BIfE4BVerified()
+ModelManager.removeLegacyE2BIfQualified(userApproved = true)
 ```
 
 The cleanup uses a fixed historical relative folder and canonical-path checks. Generic uninstall refuses unknown model ids rather than guessing a path.
@@ -90,7 +90,7 @@ The cleanup uses a fixed historical relative folder and canonical-path checks. G
 | `sherpa-tts-tel` | TTS | CPU | Telugu offline speech | retained catalogue component |
 | `sherpa-tts-kan` | TTS | CPU | Kannada offline speech | retained catalogue component |
 | `sherpa-tts-mal` | TTS | CPU | Malayalam offline speech | retained catalogue component |
-| `vad` | VAD/KWS support | CPU | wake-listening support | shares verified English ASR bytes where identical |
+| `sherpa-kws-en` | KWS support | CPU | offline wake-listening token/model support | shares verified English ASR bytes where identical; it is not labelled as VAD |
 
 English and Hindi are the currently exposed voice profiles. Other retained speech artefacts are not automatically production-qualified merely because files exist in the catalogue.
 
@@ -107,7 +107,7 @@ models/
 │   ├── shared/
 │   │   ├── sherpa-asr-en/
 │   │   ├── sherpa-asr-indic/
-│   │   └── vad/
+│   │   └── sherpa-kws-en/
 │   └── languages/
 │       ├── en-IN/tts/
 │       ├── hi-IN/tts/
@@ -124,15 +124,16 @@ Models live under `getExternalFilesDir("models")`, falling back to internal app 
 - Only one E4B engine may be resident.
 - Secure Browser acquires an exclusive lease, unloads the phone planner, and restores it after release.
 - Blind Aid may release E4B before sustained camera analysis and reload it after clean shutdown.
-- GPU is attempted first; CPU is the supported fallback.
+- Production `AUTO` uses CPU until the same strict prompt set and stability matrix qualifies a different backend for the exact device/build/model hash.
 - NPU use must not be claimed unless runtime logs prove an NPU backend was selected.
-- The operating context starts at 2,048 tokens. A larger default requires measured memory, latency and thermal evidence.
+- `EngineConfig.maxNumTokens` enforces 2,048 tokens for phone and Page Agent engines. A larger value requires measured memory, latency and thermal evidence.
 
 ## Installation and repair
 
 The Model Status screen should show:
 
 - download progress;
+- an unmetered default and explicit metered-network confirmation;
 - resume state;
 - exact integrity verification;
 - installed/healthy/verified status;

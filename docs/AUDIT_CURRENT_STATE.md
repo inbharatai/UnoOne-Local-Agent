@@ -1,8 +1,10 @@
 # UnoOne Current-State Audit
 
-**Audit date:** 2026-07-21  
-**Development branch:** `feat/e4b-agentic-runtime`  
-**Draft pull request:** #2  
+**Audit date:** 2026-07-22
+
+**Development branch:** `codex/e4b-runtime-hardening`, based on `feat/e4b-agentic-runtime`
+
+**Parent draft pull request:** #2
 **Release state:** Alpha; E4B physical-device qualification pending
 
 This audit records the current design decisions and remaining risks. Historical E2B test records remain valid only for the revisions and model that were actually tested.
@@ -99,8 +101,8 @@ E2B is not an active downloadable or selectable fallback. Existing E2B phone byt
 | Exact size | `3,659,530,240` bytes |
 | SHA-256 | `0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0` |
 | Runtime | LiteRT-LM `0.13.1` |
-| Backend order | GPU then CPU |
-| Default / maximum context | 2,048 / 32,768 tokens |
+| Production `AUTO` | CPU; GPU requires explicit qualification |
+| Engine context / artifact ceiling | enforced 2,048 / theoretical 32,768 tokens |
 | Minimum / recommended RAM gate | 8,192 / 12,288 MB |
 | Device-qualified | no |
 
@@ -110,8 +112,11 @@ E2B is not an active downloadable or selectable fallback. Existing E2B phone byt
 - Exact artifact metadata is CI-enforced.
 - Android rejects wrong, partial, old, web-specific or arbitrary model files.
 - Startup, recovery, model status and Secure Browser target E4B.
-- Large integrity work is moved off known UI-thread call sites.
-- Legacy E2B cleanup is guarded by E4B verification.
+- Full integrity work is off the UI thread and cached against exact file/manifest metadata.
+- LiteRT-LM context, callback cancellation and one-engine ownership are enforced.
+- Planning/judge/chat conversations are lazy and bounded.
+- Foreground WorkManager owns resumable downloads with storage and network policy.
+- Legacy E2B cleanup is guarded by complete qualification plus explicit approval.
 - Prompt and tool descriptions forbid invented recipients, package names, dates, times and success.
 - Page Agent identifies the E4B model.
 - README, status, model and distribution documentation are aligned.
@@ -120,13 +125,12 @@ E2B is not an active downloadable or selectable fallback. Existing E2B phone byt
 ## Remaining hotspots
 
 1. The final Android CI head must be green after all cleanup commits.
-2. A temporary deprecated registry alias still maps old `GEMMA_4_E2B` source references to E4B; remove it after every active reference is converted.
-3. `GemmaPlanner` currently creates planning, safety and chat conversations at load time. Device measurement must determine whether auxiliary conversations should become lazy or short-lived to reduce KV-cache pressure.
-4. Exact SHA verification of a 3.66 GB file is intentionally strict but costly. Future optimisation may use a securely persisted verified-generation marker, without weakening first-install or post-update verification.
-5. Contact-name resolution and direct Calendar-provider creation are not production-qualified; the current external-app workflows remain reviewable and must not claim autonomous completion.
-6. Assamese remains planned, not active.
-7. GPU/NPU acceleration cannot be claimed until physical logs identify the backend.
-8. Distribution still requires UnoOne-controlled production storage, protected signing keys and signed approved catalogues.
+2. The exact E4B artifact is not yet present on the connected Xiaomi 14, so model load/eval/Page Agent inference evidence is pending.
+3. Contact-name resolution and direct Calendar-provider creation are not production-qualified; current external-app workflows remain reviewable.
+4. Blind Aid recognizes its bundled detector label set, not arbitrary product brands.
+5. Assamese remains planned, not active.
+6. GPU/NPU acceleration cannot be claimed until physical logs identify and qualify the backend.
+7. Distribution still requires UnoOne-controlled production storage, protected signing keys and signed approved catalogues.
 
 ## Physical evidence required
 

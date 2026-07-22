@@ -4,6 +4,25 @@ This document is the exact next-day procedure for validating the `feat/e4b-agent
 
 Do not merge the branch into `main` and do not delete the existing E2B files until E4B has passed integrity, load, tool-calling, memory, and sustained-run checks on the phone.
 
+## Current connected-device preflight (2026-07-22)
+
+- Device: Xiaomi `23127PN0CG` (Xiaomi 14 / `houji`), Android 15, API 35.
+- UnoOne accessibility service: enabled.
+- Camera, microphone and Calendar runtime permissions: granted.
+- `/data` available space observed: approximately 382 GB.
+- Exact E4B artifact: **absent** from the app-private model root.
+- Historical E2B artifact: present and intentionally preserved.
+- Debug app and instrumentation APKs: installed with `adb install -r`; app data retained.
+- Debug APK SHA-256: `b08be9ef5fc0442fffeef53524de5c608545472ac866bd8756a14e88270b84b2`.
+- Instrumentation result: `OK (56 tests)`; focused voice, master-disable, Blind Aid,
+  OCR/camera, DOCX/PDF and Page Agent matrix: `OK (22 tests)`.
+- English and Hindi language-pack installation/verification passed. Acoustic wake-word and
+  real-room recognition accuracy still require a human-spoken test; an injected offline transcript
+  passed through the private hands-free command route.
+- Installed app launched successfully after the test run, Accessibility remained enabled, and the
+  current log buffer contained no matching UnoOne fatal exception or ANR.
+- Result: E4B load, CPU/GPU evaluation, Page Agent model accuracy, memory, thermal and 50-task claims remain pending.
+
 ## 1. Update the local clone
 
 ```bash
@@ -273,7 +292,7 @@ Pass criteria:
 After E4B integrity, load, self-test, and sustained-run checks pass, run the guarded migration from the app or call the code path that invokes:
 
 ```text
-ModelManager.removeLegacyE2BIfE4BVerified()
+ModelManager.removeLegacyE2BIfQualified(userApproved = true)
 ```
 
 Then verify:
