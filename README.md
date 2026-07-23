@@ -73,7 +73,11 @@ UnoOne uses the following reliability controls:
 - post-execution verification before success is announced;
 - bounded observe-plan loops for multi-step work;
 - separate tool-less conversational replies from phone-action planning;
-- concise responses in the active voice language.
+- accumulate the complete streamed E4B response before validating it, so a final
+  punctuation token cannot replace the answer;
+- reject empty, punctuation-only, truncated and tool-shaped chat output, with one
+  bounded local retry;
+- concise responses in the selected reply voice.
 
 WhatsApp and email tools prepare reviewable drafts. They do not silently press the external app's Send button. Calendar insertion remains reviewable unless a separately verified provider-based creation flow is implemented and qualified.
 
@@ -88,7 +92,7 @@ Wake phrases include **“Uno,” “Uno One,” “Hey Uno,” “Uno on,”** 
 - “Uno, speak in Hindi and start blind mode.”
 - “Uno, add a meeting tomorrow at 5 PM.”
 
-Enabled voice baselines are English and Hindi. Assamese remains a priority language but must not be represented as production-ready until exact STT and TTS artifacts pass licensing, integrity, accuracy, Android loading, and physical-device qualification.
+Enabled voice baselines are English and Hindi. One bilingual offline recognizer accepts either language without requiring the user to switch the input language first. The **Reply** selector controls the language used for the answer and TTS; it does not restrict the language the user may speak. Assamese remains a priority language but must not be represented as production-ready until exact STT and TTS artifacts pass licensing, integrity, accuracy, Android loading, and physical-device qualification.
 
 The floating assistant microphone is a one-tap utterance capture: it gives an audible listening cue, stops after trailing silence or an eight-second limit, transcribes locally and routes the command through the same guarded tool pipeline. Android intentionally pauses wake capture during a phone or VoIP call and resumes it afterward; opening UnoOne or tapping its bubble also recovers the microphone foreground service after an OEM process kill.
 
@@ -116,7 +120,7 @@ After successful E4B device qualification, this legacy directory should no longe
 
 - Native Kotlin and Jetpack Compose application for Android API 28+.
 - LiteRT-LM on-device planning with a 2,048-token engine cap, cancellable callback inference, and conservative CPU `AUTO`; CPU/GPU developer qualification uses the same evaluation set.
-- Offline Sherpa-ONNX STT/TTS with explicit model-health checks.
+- Offline Sherpa-ONNX bilingual English/Hindi STT and selectable English/Hindi TTS with explicit model-health checks.
 - Background foreground-service voice listening with microphone ownership controls.
 - Android application opening and system navigation.
 - Reviewable WhatsApp, Gmail, and Calendar hand-offs.
@@ -188,7 +192,7 @@ The E4B branch is not complete until the physical phone test proves:
 3. the actual backend is recorded from logs;
 4. common deterministic commands work without waiting for E4B;
 5. tool calls pass exact tool/argument checks;
-6. Hindi and English responses use the selected language;
+6. English and Hindi speech are recognised without an input-language switch, and responses use the selected reply language;
 7. Blind Aid unloads and restores the brain safely;
 8. Secure Browser leases one model engine at a time;
 9. a sustained task loop produces no crash, ANR, OOM, or false success announcement;

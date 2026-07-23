@@ -93,6 +93,40 @@ class GemmaPlannerAccuracyTest {
     }
 
     @Test
+    fun basicChatRejectsPunctuationAndAnswersEnglishHindiContract() = runBlocking {
+        val path = modelManager.getLlmModelPath()
+        assumeTrue("No integrity-verified E4B model found — skipping chat contract", path != null)
+
+        val planner = GemmaPlanner()
+        assert(planner.load(path!!) is Result.Success)
+        val probes = listOf(
+            Triple("what is SAT", "en", listOf("sat", "assessment", "college", "admission")),
+            Triple("what is SAT", "hi", listOf("sat", "परीक्षा", "कॉलेज", "प्रवेश")),
+            Triple("SAT क्या है", "en", listOf("sat", "assessment", "college", "admission"))
+        )
+
+        probes.forEach { (question, replyLanguage, anchors) ->
+            val result = planner.chat(question, replyLanguage)
+            check(result is Result.Success) {
+                "Chat '$question'/$replyLanguage failed: ${(result as? Result.Error)?.message}"
+            }
+            val assessment = ChatAnswerValidator.assess(result.data)
+            assert(assessment.isValid) {
+                "Chat '$question'/$replyLanguage returned unusable text: '${result.data}'"
+            }
+            assert(anchors.any { result.data.contains(it, ignoreCase = true) }) {
+                "Chat '$question'/$replyLanguage missed semantic anchors: '${result.data}'"
+            }
+            if (replyLanguage == "hi") {
+                assert(result.data.any { it in '\u0900'..'\u097F' }) {
+                    "Hindi reply must contain Devanagari text: '${result.data}'"
+                }
+            }
+        }
+        planner.close()
+    }
+
+    @Test
     fun routesHindiBlindStartAndMissingFieldsSafelyInSequence() = runBlocking {
         val path = modelManager.getLlmModelPath()
         assumeTrue("No integrity-verified E4B model found — skipping accuracy test", path != null)

@@ -160,7 +160,11 @@ class AgentViewModel(
                     // Low-confidence retry: ask the user to repeat once, then re-listen. Don't loop.
                     if (confidence < LOW_CONFIDENCE_THRESHOLD && !retryArmed) {
                         retryArmed = true
-                        voiceModuleInstance.speakAwait("Sorry, I didn't catch that clearly. Could you please repeat?")
+                        voiceModuleInstance.speakAwait(
+                            com.unoone.agent.voice.VoiceLanguage.retryCue(
+                                voiceModuleInstance.currentLanguage()
+                            )
+                        )
                         Logger.i("AgentViewModel: Low STT confidence (${"%.2f".format(confidence)}); re-listening once.")
                         shouldRetry = true
                     } else {

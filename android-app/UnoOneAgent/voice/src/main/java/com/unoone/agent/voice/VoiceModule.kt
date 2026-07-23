@@ -34,6 +34,8 @@ class VoiceModule(private val context: Context) {
     private val recorder = AudioRecorder()
     @Volatile private var sttEngine: SherpaSttEngine? = null
     @Volatile private var ttsEngine: SherpaTtsEngine? = null
+    @Volatile private var activeSttKey: String = ""
+    @Volatile private var activeTtsKey: String = ""
     @Volatile private var androidStt: AndroidSttEngine? = null
     private val ttsPlayer = TtsPlayer(context)
 
@@ -110,6 +112,7 @@ class VoiceModule(private val context: Context) {
         val result = engine.initialize()
         return if (result is Result.Success) {
             sttEngine = engine
+            activeSttKey = sttKey(modelDir, mode, language)
             useAndroidStt = false
             sttState = VoiceRuntimeState.SHERPA
             Logger.i("VoiceModule: Using Sherpa-ONNX for STT (offline, $mode/$language)")
@@ -118,6 +121,7 @@ class VoiceModule(private val context: Context) {
             // Do NOT silently flip to Android STT. Surface the missing-model state so the UI can
             // prompt the user to install the model (or opt into the emergency system fallback).
             sttEngine = null
+            activeSttKey = ""
             sttState = if (allowSystemSttFallback) VoiceRuntimeState.SYSTEM_FALLBACK else VoiceRuntimeState.UNAVAILABLE
             useAndroidStt = allowSystemSttFallback
             Logger.w("VoiceModule: Sherpa STT unavailable (${result.errorOrNull()}); system fallback ${if (allowSystemSttFallback) "enabled" else "disabled"}")
@@ -126,20 +130,35 @@ class VoiceModule(private val context: Context) {
     }
 
     /**
-     * Re-initialize STT and TTS for the active voice language (read from SharedPreferences via
-     * [VoiceLanguage]), releasing the previous engines first. Used by [UnoOneApplication] at startup
-     * and by Settings when the user changes the language. [modelBaseDir] is the models root
-     * (typically `getExternalFilesDir(null)/models`). Does not touch the recorder or Android fallback.
+     * Ensure bilingual STT and the selected reply-language TTS are initialized.
+     *
+     * Input recognition is deliberately independent from [lang]. Switching English/Hindi therefore
+     * replaces only TTS and never tears down/reloads the 300M bilingual recognizer.
      */
     @Synchronized
     fun reinitForLanguage(modelBaseDir: String, lang: String = currentLanguage()): Pair<Result<Unit>, Result<Unit>> {
-        runCatching { sttEngine?.release() }
-        sttEngine = null
-        runCatching { ttsEngine?.release() }
-        ttsEngine = null
-        val asr = VoiceLanguage.asrSpec(lang)
-        val sttResult = initStt("$modelBaseDir/${asr.folder}", asr.mode, asr.language)
-        val ttsResult = initTts("$modelBaseDir/${VoiceLanguage.ttsFolder(lang)}")
+        val asr = VoiceLanguage.inputAsrSpec()
+        val sttRoot = "$modelBaseDir/${asr.folder}"
+        val desiredSttKey = sttKey(sttRoot, asr.mode, asr.language)
+        val sttResult = if (sttEngine != null && activeSttKey == desiredSttKey) {
+            Result.Success(Unit)
+        } else {
+            runCatching { sttEngine?.release() }
+            sttEngine = null
+            activeSttKey = ""
+            initStt(sttRoot, asr.mode, asr.language)
+        }
+
+        val normalizedLanguage = VoiceLanguage.normalize(lang)
+        val ttsRoot = "$modelBaseDir/${VoiceLanguage.ttsFolder(normalizedLanguage)}"
+        val ttsResult = if (ttsEngine != null && activeTtsKey == ttsRoot) {
+            Result.Success(Unit)
+        } else {
+            runCatching { ttsEngine?.release() }
+            ttsEngine = null
+            activeTtsKey = ""
+            initTts(ttsRoot)
+        }
         return sttResult to ttsResult
     }
 
@@ -155,6 +174,7 @@ class VoiceModule(private val context: Context) {
         val result = engine.initialize()
         return if (result is Result.Success) {
             ttsEngine = engine
+            activeTtsKey = modelDir
             ttsState = VoiceRuntimeState.SHERPA
             Logger.i("VoiceModule: Using Sherpa-ONNX for TTS (offline)")
             result
@@ -162,6 +182,7 @@ class VoiceModule(private val context: Context) {
             // TTS keeps a graceful Android fallback so the agent can still speak without a model —
             // but this is explicitly marked as the emergency system fallback, not the default path.
             ttsEngine = null
+            activeTtsKey = ""
             ttsState = VoiceRuntimeState.SYSTEM_FALLBACK
             Logger.w("VoiceModule: Sherpa TTS unavailable (${result.errorOrNull()}); using Android TTS fallback")
             result
@@ -339,7 +360,12 @@ class VoiceModule(private val context: Context) {
         recorder.stop()
         sttEngine?.release()
         ttsEngine?.release()
+        activeSttKey = ""
+        activeTtsKey = ""
         androidStt?.release()
         ttsPlayer.release()
     }
+
+    private fun sttKey(modelDir: String, mode: SttMode, language: String): String =
+        "$modelDir|$mode|$language"
 }

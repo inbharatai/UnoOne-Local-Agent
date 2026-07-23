@@ -1173,11 +1173,11 @@ private fun VoiceLanguageQuickSwitcher(
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics {
-                    contentDescription = "Voice language: ${selected.display}. Double tap to change."
+                    contentDescription = "Reply voice: ${selected.display}. English and Hindi speech are recognized automatically. Double tap to change the reply voice."
                 }
         ) {
             Icon(Icons.Default.Language, contentDescription = null)
-            Text("Voice: ${selected.display}", modifier = Modifier.padding(horizontal = 8.dp))
+            Text("Reply: ${selected.display}", modifier = Modifier.padding(horizontal = 8.dp))
             Icon(Icons.Default.ArrowDropDown, contentDescription = null)
         }
         DropdownMenu(

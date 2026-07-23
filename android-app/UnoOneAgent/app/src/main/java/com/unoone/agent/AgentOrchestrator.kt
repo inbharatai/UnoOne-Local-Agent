@@ -252,10 +252,9 @@ class AgentOrchestrator(
     }
 
     /**
-     * Applies an explicit spoken language request without involving Gemma. Rebuilding both native
-     * speech engines is serialized by VoiceModule and owns the foreground-task gate so the wake
-     * recorder cannot race the model swap. The preference is committed only after both offline
-     * engines load; on failure the previous runtime is restored.
+     * Applies an explicit spoken reply-language request without involving Gemma. Bilingual STT is
+     * retained; only TTS changes. The preference is committed only after the offline runtime is
+     * healthy, and the previous reply voice is restored on failure.
      */
     private suspend fun applyVoiceLanguageCommand(
         requestedCode: String,
@@ -268,7 +267,7 @@ class AgentOrchestrator(
                 "/models"
         addStep(
             AgentStatus.UNDERSTANDING,
-            "Changing voice language",
+            "Changing reply voice",
             VoiceLanguage.displayName(requested)
         )
 
@@ -278,7 +277,7 @@ class AgentOrchestrator(
             try {
                 VoiceAgentRuntime.transition(
                     VoiceAgentState.INITIALISING,
-                    "switching offline voice language"
+                    "switching offline reply voice"
                 )
                 val (sttResult, ttsResult) = withContext(Dispatchers.IO) {
                     voiceModule.reinitForLanguage(modelBaseDir, requested)
@@ -308,10 +307,10 @@ class AgentOrchestrator(
             VoiceLanguage.changeFailure(requested, previousCode)
         }
         if (switched) {
-            addStep(AgentStatus.DONE, "Voice language changed", response)
-            VoiceAgentRuntime.recordOutcome("voice language changed", "offline STT and TTS loaded")
+            addStep(AgentStatus.DONE, "Reply voice changed", response)
+            VoiceAgentRuntime.recordOutcome("reply voice changed", "bilingual STT retained; offline TTS loaded")
         } else {
-            addStep(AgentStatus.FAILED, "Voice language unavailable", response)
+            addStep(AgentStatus.FAILED, "Reply voice unavailable", response)
             VoiceAgentRuntime.recordError(
                 "VOICE_LANGUAGE_UNAVAILABLE",
                 "Install or repair the offline ${VoiceLanguage.displayName(requested)} speech pack"
@@ -877,9 +876,12 @@ class AgentOrchestrator(
                     releaseProcessingLock()
                     return
                 }
-                val answer = (chatResult as? Result.Success)?.data
+                val answerAssessment = com.unoone.agent.localbrain.ChatAnswerValidator.assess(
+                    (chatResult as? Result.Success)?.data
+                )
                 com.unoone.agent.observability.Diagnostics.recordStage("chat_inference", System.currentTimeMillis() - chatStart)
-                if (!answer.isNullOrBlank()) {
+                if (answerAssessment.isValid) {
+                    val answer = answerAssessment.normalized
                     addStep(AgentStatus.SPEAKING, "Response", answer)
                     speakAnswer(answer)
                     addStep(AgentStatus.DONE, "Done", answer)

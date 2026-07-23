@@ -21,6 +21,7 @@ import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
 import com.unoone.agent.core.agent.ResponseTextJoiner
 import com.unoone.agent.core.agent.SafetyVerdict
+import com.unoone.agent.core.agent.StreamingTextReducer
 import com.unoone.agent.core.model.ToolParamType
 import com.unoone.agent.core.util.Logger
 import kotlinx.coroutines.Dispatchers
@@ -291,7 +292,7 @@ class GemmaPlanner(
                 INFERENCE_TIMEOUT_MS,
                 E4bRuntimeBudgets.phone(spec).outputTokens
             ) { partial ->
-                val delta = reducer.onSnapshot(extractText(partial).orEmpty())
+                val delta = reducer.onSnapshot(extractRawText(partial).orEmpty())
                 if (delta.isNotEmpty()) onDelta(delta)
             }
             extractValidatedToolCall(final)
@@ -419,27 +420,65 @@ class GemmaPlanner(
      * ([com.unoone.agent.core.agent.IntentClassifier] CHAT), so a chat answer never reaches the
      * safety/confirm gates (a tool-less answer has nothing to gate) or the ReAct loop, and never
      * builds a screen/OCR context snapshot. If the brain is not loaded, the chat conversation is
-     * unavailable, inference times out, or the answer is blank, the caller falls back to the agent
-     * pipeline (fail-safe). Device-time verified (litertlm bytecode > JDK 17 test JVM).
+     * unavailable, inference times out, or both bounded attempts produce unusable text, the caller
+     * reports a recoverable chat failure. A question is never forwarded to the tool planner.
      */
     suspend fun chat(command: String, responseLanguage: String = ""): Result<String> {
         return runPhoneInference("chat") { activeEngine, spec ->
-            val prompt = PromptBuilder.buildChatUserMessage(command, responseLanguage)
-            val conv = activeEngine.createConversation(
-                ConversationConfig(systemInstruction = Contents.of(PromptBuilder.buildChatSystemInstruction()))
-            ).also { chatConversation = it }
-            val responseMessage = try {
-                nativeInference.send(
-                    conv, Message.user(Contents.of(prompt)), INFERENCE_TIMEOUT_MS,
-                    E4bRuntimeBudgets.chat(spec).outputTokens
+            val first = runChatAttempt(
+                activeEngine = activeEngine,
+                prompt = PromptBuilder.buildChatUserMessage(command, responseLanguage),
+                outputTokens = E4bRuntimeBudgets.chat(spec).outputTokens
+            )
+            val firstAssessment = ChatAnswerValidator.assess(first)
+            if (firstAssessment.isValid) {
+                Result.Success(firstAssessment.normalized)
+            } else {
+                Logger.w("GemmaPlanner: rejected chat attempt 1 (${firstAssessment.reason})")
+                val retry = runChatAttempt(
+                    activeEngine = activeEngine,
+                    prompt = PromptBuilder.buildChatRetryUserMessage(command, responseLanguage),
+                    outputTokens = CHAT_RETRY_OUTPUT_TOKENS
                 )
-            } finally {
-                conv.close()
-                chatConversation = null
+                val retryAssessment = ChatAnswerValidator.assess(retry)
+                if (retryAssessment.isValid) {
+                    Logger.i("GemmaPlanner: chat recovered on bounded retry")
+                    Result.Success(retryAssessment.normalized)
+                } else {
+                    Logger.w("GemmaPlanner: rejected chat attempt 2 (${retryAssessment.reason})")
+                    Result.Error("Gemma chat produced no meaningful answer")
+                }
             }
-            val text = extractText(responseMessage) ?: ""
-            if (text.isBlank()) Result.Error("Gemma chat produced no answer")
-            else Result.Success(text)
+        }
+    }
+
+    private suspend fun runChatAttempt(
+        activeEngine: Engine,
+        prompt: String,
+        outputTokens: Int
+    ): String {
+        // LiteRT-LM's async callback can deliver token deltas instead of a final cumulative
+        // Message. Keeping only the last callback reduced a complete answer to its final "." on the
+        // physical device. Accumulate every callback under both delta and cumulative semantics.
+        val reducer = StreamingTextReducer()
+        val conv = activeEngine.createConversation(
+            ConversationConfig(systemInstruction = Contents.of(PromptBuilder.buildChatSystemInstruction()))
+        ).also { chatConversation = it }
+        return try {
+            val responseMessage = nativeInference.send(
+                conv,
+                Message.user(Contents.of(prompt)),
+                INFERENCE_TIMEOUT_MS,
+                outputTokens
+            ) { partial ->
+                extractRawText(partial)?.let(reducer::onSnapshot)
+            }
+            reducer.fullText().trim().ifBlank {
+                extractText(responseMessage).orEmpty()
+            }
+        } finally {
+            conv.close()
+            chatConversation = null
         }
     }
 
@@ -644,6 +683,15 @@ class GemmaPlanner(
             message.contents?.contents?.map { (it as? Content.Text)?.text } ?: emptyList()
         )
 
+    /** Streaming extraction that preserves whitespace carried by individual token deltas. */
+    private fun extractRawText(message: Message): String? {
+        val fragments = message.contents?.contents
+            ?.mapNotNull { (it as? Content.Text)?.text }
+            .orEmpty()
+        if (fragments.isEmpty()) return null
+        return fragments.joinToString(separator = "").takeIf(String::isNotEmpty)
+    }
+
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @Suppress("UNCHECKED_CAST")
     private fun argumentsToJsonObject(arguments: Map<String, Any?>?): JsonObject {
@@ -671,6 +719,7 @@ class GemmaPlanner(
     companion object {
         private const val PHONE_OWNER = "phone-agent"
         private const val SAFETY_OUTPUT_TOKENS = 16
+        private const val CHAT_RETRY_OUTPUT_TOKENS = 80
         private const val VISION_SYSTEM_INSTRUCTION =
             "Describe only visible evidence from the supplied image. Never invent objects or text."
         /** Per-inference timeout. Generous for first-token on mobile, but bounded. */

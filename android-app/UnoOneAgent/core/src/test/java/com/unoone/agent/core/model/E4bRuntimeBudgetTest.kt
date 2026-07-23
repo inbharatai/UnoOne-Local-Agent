@@ -16,7 +16,7 @@ class E4bRuntimeBudgetTest {
     fun `output budgets are bounded below total context`() {
         val spec = BrainModelRegistry.GEMMA_4_E4B
         assertEquals(256, E4bRuntimeBudgets.phone(spec).outputTokens)
-        assertEquals(384, E4bRuntimeBudgets.chat(spec).outputTokens)
+        assertEquals(96, E4bRuntimeBudgets.chat(spec).outputTokens)
         assertEquals(384, E4bRuntimeBudgets.pageAgent(spec).outputTokens)
     }
 }

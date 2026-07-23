@@ -3,7 +3,7 @@ package com.unoone.agent.voice
 import com.unoone.agent.voice.stt.SttMode
 
 /**
- * Temporary compatibility mapping for the speech models already supported by UnoOne.
+ * Offline speech mapping for the two reply languages supported by UnoOne.
  *
  * The next migration phase replaces this hard-coded catalogue with signed downloadable language
  * packs. Until then, every path here must match `models_manifest.json` exactly so the normalized
@@ -33,15 +33,24 @@ object VoiceLanguage {
         "hi" to "speech/languages/hi-IN/tts"
     )
 
+    const val BILINGUAL_ASR_FOLDER = "speech/shared/sherpa-asr-indic"
+    const val ENGLISH_TRANSCRIBER_FOLDER = "speech/shared/sherpa-asr-en"
+
     fun ttsFolder(lang: String): String =
         ttsFolderByCode[lang] ?: ttsFolderByCode.getValue(DEFAULT)
 
-    fun asrSpec(lang: String): AsrSpec =
-        if (lang == "en") {
-            AsrSpec("speech/shared/sherpa-asr-en", SttMode.TRANSDUCER, "en")
-        } else {
-            AsrSpec("speech/shared/sherpa-asr-indic", SttMode.OMNILINGUAL, lang)
-        }
+    /**
+     * Input recognition is bilingual and independent from the selected reply/TTS language.
+     * Omnilingual CTC detects English, Hindi and code-switched speech from the audio itself.
+     */
+    fun inputAsrSpec(): AsrSpec =
+        AsrSpec(BILINGUAL_ASR_FOLDER, SttMode.OMNILINGUAL, "auto")
+
+    /**
+     * Compatibility alias retained for model-install and diagnostic callers. [lang] intentionally
+     * does not select the recognizer; it selects only the reply voice elsewhere in the runtime.
+     */
+    fun asrSpec(@Suppress("UNUSED_PARAMETER") lang: String): AsrSpec = inputAsrSpec()
 
     const val KWS_FOLDER = "speech/shared/sherpa-kws-en"
 
@@ -50,7 +59,7 @@ object VoiceLanguage {
      * ASR use the same transducer files, so the already-installed English model is a safe offline
      * fallback when the optional KWS model was not downloaded. This is not a VAD model.
      */
-    fun kwsFolders(): List<String> = listOf(KWS_FOLDER, asrSpec(DEFAULT).folder).distinct()
+    fun kwsFolders(): List<String> = listOf(KWS_FOLDER, ENGLISH_TRANSCRIBER_FOLDER).distinct()
 
     fun isSupported(code: String): Boolean = SUPPORTED.any { it.code == code }
 

@@ -131,16 +131,20 @@ fun SettingsScreen(
             ManageButton("Voice Test (STT / TTS)", Icons.Default.Mic, onNavigateToVoiceTest)
             ManageButton("Secure Browser (Page Agent)", Icons.Default.Language, onNavigateToSecureBrowser)
             ManageButton("Audit Log", Icons.AutoMirrored.Filled.ReceiptLong, onNavigateToAudit)
-            // Voice language picker — sets the offline STT/TTS language live (rebuilds the Sherpa
-            // engines without a restart). Speak in the language you pick here, or STT transcribes
-            // in the wrong language (English-only transducer can't transcribe Hindi, etc.).
+            // Input recognition remains bilingual. This picker controls only the language used for
+            // local replies and TTS, and therefore never reloads the bilingual recognizer.
             val langLabel = VoiceLanguage.SUPPORTED.firstOrNull { it.code == voiceLanguage }?.display
                 ?: VoiceLanguage.displayName(voiceLanguage)
             DropdownPicker(
-                label = "Voice language",
+                label = "Reply voice",
                 selectedLabel = langLabel,
                 options = VoiceLanguage.SUPPORTED.map { it.code to it.display },
                 onSelect = { code -> viewModel.setVoiceLanguage(code) }
+            )
+            Text(
+                "Speech input recognizes English and Hindi automatically. This setting changes only the language UnoOne uses to reply.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
             Text(
                 "Secure Browser reserves Gemma 4 E4B exclusively, automates approved HTTPS pages through the local Page Agent, and requires manual control for credentials, OTP, CAPTCHA, payments and legal declarations.",

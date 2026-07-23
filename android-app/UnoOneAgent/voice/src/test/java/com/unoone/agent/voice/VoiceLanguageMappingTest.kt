@@ -10,11 +10,11 @@ import org.junit.Test
 class VoiceLanguageMappingTest {
 
     @Test
-    fun englishUsesTransducerAndCoquiTts() {
+    fun englishReplySelectionStillUsesBilingualInputRecognition() {
         val asr = VoiceLanguage.asrSpec("en")
-        assertEquals("speech/shared/sherpa-asr-en", asr.folder)
-        assertEquals(SttMode.TRANSDUCER, asr.mode)
-        assertEquals("en", asr.language)
+        assertEquals("speech/shared/sherpa-asr-indic", asr.folder)
+        assertEquals(SttMode.OMNILINGUAL, asr.mode)
+        assertEquals("auto", asr.language)
         assertEquals("speech/languages/en-IN/tts", VoiceLanguage.ttsFolder("en"))
     }
 
@@ -23,7 +23,7 @@ class VoiceLanguageMappingTest {
         val asr = VoiceLanguage.asrSpec("hi")
         assertEquals("speech/shared/sherpa-asr-indic", asr.folder)
         assertEquals(SttMode.OMNILINGUAL, asr.mode)
-        assertEquals("hi", asr.language)
+        assertEquals("auto", asr.language)
     }
 
     @Test
@@ -82,8 +82,8 @@ class VoiceLanguageMappingTest {
     }
 
     @Test
-    fun englishAsrDiffersFromIndicAsrMode() {
-        assertNotEquals(VoiceLanguage.asrSpec("en").mode, VoiceLanguage.asrSpec("hi").mode)
+    fun replyLanguageDoesNotChangeInputRecognizer() {
+        assertEquals(VoiceLanguage.asrSpec("en"), VoiceLanguage.asrSpec("hi"))
         assertTrue(VoiceLanguage.isSupported("hi"))
     }
 

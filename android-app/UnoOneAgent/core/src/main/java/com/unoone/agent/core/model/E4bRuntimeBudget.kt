@@ -14,7 +14,9 @@ data class E4bRuntimeBudget(
 object E4bRuntimeBudgets {
     const val MOBILE_CONTEXT_TOKENS = 2_048
     const val PHONE_OUTPUT_TOKENS = 256
-    const val CHAT_OUTPUT_TOKENS = 384
+    // Voice answers should reach TTS quickly. Ninety-six tokens is enough for the enforced
+    // one-or-two-sentence response while preventing multi-paragraph, 15+ second decodes.
+    const val CHAT_OUTPUT_TOKENS = 96
     const val PAGE_AGENT_OUTPUT_TOKENS = 384
 
     fun phone(spec: BrainModelSpec): E4bRuntimeBudget =

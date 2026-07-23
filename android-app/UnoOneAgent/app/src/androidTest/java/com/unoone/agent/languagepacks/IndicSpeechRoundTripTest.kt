@@ -8,14 +8,16 @@ import com.unoone.agent.voice.VoiceLanguage
 import com.unoone.agent.voice.stt.SherpaSttEngine
 import com.unoone.agent.voice.stt.SttMode
 import com.unoone.agent.voice.tts.SherpaTtsEngine
-import org.junit.Assert.assertEquals
+import com.unoone.agent.voice.tts.SynthesizedSpeech
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
- * Functional Hindi speech gate. Synthesizes a native-script sentence with the installed Hindi
- * MMS TTS model, feeds the resulting PCM directly into Omnilingual STT, and verifies a non-empty
- * Devanagari transcript. This catches wrong-language routing, empty PCM, and an
+ * Functional bilingual speech gate. Synthesizes fixed English and Hindi sentences with installed
+ * offline TTS, resamples them to the recognizer's 16 kHz input, feeds them into Omnilingual STT,
+ * and verifies the expected script. This catches wrong-language routing, empty PCM, and an
  * initialized-but-nonfunctional recognizer without needing network or microphone fixtures.
  */
 class IndicSpeechRoundTripTest {
@@ -27,11 +29,12 @@ class IndicSpeechRoundTripTest {
     )
 
     private val cases = listOf(
+        Case("en", VoiceLanguage.testPhrase("en"), '\u0041'..'\u007A'),
         Case("hi", VoiceLanguage.testPhrase("hi"), '\u0900'..'\u097F')
     )
 
     @Test
-    fun indicTtsPcmRoundTripsThroughOmnilingualRecognizer() {
+    fun englishAndHindiRoundTripThroughOneOmnilingualRecognizer() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val root = context.getExternalFilesDir("models")?.absolutePath
             ?: context.filesDir.resolve("models").absolutePath
@@ -70,7 +73,6 @@ class IndicSpeechRoundTripTest {
                 return@forEach
             }
             val audio = (speech as Result.Success).data
-            assertEquals("${case.code} MMS TTS must provide ASR-ready 16 kHz PCM", 16_000, audio.sampleRate)
 
             val stt = SherpaSttEngine(
                 context,
@@ -84,7 +86,7 @@ class IndicSpeechRoundTripTest {
                 tts.release()
                 return@forEach
             }
-            val transcript = stt.transcribe(audio.toPcm16())
+            val transcript = stt.transcribe(audio.toPcm16At16Khz())
             if (transcript !is Result.Success) {
                 failures += "${case.code}: STT failed"
                 stt.release()
@@ -105,6 +107,29 @@ class IndicSpeechRoundTripTest {
             stt.release()
             tts.release()
         }
-        assertTrue("Hindi speech round-trip failures: ${failures.joinToString()}", failures.isEmpty())
+        assertTrue("Bilingual speech round-trip failures: ${failures.joinToString()}", failures.isEmpty())
+    }
+
+    /** Deterministic linear resampling is sufficient for a fixed speech-engine qualification clip. */
+    private fun SynthesizedSpeech.toPcm16At16Khz(): ByteArray {
+        if (sampleRate == 16_000) return toPcm16()
+        val targetSize = (samples.size.toLong() * 16_000L / sampleRate).toInt().coerceAtLeast(1)
+        val output = FloatArray(targetSize)
+        val scale = sampleRate.toDouble() / 16_000.0
+        for (index in output.indices) {
+            val source = index * scale
+            val left = source.toInt().coerceIn(0, samples.lastIndex)
+            val right = (left + 1).coerceAtMost(samples.lastIndex)
+            val fraction = (source - left).toFloat()
+            output[index] = samples[left] + (samples[right] - samples[left]) * fraction
+        }
+        return ByteBuffer.allocate(output.size * 2)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .apply {
+                output.forEach { sample ->
+                    putShort((sample.coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort())
+                }
+            }
+            .array()
     }
 }

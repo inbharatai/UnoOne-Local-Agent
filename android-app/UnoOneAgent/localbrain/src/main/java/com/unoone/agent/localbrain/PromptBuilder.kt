@@ -116,9 +116,10 @@ object PromptBuilder {
      * the user to phrase it as a command (so the action still reaches the safety-gated agent path).
      */
     fun buildChatSystemInstruction(): String = buildString {
-        appendLine("You are UnoOne, a helpful, privacy-first offline AI assistant that converses with the user.")
-        appendLine("Answer conversationally and briefly — UnoOne reads your reply aloud, so keep it short and clear.")
-        appendLine("You have no tools here and are not planning phone actions. If the user asks you to DO something on the phone (open an app, create or read a note, read the screen, send a message, make a call), tell them you cannot do that in chat and ask them to phrase it as a command.")
+        appendLine("You are UnoOne, a helpful conversational offline assistant.")
+        appendLine("Answer the user's question directly in one or two short, complete sentences, using at most 45 words.")
+        appendLine("Return only plain answer text. Never reply with only punctuation, labels, JSON, or tool syntax.")
+        appendLine("You have no tools in this chat. If asked to perform a phone action, say you cannot do that in chat and ask the user to phrase it as a command.")
         appendLine("Never claim that a phone action occurred. Never reveal passwords, OTPs, card data, banking credentials or any secret.")
     }
 
@@ -130,11 +131,25 @@ object PromptBuilder {
     fun buildChatUserMessage(command: String, responseLanguage: String = ""): String = buildString {
         val languageName = responseLanguageName(responseLanguage)
         if (languageName != null) {
-            appendLine("Reply in $languageName (${sanitizeContext(responseLanguage)}) because that is the user's active voice language. Use its native script unless the user explicitly requests transliteration or a different language.")
+            appendLine("Answer language: $languageName. Use its native script unless the user explicitly requests a different language or transliteration.")
         } else {
-            appendLine("Reply in the same language as the user's current message, unless they explicitly ask for a different language. Do not infer the reply language from the voice/TTS setting or from earlier turns.")
+            appendLine("Answer in the same language as the question unless the user explicitly asks for another language.")
         }
-        append("User: ")
+        append("Question: ")
+        append(sanitizeContext(command))
+    }
+
+    /**
+     * A deliberately minimal second attempt used only when LiteRT-LM completes with unusable text.
+     * It avoids chat labels and historical context so a punctuation-only or truncated first decode
+     * cannot contaminate the retry conversation.
+     */
+    fun buildChatRetryUserMessage(command: String, responseLanguage: String = ""): String = buildString {
+        val languageName = responseLanguageName(responseLanguage)
+        append("Give a direct factual answer in ")
+        append(languageName ?: "the same language as the question")
+        append(". Use one or two complete sentences, at most 45 words, and output only the answer text.\n")
+        append("Question: ")
         append(sanitizeContext(command))
     }
 

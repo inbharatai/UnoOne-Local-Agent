@@ -114,19 +114,16 @@ class SettingsViewModel(context: Context) : ViewModel() {
     }
 
     /**
-     * Select the offline voice language (English or Hindi), persist it, and ask the live
-     * VoiceService + shared VoiceModule to rebuild their STT/TTS engines for the new language so
-     * the change takes effect without an app restart. Unsupported codes are normalized to English.
+     * Select the offline reply/TTS language. Input recognition remains bilingual; the shared
+     * VoiceModule reuses its existing STT engine and replaces TTS only.
      */
     fun setVoiceLanguage(code: String) {
         val normalized = VoiceLanguage.normalize(code)
         _voiceLanguage.value = normalized
         prefs.edit { putString(VoiceLanguage.PREF_KEY, normalized) }
         Logger.i("SettingsViewModel: voice language set to '$normalized'")
-        // Rebuild engines for the new language. VoiceService owns the wake-word loop path; the
-        // shared VoiceModule owns the mic-button / VoiceTest path. Both read the pref we just wrote.
-        // reinitForLanguage is heavy blocking model I/O — it MUST NOT run on viewModelScope's default
-        // Main dispatcher, or switching to a larger Indic/Whisper language freezes the UI (ANR).
+        // Refresh the reply voice. VoiceService owns the wake-word loop path; the shared VoiceModule
+        // owns the mic-button / VoiceTest path. The bilingual STT engine is retained.
         VoiceService.reinitLanguage(appContext)
         val shared = (appContext as? com.unoone.agent.UnoOneApplication)?.sharedVoiceModule
         if (shared != null) {

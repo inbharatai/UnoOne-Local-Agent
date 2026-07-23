@@ -68,9 +68,9 @@ class SherpaSttEngine(
     private var initialized = false
 
     /**
-     * Best-effort confidence for the last transcription. Sherpa results do not expose a numeric
-     * confidence, so this is 1.0 when text is produced and 0.0 when empty — enough to drive the
-     * orchestrator's low-confidence retry prompt.
+     * Best-effort transcript quality for the last transcription. Sherpa does not expose token
+     * probabilities, so [TranscriptQuality] rejects obvious empty/truncated/repeated decodes rather
+     * than falsely treating every non-empty result as 100% confident.
      */
     @Volatile
     var lastConfidence: Float = 1f
@@ -219,7 +219,7 @@ class SherpaSttEngine(
                 rec.decode(stream)
             }
             val text = rec.getResult(stream).text.trim()
-            lastConfidence = if (text.isNotBlank()) 1f else 0f
+            lastConfidence = TranscriptQuality.score(text, samples.size)
             Logger.i("SherpaSttEngine: Transcribed (transducer, chars=${text.length})")
             Result.Success(text)
         } finally {
@@ -241,7 +241,7 @@ class SherpaSttEngine(
             // Unlike the streaming transducer there is no isReady() drain loop.
             rec.decode(stream)
             val text = rec.getResult(stream).text.trim()
-            lastConfidence = if (text.isNotBlank()) 1f else 0f
+            lastConfidence = TranscriptQuality.score(text, samples.size)
             Logger.i("SherpaSttEngine: Transcribed ($family, chars=${text.length})")
             Result.Success(text)
         } finally {

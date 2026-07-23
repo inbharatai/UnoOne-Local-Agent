@@ -13,7 +13,7 @@ The repository [README](../../../README.md) is the product and architecture sour
 - LiteRT-LM manual tool calling with CPU `AUTO`; GPU is an explicit developer qualification choice.
 - Deterministic command parsing before model inference.
 - Canonical tool-name and argument validation before execution.
-- Offline Sherpa-ONNX speech with English and Hindi exposed.
+- Offline Sherpa-ONNX bilingual English/Hindi recognition with selectable English/Hindi reply speech.
 - Accessibility-based phone control and screen reading.
 - Bundled offline Latin + Devanagari OCR for English and Hindi screen text.
 - CameraX/MediaPipe Blind Aid independent of the language model.
@@ -128,7 +128,7 @@ Examples: “Uno, open Google Chrome,” “Uno, open Blind Aid,” and “Uno, 
 
 The floating assistant microphone captures one utterance per tap, stops on trailing silence or after eight seconds, and uses the same local command/tool route as hands-free wake input. Wake capture is privacy-paused during phone and VoIP calls and resumes when the call ends.
 
-English and Hindi are currently exposed. Assamese remains planned until exact speech artifacts pass licence, integrity, Android load and accuracy qualification.
+English and Hindi are currently exposed. The shared Omnilingual recognizer accepts either language regardless of the selected reply voice. The **Reply voice** setting changes only the TTS output language, so switching it does not unload and reload STT. Assamese remains planned until exact speech artifacts pass licence, integrity, Android load and accuracy qualification.
 
 ## Secure Browser model lease
 
