@@ -75,7 +75,7 @@ class ArtifactVerifierTest {
         assertFalse(verifier.verify(descriptor, fileSpec, missing, 3).verified)
         missing.writeBytes("wrong-but-same-length!!".padEnd(bytes.size).take(bytes.size).toByteArray())
         assertFalse(verifier.verify(descriptor, fileSpec, missing, 3).verified)
-        store.records[descriptor.id] = "corrupt"
+        store.records["${descriptor.id}:${fileSpec.name}"] = "corrupt"
         missing.writeBytes(bytes)
         assertTrue(verifier.verify(descriptor, fileSpec, missing, 3).verified)
     }
@@ -89,6 +89,26 @@ class ArtifactVerifierTest {
         assertEquals(1, calls.get())
     }
 
+    @Test fun `nine file proofs persist independently force hashes all and uninstall invalidates all`() = runBlocking {
+        val calls = AtomicInteger()
+        val verifier = verifier(calls)
+        val specs = List(9) { fileSpec.copy(name = "artifact-$it") }
+        val model = descriptor.copy(id = "qwen-test", files = specs)
+        specs.forEach { spec ->
+            val file = File(dir, spec.name).apply { writeBytes(bytes) }
+            assertTrue(verifier.recordVerified(model, spec, file, 5))
+        }
+        repeat(2) {
+            specs.forEach { assertTrue(verifier.verify(model, it, File(dir, it.name), 5).fromCache) }
+        }
+        assertEquals(0, calls.get())
+        specs.forEach { assertFalse(verifier.verify(model, it, File(dir, it.name), 5, force = true).fromCache) }
+        assertEquals(9, calls.get())
+        verifier.invalidate(model.id)
+        specs.forEach { assertFalse(verifier.verify(model, it, File(dir, it.name), 5).fromCache) }
+        assertEquals(18, calls.get())
+    }
+
     private fun modelFile() = File(dir, fileSpec.name)
 
     private fun verifier(calls: AtomicInteger, delayMs: Long = 0) = ArtifactVerifier(store) { file ->
@@ -100,8 +120,8 @@ class ArtifactVerifierTest {
 
     private class MemoryStore : VerificationRecordStore {
         val records = ConcurrentHashMap<String, Any>()
-        override fun read(modelId: String): VerifiedArtifactRecord? = records[modelId] as? VerifiedArtifactRecord
-        override fun write(record: VerifiedArtifactRecord) { records[record.modelId] = record }
-        override fun remove(modelId: String) { records.remove(modelId) }
+        override fun read(modelId: String, artifactId: String): VerifiedArtifactRecord? = records["$modelId:$artifactId"] as? VerifiedArtifactRecord
+        override fun write(record: VerifiedArtifactRecord) { records["${record.modelId}:${record.artifactId}"] = record }
+        override fun remove(modelId: String) { records.keys.filter { it == modelId || it.startsWith("$modelId:") }.forEach { records.remove(it) } }
     }
 }

@@ -36,6 +36,7 @@ class HandsFreeVoiceActivationTest {
     @After
     fun restoreProductionCallback() {
         VoiceService.voiceCommandCallback = { command -> app.postVoiceCommand(command) }
+        VoiceService.voiceTicketCallback = { ticket -> app.postVoiceCommand(ticket.text, ticket.generation) }
     }
 
     @Test
@@ -43,8 +44,8 @@ class HandsFreeVoiceActivationTest {
         val expected = "स्क्रीन पढ़ो"
         val latch = CountDownLatch(1)
         var received: String? = null
-        VoiceService.voiceCommandCallback = { command ->
-            received = command
+        VoiceService.voiceTicketCallback = { ticket ->
+            received = ticket.text
             latch.countDown()
         }
 
@@ -52,6 +53,7 @@ class HandsFreeVoiceActivationTest {
         val intent = Intent(context, VoiceService::class.java)
             .setAction(VoiceService.ACTION_VOICE_COMMAND)
             .putExtra(VoiceService.EXTRA_COMMAND, expected)
+            .putExtra(VoiceService.EXTRA_COMMAND_GENERATION, com.unoone.agent.core.runtime.GlobalTaskCancellation.generation)
         ContextCompat.startForegroundService(context, intent)
 
         assertTrue("VoiceService did not route the transcript within 5 seconds", latch.await(5, TimeUnit.SECONDS))

@@ -31,6 +31,6 @@ object E4bCleanupGate {
         !record.sustainedRunCompleted -> "Sustained device run has not completed"
         !record.noCrashAnrOom -> "Crash/ANR/OOM stability gate has not passed"
         record.deviceBuild.isBlank() -> "Qualified device/build identity is missing"
-        else -> null
+        else -> "Legacy cleanup is disabled: model-neutral qualification and explicit migration review are required"
     }
 }

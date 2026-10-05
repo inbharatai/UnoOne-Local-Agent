@@ -10,13 +10,15 @@ plugins {
 android {
     namespace = "com.unoone.agent"
     compileSdk = 35
+    // Use the same toolchain as the MNN library, including native symbol stripping.
+    ndkVersion = "27.2.12479018"
 
     defaultConfig {
         applicationId = "com.unoone.agent"
         minSdk = 28
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.4.0-alpha-v2"
+        versionCode = 5
+        versionName = "0.5.0-alpha-v3"
         // Required so instrumented androidTest classes (JUnit4 @Test, ApplicationProvider,
         // androidx.test.ext.junit) are discovered on-device. Without this AGP falls back to the
         // legacy android.test.InstrumentationTestRunner, which cannot load the androidx test

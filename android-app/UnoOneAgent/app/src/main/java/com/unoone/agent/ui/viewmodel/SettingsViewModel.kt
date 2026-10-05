@@ -143,13 +143,13 @@ class SettingsViewModel(context: Context) : ViewModel() {
             // Use the shared VoiceModule (already initialized for the active language at startup);
             // fall back to a fresh module if the app instance isn't available.
             val voiceModule = (context.applicationContext as? com.unoone.agent.UnoOneApplication)?.sharedVoiceModule
-                ?: VoiceModule(context).also {
-                    val base = context.getExternalFilesDir(null)?.absolutePath + "/models"
-                    it.reinitForLanguage(base)
+                ?: VoiceModule(context.applicationContext)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                if (!voiceModule.isSttInitialized()) {
+                    val base = (context.getExternalFilesDir("models")
+                        ?: java.io.File(context.filesDir, "models")).absolutePath
+                    voiceModule.reinitForLanguage(base)
                 }
-            if (!voiceModule.isSttInitialized()) {
-                val base = context.getExternalFilesDir(null)?.absolutePath + "/models"
-                voiceModule.reinitForLanguage(base)
             }
             val startResult = voiceModule.startRecording(context, viewModelScope)
             if (startResult is Result.Error) {

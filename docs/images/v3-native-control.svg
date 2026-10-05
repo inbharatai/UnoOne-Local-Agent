@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="850" viewBox="0 0 1120 850" role="img" aria-labelledby="title desc"><title id="title">Native code owns permission, execution and proof</title><desc id="desc">Current wired flow: user input enters native command ownership, scoped observation, proposals, native validation and confirmation, guarded dispatch, fresh observation and native postconditions. Browser uses an unprivileged DOM adapter. Lower boxes distinguish integrated source paths from remaining qualification gaps.</desc>
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#496477" stroke-width="1.5"/></marker></defs>
+<rect width="1120" height="850" fill="#f4f7fa"/>
+<style>text{font-family:Arial,Helvetica,sans-serif;fill:#172d3e} .label{font-size:14px;letter-spacing:1.8px;font-weight:700} .head{font-size:32px;font-weight:700} .body{font-size:19px} .small{font-size:16px} .bold{font-size:21px;font-weight:700}</style>
+<text x="40" y="38" class="label">UNOONE V3 / CONCEPTUAL ARCHITECTURE</text>
+<text x="40" y="84" class="head">Native code owns permission, execution and proof</text>
+<text x="40" y="118" class="small">Source design — not hardware imagery, measured performance or live telemetry.</text>
+<rect x="40" y="152" width="310" height="112" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="60" y="184" class="bold">User input</text>
+<text x="60" y="214" class="body">Text / local speech</text>
+<text x="60" y="240" class="body">Screen and page text: untrusted</text>
+<rect x="405" y="152" width="675" height="112" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="425" y="184" class="bold">Native command ownership</text>
+<text x="425" y="214" class="body">Scope + epoch + cancellation + bounded goal</text>
+<text x="425" y="240" class="body">Stop enters before the busy lock</text>
+<path d="M350 208 L405 208" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="40" y="306" width="310" height="138" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="60" y="338" class="bold">Observe + propose</text>
+<text x="60" y="368" class="body">Immutable screen observation</text>
+<text x="60" y="394" class="body">Deterministic route first</text>
+<text x="60" y="420" class="body">Or one local model proposal</text>
+<rect x="405" y="306" width="310" height="138" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="425" y="338" class="bold">Authorize in native code</text>
+<text x="425" y="368" class="body">Strict typed validation</text>
+<text x="425" y="394" class="body">Policy + bound confirmation</text>
+<text x="425" y="420" class="body">Fresh target / task checks</text>
+<rect x="770" y="306" width="310" height="138" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="790" y="338" class="bold">Dispatch + verify</text>
+<text x="790" y="368" class="body">Guarded Android action</text>
+<text x="790" y="394" class="body">Fresh observation</text>
+<text x="790" y="420" class="body">Native goal postcondition</text>
+<path d="M742 264 L742 286" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M742 286 H195 V306" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M350 374 L405 374" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M715 374 L770 374" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="40" y="486" width="1040" height="112" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="60" y="518" class="bold">Separate browser lane: native planner + native policy → DOM adapter</text>
+<text x="60" y="548" class="body">Page JavaScript has no model or consent bridge. Native task/document/target checks apply.</text>
+<text x="60" y="574" class="body">A page claim or accepted dispatch is not independently verified task completion.</text>
+<text x="40" y="645" class="label">INTEGRATED SOURCE PATHS / REMAINING QUALIFICATION GAPS</text>
+<rect x="40" y="667" width="330" height="110" rx="9" fill="white" stroke="#a87936" stroke-width="1.5" stroke-dasharray="7 5"/>
+<text x="60" y="699" class="bold">Reviewed image advice</text>
+<text x="60" y="729" class="body">Settings → selected model</text>
+<text x="60" y="755" class="body">No arbitrary visual clicks</text>
+<rect x="395" y="667" width="330" height="110" rx="9" fill="white" stroke="#a87936" stroke-width="1.5" stroke-dasharray="7 5"/>
+<text x="415" y="699" class="bold">Skills V2 UI reachable</text>
+<text x="415" y="729" class="body">Import / review / export / run</text>
+<text x="415" y="755" class="body">Trusted updates still pending</text>
+<rect x="750" y="667" width="330" height="110" rx="9" fill="white" stroke="#a87936" stroke-width="1.5" stroke-dasharray="7 5"/>
+<text x="770" y="699" class="bold">Qwen: opt-in MNN</text>
+<text x="770" y="729" class="body">Android inference pending</text>
+<text x="770" y="755" class="body">GUI-Owl / AppFunctions: no</text>
+<text x="40" y="824" class="small">Image/Skills paths are integrated, not device-qualified. Manual learn recording remains unavailable.</text>
+</svg>

@@ -1,0 +1,33 @@
+{
+  "exit_code": 1,
+  "stop_reason": null,
+  "wall_seconds": 36.28388624099898,
+  "command": [
+    "${TOOLCHAINS}/jdk17/bin/java",
+    "-Xms32m",
+    "-Xmx192m",
+    "-Xss512k",
+    "-XX:+UseSerialGC",
+    "-XX:ActiveProcessorCount=2",
+    "-XX:CompressedClassSpaceSize=32m",
+    "-XX:ReservedCodeCacheSize=48m",
+    "-XX:MaxMetaspaceSize=128m",
+    "-XX:MaxDirectMemorySize=64m",
+    "-Djava.library.path=${ORIGINAL_HOST}",
+    "-cp",
+    "${ORIGINAL_HOST}/harness.jar:${TOOLCHAINS}/gradle-home/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.21/fa374a986e128314c3db00a20aae55f72a258511/kotlin-stdlib-2.2.21.jar",
+    "HarnessKt",
+    "${ORIGINAL_HOST}",
+    "${MODEL}/config.json"
+  ],
+  "address_space_limit_bytes": 6442450944,
+  "rss_guard_bytes": 3006477107,
+  "cgroup_near_bytes": 3900000000,
+  "cache_reserve_bytes": 400000000,
+  "poll_seconds": 0.1,
+  "peak_sampled_rss": 2067333120,
+  "peak_sampled_vms": 3476615168,
+  "peak_hwm": 2089529344,
+  "memory_events_before": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 1\noom_group_kill 0\n",
+  "memory_events_after": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 1\noom_group_kill 0\n"
+}

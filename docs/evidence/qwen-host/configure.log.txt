@@ -1,0 +1,92 @@
+-- The C compiler identification is GNU 11.5.0
+-- The CXX compiler identification is GNU 11.5.0
+-- The ASM compiler identification is GNU
+-- Found assembler: /usr/bin/cc
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Use Threadpool, forbid openmp
+-- >>>>>>>>>>>>>
+-- MNN BUILD INFO:
+-- 	System: Linux
+-- 	Processor: x86_64
+-- 	Version: 3.6.1
+-- 	Metal: OFF
+-- 	OpenCL: OFF
+-- 	OpenGL: OFF
+-- 	Vulkan: OFF
+-- 	ARM82: ON
+-- 	KleidiAI: OFF
+-- 	oneDNN: OFF
+-- 	TensorRT: OFF
+-- 	CoreML: OFF
+-- 	NNAPI: OFF
+-- 	QNN: OFF
+-- 	CUDA: OFF
+-- 	MUSA: OFF
+-- 	OpenMP: OFF
+-- 	BF16: OFF
+-- 	ThreadPool: ON
+-- 	Hidden: TRUE
+-- 	Build Path: <HOST_EVIDENCE>/build
+-- 	CUDA PROFILE: OFF
+-- WIN_USE_ASM: 
+-- x86_64: Open SSE
+-- MNN_AVX512:OFF
+-- Looking for pthread.h
+-- Looking for pthread.h - found
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE  
+-- MNN_IMGCODECS: ON
+-- Configuring done
+-- Generating done
+CMake Warning:
+  Manually-specified variables were not used by the project:
+
+    LLM_SUPPORT_AUDIO
+    LLM_SUPPORT_HTTP_RESOURCES
+    LLM_SUPPORT_VISION
+    MNN_CPU_WEIGHT_DEQUANT_GEMM
+
+
+-- Build files have been written to: <HOST_EVIDENCE>/build
+-- Use Threadpool, forbid openmp
+-- >>>>>>>>>>>>>
+-- MNN BUILD INFO:
+-- 	System: Linux
+-- 	Processor: x86_64
+-- 	Version: 3.6.1
+-- 	Metal: OFF
+-- 	OpenCL: OFF
+-- 	OpenGL: OFF
+-- 	Vulkan: OFF
+-- 	ARM82: ON
+-- 	KleidiAI: OFF
+-- 	oneDNN: OFF
+-- 	TensorRT: OFF
+-- 	CoreML: OFF
+-- 	NNAPI: OFF
+-- 	QNN: OFF
+-- 	CUDA: OFF
+-- 	MUSA: OFF
+-- 	OpenMP: OFF
+-- 	BF16: OFF
+-- 	ThreadPool: ON
+-- 	Hidden: TRUE
+-- 	Build Path: <HOST_EVIDENCE>/build
+-- 	CUDA PROFILE: OFF
+-- WIN_USE_ASM: 
+-- x86_64: Open SSE
+-- MNN_AVX512:OFF
+-- MNN_IMGCODECS: ON
+-- Configuring done
+-- Generating done
+-- Build files have been written to: <HOST_EVIDENCE>/build

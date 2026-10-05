@@ -1,0 +1,2 @@
+factor=28 min=3136 cases=543169 maxSide=756 maxArea=571536
+factor=32 min=65536 cases=543169 maxSide=1280 maxArea=589824

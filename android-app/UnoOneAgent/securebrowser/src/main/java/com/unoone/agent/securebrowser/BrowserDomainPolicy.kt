@@ -63,15 +63,9 @@ class BrowserDomainPolicy(allowedOrigins: Set<String>) {
             return NavigationDecision.Block("Origin is not approved for UnoOne automation: $origin")
         }
 
-        val normalized = URI(
-            "https",
-            null,
-            asciiHost,
-            port,
-            uri.rawPath?.ifBlank { "/" } ?: "/",
-            uri.rawQuery,
-            uri.rawFragment
-        ).toASCIIString()
+        // URI's component constructor double-escapes raw percent escapes. Preserve the raw suffix.
+        val normalized = origin + (uri.rawPath?.ifBlank { "/" } ?: "/") +
+            (uri.rawQuery?.let { "?$it" } ?: "") + (uri.rawFragment?.let { "#$it" } ?: "")
         return NavigationDecision.Allow(normalized, origin)
     }
 

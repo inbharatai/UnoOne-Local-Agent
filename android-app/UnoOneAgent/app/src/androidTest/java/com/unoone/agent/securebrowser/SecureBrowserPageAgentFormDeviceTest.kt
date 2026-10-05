@@ -15,7 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Runs the packaged PageAgent + DOM controller + native bridge on the physical Android WebView. */
+/** Packaged DOM adapter + native-owned controller on WebView; scripted model fixture, not real inference. */
 class SecureBrowserPageAgentFormDeviceTest {
 
     @Test
@@ -33,9 +33,12 @@ class SecureBrowserPageAgentFormDeviceTest {
         val handler = SecureBrowserNativeHandler(
             modelPort = BrowserModelPort { invocation ->
                 val decision = if (modelStep.getAndIncrement() == 0) {
-                    val inputIndex = Regex("\\[(\\d+)]<input\\b", RegexOption.IGNORE_CASE)
-                        .find(invocation.userPrompt)?.groupValues?.get(1)?.toIntOrNull()
-                        ?: error("First-name input was not indexed in Android PageController state")
+                    val inputIndex = invocation.userPrompt.lineSequence().mapNotNull { line ->
+                        val match = Regex("""\[(\d+)] (\{.*})""").matchEntire(line) ?: return@mapNotNull null
+                        val summary = org.json.JSONObject(match.groupValues[2])
+                        if (summary.optString("tag") == "input" && summary.optString("id") == "first-name")
+                            match.groupValues[1].toInt() else null
+                    }.singleOrNull() ?: error("First-name input was not indexed in native DOM snapshot")
                     PageAgentModelDecision(
                         evaluationPreviousGoal = "No previous action",
                         memory = "First name is empty",
@@ -97,7 +100,11 @@ class SecureBrowserPageAgentFormDeviceTest {
             }
         }
         assertTrue("PageAgent form task timed out", completed.await(30, TimeUnit.SECONDS))
-        assertTrue("PageAgent failed: ${result.get()?.second}", result.get()?.first == true)
+        // Page-observed writes are not independently verified task completion.
+        assertEquals(false, result.get()?.first)
+        assertTrue("Unexpected native completion: ${result.get()?.second}",
+            result.get()?.second?.contains("not independently verified") == true)
+        assertEquals("Scripted input + done decisions", 2, modelStep.get())
 
         val valueRead = CountDownLatch(1)
         val fieldValue = AtomicReference("")

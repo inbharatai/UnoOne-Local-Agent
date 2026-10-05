@@ -1,0 +1,6 @@
+java.lang.IllegalStateException: Color response was: white
+	at HarnessKt.main$lambda$8(Harness.kt:56)
+	at HarnessKt.main$test(Harness.kt:10)
+	at HarnessKt.main(Harness.kt:50)
+Exception in thread "main" java.lang.IllegalStateException: 1 harness assertions failed (see full logs/outputs)
+	at HarnessKt.main(Harness.kt:64)

@@ -1,0 +1,4 @@
+The device supports: i8sdot:0, fp16:0, i8mm: 0, sve2: 0, sme2: 0, perfCores: 0
+${DIAGNOSTIC}/before/red32.png 32x32 imread==imdecode all 3072 bytes; every BGR pixel=(0,0,255)
+${DIAGNOSTIC}/before/red256.png 256x256 imread==imdecode all 196608 bytes; every BGR pixel=(0,0,255)
+${MNN_HOST}/red.png 224x224 imread==imdecode all 150528 bytes; every BGR pixel=(0,0,255)

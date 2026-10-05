@@ -56,8 +56,9 @@ class SecureBrowserNativeHandlerTest {
     @Test
     fun `routes model invocation to local model port`() = runBlocking {
         val handler = SecureBrowserNativeHandler(
-            modelPort = BrowserModelPort {
-                Result.success(
+            // Explicit suspend implementation avoids Result boxing in a SAM test double.
+            modelPort = object : BrowserModelPort {
+                override suspend fun plan(invocation: PageAgentModelInvocation): Result<PageAgentModelDecision> = Result.success(
                     PageAgentModelDecision(
                         evaluationPreviousGoal = "No previous action",
                         memory = "Need first name",
@@ -95,8 +96,8 @@ class SecureBrowserNativeHandlerTest {
     }
 
     @Test
-    fun `final submission uses native confirmation`() = runBlocking {
-        val interaction = FakeInteraction(confirmResult = true)
+    fun `final submission requires takeover and never returns an execution permit`() = runBlocking {
+        val interaction = FakeInteraction(confirmResult = true, takeoverResult = true)
         val handler = SecureBrowserNativeHandler(BrowserModelPort { Result.failure(Exception()) }, interaction)
         val input = BrowserActionAuthorizationRequest(
             actionName = "submit_form",
@@ -106,8 +107,12 @@ class SecureBrowserNativeHandlerTest {
         val response = handler.handle(request(PageAgentRequestType.AUTHORIZE_ACTION, json.encodeToString(input)))
         val auth = json.decodeFromString(BrowserActionAuthorizationResponse.serializer(), response.payload)
 
-        assertTrue(auth.allowed)
-        assertEquals(1, interaction.confirmCalls)
+        // Completing takeover must not replay the consequential action through the agent.
+        assertFalse(auth.allowed)
+        assertTrue(auth.requiresUserTakeover)
+        assertEquals(BrowserActionClass.FINAL_SUBMISSION, auth.actionClass)
+        assertEquals(0, interaction.confirmCalls)
+        assertEquals(1, interaction.takeoverCalls)
     }
 
     @Test
@@ -128,7 +133,7 @@ class SecureBrowserNativeHandlerTest {
     }
 
     @Test
-    fun `explicit prototype mode allows classified payment without prompt`() = runBlocking {
+    fun `explicit prototype mode blocks payment without prompt`() = runBlocking {
         val interaction = FakeInteraction(confirmResult = false, takeoverResult = false)
         val handler = SecureBrowserNativeHandler(
             modelPort = BrowserModelPort { Result.failure(Exception()) },
@@ -143,11 +148,58 @@ class SecureBrowserNativeHandlerTest {
         val response = handler.handle(request(PageAgentRequestType.AUTHORIZE_ACTION, json.encodeToString(input)))
         val auth = json.decodeFromString(BrowserActionAuthorizationResponse.serializer(), response.payload)
 
-        assertTrue(auth.allowed)
+        // Debug/prototype preferences never weaken the native payment prohibition.
+        assertFalse(auth.allowed)
         assertEquals(BrowserActionClass.PAYMENT, auth.actionClass)
         assertEquals(0, interaction.confirmCalls)
         assertEquals(0, interaction.takeoverCalls)
-        assertTrue(auth.message.contains("prototype browser safety is off"))
+        assertFalse(auth.message.contains("prototype browser safety is off"))
+    }
+
+    @Test
+    fun `ordinary field changes require a fresh confirmation for each request`() = runBlocking {
+        for (mode in BrowserSafetyMode.values()) {
+            var confirmations = 0
+            val interaction = object : BrowserUserInteraction {
+                override suspend fun confirm(message: String): Boolean = ++confirmations == 1
+                override suspend fun ask(question: String): String = error("Unexpected question")
+                override suspend fun requestTakeover(message: String): Boolean = error("Unexpected takeover")
+            }
+            val handler = SecureBrowserNativeHandler(BrowserModelPort { error("Unexpected model") }, interaction, safetyModeProvider = { mode })
+            val input = BrowserActionAuthorizationRequest(actionName = "input_text", summary = "First name")
+            suspend fun authorize(): BrowserActionAuthorizationResponse {
+                val response = handler.handle(request(PageAgentRequestType.AUTHORIZE_ACTION, json.encodeToString(input)))
+                assertTrue(response.success)
+                return json.decodeFromString(BrowserActionAuthorizationResponse.serializer(), response.payload)
+            }
+            assertTrue(authorize().allowed)
+            // Prior consent is not a cached permit for the next field mutation.
+            val declined = authorize()
+            assertFalse(declined.allowed)
+            assertEquals(BrowserActionClass.ORDINARY_INPUT, declined.actionClass)
+            assertEquals(2, confirmations)
+        }
+    }
+
+    @Test
+    fun `disable while confirmation is pending prevents stale authorization`() = runBlocking {
+        val events = mutableListOf<String>()
+        val interaction = object : BrowserUserInteraction {
+            override suspend fun confirm(message: String): Boolean {
+                AgentRuntimeGate.setEnabled(false)
+                return true
+            }
+            override suspend fun ask(question: String): String = error("Unexpected question")
+            override suspend fun requestTakeover(message: String): Boolean = error("Unexpected takeover")
+        }
+        val handler = SecureBrowserNativeHandler(BrowserModelPort { error("Unexpected model") }, interaction,
+            BrowserEventSink { _, payload -> events.add(payload) })
+        val input = BrowserActionAuthorizationRequest(actionName = "input_text", summary = "First name")
+        val response = handler.handle(request(PageAgentRequestType.AUTHORIZE_ACTION, json.encodeToString(input)))
+        // Emergency stop revokes even approval returned by a previously opened native dialog.
+        assertFalse(response.success)
+        assertEquals("AGENT_DISABLED", response.errorCode)
+        assertTrue(events.isEmpty())
     }
 
     private class FakeInteraction(

@@ -40,7 +40,7 @@ object RAGManager {
      */
     suspend fun fetchOnlineResults(query: String, maxResults: Int = 3): List<WebResult> = withContext(Dispatchers.IO) {
         try {
-            Logger.i("RAGManager: Fetching online context for '$query'...")
+            Logger.i("RAGManager: Fetching online context")
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
             val url = URL("https://html.duckduckgo.com/html/?q=$encodedQuery")
             val connection = url.openConnection() as HttpURLConnection

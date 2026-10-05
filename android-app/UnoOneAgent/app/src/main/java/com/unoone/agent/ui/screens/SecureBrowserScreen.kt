@@ -239,7 +239,9 @@ fun SecureBrowserScreen(
                 }
                 OutlinedButton(
                     onClick = viewModel::stopTask,
-                    enabled = state.taskRunning,
+                    // Capture, transcription and narration may be active without a planner task.
+                    // Cancellation must always remain reachable from this screen.
+                    enabled = true,
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Default.Stop, contentDescription = null)

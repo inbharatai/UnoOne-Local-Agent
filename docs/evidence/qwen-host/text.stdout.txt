@@ -1,0 +1,24 @@
+config path is <HOST_EVIDENCE>/cpu-32.json
+The device supports: i8sdot:0, fp16:0, i8mm: 0, sve2: 0, sme2: 0, perfCores: 0
+main, 321, cost time: 14633.262695 ms
+Prepare for tuning opt Begin
+Prepare for tuning opt End
+main, 330, cost time: 3254.841064 ms
+prompt file is <HOST_EVIDENCE>/text.txt
+4
+
+#################################
+prompt tokens num = 26
+decode tokens num = 2
+ vision time = 0.00 s
+ pixels_mp = 0.00 MP
+  audio process time = 0.00 s
+  audio input time = 0.00 s
+prefill time = 1.66 s
+ decode time = 0.15 s
+ sample time = 0.01 s
+prefill speed = 15.62 tok/s
+ decode speed = 13.27 tok/s
+ vision speed = 0.000 MP/s
+ audio RTF = -nan 
+##################################

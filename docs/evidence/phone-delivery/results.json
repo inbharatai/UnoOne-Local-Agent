@@ -1,0 +1,48 @@
+{
+  "baseCommit": "69bf5e097b85a1bc40da14c07609dde8ca765cbd",
+  "appVersion": "0.5.0-alpha-v3",
+  "versionCode": 5,
+  "hostGateExit": 0,
+  "jvm": {
+    "tests": 770,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "apks": [
+    {
+      "path": "android-app/UnoOneAgent/app/build/outputs/apk/debug/app-debug.apk",
+      "bytes": 407940115,
+      "sha256": "e5946267b4fc7907d09851c5853252b571795a0abf2f4418df7f91a0ffef440b",
+      "criticalEntries": [
+        {
+          "path": "lib/arm64-v8a/libMNN.so",
+          "bytes": 13543816,
+          "sha256": "3c2a60edc197e918966fcbb3f245dfd10a616eb1d96a86e41f01f0a937539d34"
+        },
+        {
+          "path": "lib/arm64-v8a/libc++_shared.so",
+          "bytes": 1292904,
+          "sha256": "4397241b4bd20a8e579bfb41d21107857e12985f6a01ca0c2a5f83380d1270b4"
+        },
+        {
+          "path": "lib/arm64-v8a/libunoone_qwen.so",
+          "bytes": 376328,
+          "sha256": "ccd825e5a0febb9e31f36a104c2953543f6221ad891ca841585244d2ebdab5ac"
+        },
+        {
+          "path": "assets/page-agent/unoone-page-agent.js",
+          "bytes": 4296,
+          "sha256": "695f15c52c003cbe30f26cb7caf6ba9739c978fb8ac075705e182f9b91c5648c"
+        }
+      ]
+    },
+    {
+      "path": "android-app/UnoOneAgent/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk",
+      "bytes": 2758330,
+      "sha256": "43d7d7833bb6648188465290726f42526b953a246e606a1d045b652c94348261",
+      "criticalEntries": []
+    }
+  ],
+  "physicalTests": "NOT RUN"
+}

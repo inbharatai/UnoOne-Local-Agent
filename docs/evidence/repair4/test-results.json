@@ -1,0 +1,762 @@
+{
+  "timeUtc": "2026-10-05T13:40:53.078222+00:00",
+  "baseCommit": "69bf5e097b85a1bc40da14c07609dde8ca765cbd",
+  "newCommit": null,
+  "cleanGradleExit": 0,
+  "cleanGradleStatus": "complete",
+  "physicalDevice": "NOT RUN; adb devices empty",
+  "benchmarkTasks": {
+    "passed": 0,
+    "pending": 100
+  },
+  "pageAgent": {
+    "typecheck": "passed",
+    "unitTests": 10,
+    "playwrightPassed": 15,
+    "playwrightSkipped": 0,
+    "productionNpmAuditVulnerabilities": 0,
+    "scope": "Host DOM/contract fixtures, not Android/native/model qualification"
+  },
+  "speechScorer": {
+    "syntheticTestsPassed": 10,
+    "humanClipsMeasured": 0
+  },
+  "independentReview": "Narrow repaired B1/B2/B3 paths source-resolved; remaining feature/device gaps block release approval",
+  "junitSuites": [
+    {
+      "name": "com.unoone.agent.safety.SecurityLevelTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.ui.viewmodel.AgentViewModelDisableLifecycleTest",
+      "tests": "8",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.execution.ForegroundLaunchVerifierTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.NativeDeviceWorkflowTest",
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.skills.SkillSafetyRoutingTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.model.ResultTest",
+      "tests": "20",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.execution.ActionExecutorToolCoverageTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.NativeDeviceCommandsTest",
+      "tests": "9",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.ui.viewmodel.LanguagePackActivationTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.model.RiskAssessmentTest",
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.ui.screens.CapabilityTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.parsing.CommandParserTest",
+      "tests": "19",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.ui.viewmodel.BrowserFileSelectionTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.safety.SafetyPipelineTest",
+      "tests": "14",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.BrowserLeasePolicyTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.safetyguard.SafetyGuardToolCoverageTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.safetyguard.SafetyGuardTest",
+      "tests": "30",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.ModelLoadGateTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.PendingBrowserHandoffTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.CompoundStepsTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.util.CallbackMulticastTest",
+      "tests": "8",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.brain.BrainSelfTestPolicyTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.parsing.ContextSnapshotTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.util.InputSanitizerTest",
+      "tests": "22",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.RuleBasedParserTest",
+      "tests": "50",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.ui.viewmodel.SecureBrowserTaskRoutingTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.agent.BlindAidNarratorTest",
+      "tests": "12",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.agent.IntentClassifierTest",
+      "tests": "27",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.agent.NarrationPolicyTest",
+      "tests": "8",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.agent.ReActLoopControllerTest",
+      "tests": "13",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.agent.ResponseTextJoinerTest",
+      "tests": "9",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.agent.SafetyJudgePolicyTest",
+      "tests": "12",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.agent.SceneDescriptionBuilderTest",
+      "tests": "9",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.agent.ScreenReferenceTest",
+      "tests": "17",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.agent.StreamingTextReducerTest",
+      "tests": "8",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.agent.ToolHealthTrackerTest",
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.agent.VoiceFastReplyTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.agent.VoiceResponseLocalizerTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.device.DeviceConfirmationRefreshTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.device.DeviceCoreTest",
+      "tests": "15",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.device.DeviceProposalRefreshTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.document.DocxTemplateProcessorTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.document.HtmlTextExtractorTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.document.PlainTextExtractorTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.document.XlsxTextExtractorTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.eval.EvalScorerTest",
+      "tests": "10",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.memory.OutcomeMemoryPolicyTest",
+      "tests": "10",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.model.BrainModelRegistryTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.model.BrainSelectionPolicyTest",
+      "tests": "8",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.model.CanonicalToolRegistryTest",
+      "tests": "11",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.model.E4bRuntimeBudgetTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.model.E4bRuntimeCoordinatorTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.model.E4bRuntimeGateTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.model.ToolCallValidatorTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.runtime.AgentRuntimeGateTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.core.safety.ToolPermissionRegistryTest",
+      "tests": "8",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.languagepacks.LanguagePackManifestTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.localbrain.CalendarCommandParserTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.localbrain.ChatAnswerValidatorTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.localbrain.GroundingBoxTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.localbrain.PageAgentGemmaPlannerPromptTest",
+      "tests": "27",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.localbrain.PromptBuilderTest",
+      "tests": "14",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.localbrain.RAGManagerTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.localbrain.ToolRegistryAgreementTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.modelmanager.ArtifactVerifierTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.modelmanager.E4bCleanupGateTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.modelmanager.ModelInstallerTest",
+      "tests": "21",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.modelmanager.ModelManifestTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.modelmanager.ModelQualificationGateTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.observability.DiagnosticsTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.phonecontrol.CalendarInsertIntentTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.phonecontrol.ObjectLabelEvidenceTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.phonecontrol.EmailDraftUriTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.phonecontrol.ScreenPreprocessorTest",
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.securebrowser.ApprovedOriginPolicyTest",
+      "tests": "8",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.securebrowser.BrowserDomainPolicyTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.securebrowser.BrowserSafetyPolicyTest",
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.securebrowser.NativeBrowserContractTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.securebrowser.NativeTargetPolicyTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.securebrowser.PageAgentTaskResultTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.securebrowser.PageTextResultDecoderTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.securebrowser.SecureBrowserNativeHandlerTest",
+      "tests": "8",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.skills.SkillPoliciesTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.skills.SkillsV2Test",
+      "tests": "11",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.AdaptiveSpeechDetectorTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.EmergencyStopPolicyTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.PcmChunkAccumulatorTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.SpeechDescriptorRegressionTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.SpeechEngineRegressionTest",
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.stt.KeywordSpotterConfigTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.stt.SherpaOmnilingualResolverTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.stt.SherpaWhisperResolverTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.stt.TranscriptQualityTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.VoiceActivityPolicyTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.VoiceAgentRuntimeTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.VoiceCapturePolicyTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.VoiceConfirmationPolicyTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.VoiceControlRegressionTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.VoiceLanguageMappingTest",
+      "tests": "14",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.WakeActivationGateTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.unoone.agent.voice.WakePhrasesTest",
+      "tests": "12",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    }
+  ],
+  "junitCountsProvisional": false,
+  "junitTotals": {
+    "tests": 717,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 717
+  },
+  "apks": [
+    {
+      "file": "unoone-v3-debug.apk",
+      "bytes": 392414616,
+      "sha256": "c65283f1bbdb8aac96597e30ca1f9bbe2715f9f859d7b923d448c897a860854e",
+      "browserAssets": [
+        {
+          "path": "assets/page-agent/unoone-page-agent.js",
+          "sha256": "695f15c52c003cbe30f26cb7caf6ba9739c978fb8ac075705e182f9b91c5648c",
+          "bytes": 4296
+        }
+      ]
+    },
+    {
+      "file": "unoone-v3-androidTest.apk",
+      "bytes": 2649261,
+      "sha256": "066f9c1b7997bce3a784908cd407cf3e9b2d1eb3e29b7081f398ab72d143d683",
+      "browserAssets": []
+    }
+  ]
+}

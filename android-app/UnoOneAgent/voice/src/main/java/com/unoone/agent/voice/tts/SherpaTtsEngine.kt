@@ -1,6 +1,8 @@
 package com.unoone.agent.voice.tts
 
 import android.content.Context
+import com.unoone.agent.modelmanager.ModelType
+import com.unoone.agent.voice.stt.SpeechModelIntegrity
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
@@ -62,6 +64,7 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
     @Synchronized
     fun initialize(): Result<Unit> {
         return try {
+            SpeechModelIntegrity.requireVerified(context, modelDir, ModelType.tts)
             Logger.i("SherpaTtsEngine: Checking model files in $modelDir")
             val model = File("$modelDir/model.onnx")
             val tokens = File("$modelDir/tokens.txt")
@@ -112,22 +115,23 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
     @Synchronized
     private fun speakAtEpoch(text: String, requestEpoch: Long): Result<Unit> {
         if (text.isBlank()) return Result.Success(Unit)
-        if (requestEpoch != speechEpoch.get()) return Result.Success(Unit)
+        if (requestEpoch != speechEpoch.get()) return Result.Error("Speech interrupted")
 
         return when (val synthesis = synthesizeInternal(text)) {
             is Result.Error -> synthesis
             is Result.Success -> {
                 val audio = synthesis.data
-            // stop() may have run while the native, non-cancellable generate() call was active.
-            if (requestEpoch != speechEpoch.get()) return Result.Success(Unit)
-                player.playPcm(audio.samples, audio.sampleRate)
-            if (requestEpoch != speechEpoch.get()) {
-                player.stop()
-                return Result.Success(Unit)
-            }
-            lastPlaybackDurationMs = audio.samples.size.toLong() * 1_000L / audio.sampleRate
-            Logger.i("SherpaTtsEngine: Generated ${audio.samples.size} samples @ ${audio.sampleRate}Hz")
-            Result.Success(Unit)
+                // Native generation is non-cancellable; never play a superseded result.
+                if (requestEpoch != speechEpoch.get()) return Result.Error("Speech interrupted")
+                val playback = player.playPcm(audio.samples, audio.sampleRate)
+                if (playback is Result.Error) return playback
+                if (requestEpoch != speechEpoch.get()) {
+                    player.stop()
+                    return Result.Error("Speech interrupted")
+                }
+                lastPlaybackDurationMs = audio.samples.size.toLong() * 1_000L / audio.sampleRate
+                Logger.i("SherpaTtsEngine: Generated ${audio.samples.size} samples @ ${audio.sampleRate}Hz")
+                Result.Success(Unit)
             }
         }
     }
@@ -163,13 +167,13 @@ class SherpaTtsEngine(private val context: Context, private val modelDir: String
         val requestEpoch = speechEpoch.get()
         return synthesisMutex.withLock {
             // Waiting for this mutex is cancellable, unlike waiting on @Synchronized native work.
-            if (requestEpoch != speechEpoch.get()) return@withLock Result.Success(Unit)
-            val result = withContext(Dispatchers.IO) { speakAtEpoch(text, requestEpoch) }
-            if (result is Result.Success && requestEpoch == speechEpoch.get()) {
-                delay((lastPlaybackDurationMs + 100L).coerceAtMost(timeoutMs))
-                player.finishPcmPlayback()
+            if (requestEpoch != speechEpoch.get()) return@withLock Result.Error("Speech interrupted")
+            awaitPcmPlayback(timeoutMs, { requestEpoch == speechEpoch.get() },
+                { player.finishPcmPlayback() }) {
+                lastPlaybackDurationMs = 0L
+                val result: Result<Unit> = withContext(Dispatchers.IO) { speakAtEpoch(text, requestEpoch) }
+                result to lastPlaybackDurationMs
             }
-            result
         }
     }
 

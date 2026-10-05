@@ -1,0 +1,4 @@
+Load time: 260.71 ms
+[PASS] "介绍一下北京的首都" -> encode -> decode -> "介绍一下北京的首都"
+[PASS] "Hello World" -> encode -> decode -> "Hello World"
+[PASS] "The quick brown fox" -> encode -> decode -> "The quick brown fox"

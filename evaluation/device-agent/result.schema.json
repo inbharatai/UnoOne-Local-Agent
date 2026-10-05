@@ -1,0 +1,291 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "identity",
+    "physicalQualification",
+    "offlineEvidence",
+    "results"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "apkSha256",
+        "buildCommit",
+        "buildVariant",
+        "modelArtifact",
+        "modelSha256",
+        "runtimeVersion",
+        "requestedBackend",
+        "actualBackend",
+        "deviceSerial",
+        "deviceModel",
+        "androidBuildFingerprint",
+        "osVersion"
+      ],
+      "properties": {
+        "apkSha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "buildCommit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "buildVariant": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelArtifact": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelSha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "runtimeVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requestedBackend": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "actualBackend": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deviceSerial": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deviceModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "androidBuildFingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "osVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "physicalQualification": {
+      "enum": [
+        "pending",
+        "failed",
+        "qualified"
+      ]
+    },
+    "offlineEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "airplaneModeManuallyVerified",
+        "wifiAndMobileDataManuallyOff",
+        "connectionCaptureArtifact",
+        "noInferenceConnectionsVerified"
+      ],
+      "properties": {
+        "airplaneModeManuallyVerified": {
+          "type": "boolean"
+        },
+        "wifiAndMobileDataManuallyOff": {
+          "type": "boolean"
+        },
+        "connectionCaptureArtifact": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "noInferenceConnectionsVerified": {
+          "type": "boolean"
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "taskId",
+          "status",
+          "metrics",
+          "evidence",
+          "reason"
+        ],
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "skipped",
+              "pass",
+              "partial",
+              "fail",
+              "blocked"
+            ]
+          },
+          "metrics": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "taskSuccess",
+              "partial",
+              "wrongAction",
+              "falseSuccess",
+              "hallucinatedNode",
+              "grounding",
+              "retries",
+              "latencyMs",
+              "ramPeakKb",
+              "heatPeakC",
+              "batteryDeltaPct",
+              "crash",
+              "anr"
+            ],
+            "properties": {
+              "taskSuccess": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "partial": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "wrongAction": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "falseSuccess": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "hallucinatedNode": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "grounding": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1
+              },
+              "retries": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "latencyMs": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "ramPeakKb": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "heatPeakC": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "batteryDeltaPct": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "crash": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "anr": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

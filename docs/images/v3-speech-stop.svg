@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="816" viewBox="0 0 1120 816" role="img" aria-labelledby="title desc"><title id="title">Speech ingress and the conditional Stop path</title><desc id="desc">Local speech passes call and microphone ownership gates. During TTS, only an available and actually enabled OS acoustic echo cancellation effect admits wake-qualified stop-only capture. Otherwise capture stops and buffers are discarded; UI Stop is the fallback. Stop bypasses the busy lock, invalidates ownership and cancels work. Acoustic qualification is pending.</desc>
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#496477" stroke-width="1.5"/></marker></defs>
+<rect width="1120" height="816" fill="#f4f7fa"/>
+<style>text{font-family:Arial,Helvetica,sans-serif;fill:#172d3e} .label{font-size:14px;letter-spacing:1.8px;font-weight:700} .head{font-size:32px;font-weight:700} .body{font-size:19px} .small{font-size:16px} .bold{font-size:21px;font-weight:700}</style>
+<text x="40" y="38" class="label">UNOONE V3 / CONCEPTUAL ARCHITECTURE</text>
+<text x="40" y="84" class="head">Speech ingress and the conditional Stop path</text>
+<text x="40" y="118" class="small">Source design — not hardware imagery, measured performance or live telemetry.</text>
+<rect x="40" y="154" width="310" height="120" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="60" y="186" class="bold">Local speech input</text>
+<text x="60" y="216" class="body">Verified speech assets</text>
+<text x="60" y="242" class="body">Signed PCM16 endpoint</text>
+<rect x="405" y="154" width="675" height="120" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="425" y="186" class="bold">Call + microphone ownership gates</text>
+<text x="425" y="216" class="body">Active call or another capture owner blocks service capture.</text>
+<text x="425" y="242" class="body">Checks are repeated across capture and asynchronous decode.</text>
+<path d="M350 214 L405 214" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="40" y="324" width="310" height="152" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="60" y="356" class="bold">Ordinary listening</text>
+<text x="60" y="386" class="body">Local wake / ASR</text>
+<text x="60" y="412" class="body">Guarded command routing</text>
+<text x="60" y="438" class="body">Non-speaking inference:</text>
+<text x="60" y="464" class="body">stop-only monitoring</text>
+<rect x="405" y="324" width="675" height="152" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="425" y="356" class="bold">During TTS: AEC available AND actually enabled?</text>
+<text x="425" y="386" class="body">YES → wake-qualified, exact Stop/Cancel only</text>
+<text x="425" y="412" class="body">NO → stop capture; discard buffers; use UI Stop</text>
+<text x="425" y="438" class="body">No approvals, compound commands or normal commands here.</text>
+<path d="M740 274 L740 324" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M480 274 V288 H195 V324" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="40" y="532" width="310" height="112" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="60" y="564" class="bold">UI Stop fallback</text>
+<text x="60" y="594" class="body">Does not depend on AEC</text>
+<text x="60" y="620" class="body">or microphone recognition</text>
+<rect x="405" y="532" width="675" height="112" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="425" y="564" class="bold">Priority native Stop ingress</text>
+<text x="425" y="594" class="body">Before busy lock → revoke epoch / queued handoff generation</text>
+<text x="425" y="620" class="body">Cancel work; deny pending confirmation; drain browser work</text>
+<path d="M740 476 L740 532" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M350 588 L405 588" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="40" y="690" width="1040" height="76" rx="9" fill="white" stroke="#a87936" stroke-width="1.5" stroke-dasharray="7 5"/>
+<text x="60" y="722" class="bold">Physical speech qualification: PENDING</text>
+<text x="40" y="793" class="small">OS effect enabled ≠ measured echo suppression. Human-audio accuracy and native Stop latency are unmeasured.</text>
+</svg>

@@ -32,7 +32,7 @@ internal class LiteRtCancellableInference(private val owner: String) {
 
     fun cancelActive(reason: String) {
         val conversation = activeConversation ?: return
-        Logger.i("$owner: cancelling native inference ($reason)")
+        Logger.i("$owner: cancelling native inference")
         runCatching { conversation.cancelProcess() }
             .onFailure { Logger.w("$owner: native cancel failed: ${it.message}") }
     }
@@ -41,9 +41,14 @@ internal class LiteRtCancellableInference(private val owner: String) {
     suspend fun awaitNativeIdle(timeoutMs: Long = NATIVE_CANCEL_GRACE_MS): Boolean {
         val completion = activeCompletion ?: return true
         cancelActive("close requested")
-        return withContext(NonCancellable) {
+        val idle = withContext(NonCancellable) {
             withTimeoutOrNull(timeoutMs) { completion.await() } != null
         }
+        if (idle && activeCompletion === completion) {
+            activeConversation = null
+            activeCompletion = null
+        }
+        return idle
     }
 
     suspend fun send(

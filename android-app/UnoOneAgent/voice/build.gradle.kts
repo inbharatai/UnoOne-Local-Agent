@@ -30,6 +30,7 @@ android {
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":modelmanager"))
     implementation(project(":observability"))
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

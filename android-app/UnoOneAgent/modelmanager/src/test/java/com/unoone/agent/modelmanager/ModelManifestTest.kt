@@ -84,6 +84,23 @@ class ModelManifestTest {
     """.trimIndent()
 
     @Test
+    fun shippedManifestPinsBothPlanningArtifacts() {
+        val manifest = loader.parse(java.io.File("src/main/assets/models_manifest.json").readText())
+        assertEquals(5, manifest.manifestVersion)
+        assertEquals(3, manifest.models.count { it.type == ModelType.llm })
+        val e2b = manifest.find("gemma-4-e2b")!!
+        assertEquals("brain/gemma-4-e2b", e2b.folder)
+        assertEquals("gemma-4-E2B-it.litertlm", e2b.files.single().name)
+        assertEquals(2588147712L, e2b.files.single().sizeBytes)
+        assertEquals("181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c", e2b.files.single().sha256)
+        assertEquals("https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm", e2b.files.single().url)
+        val e4b = manifest.find("gemma-4-e4b")!!
+        assertEquals(3659530240L, e4b.files.single().sizeBytes)
+        assertEquals(E4bCleanupGate.SHA256, e4b.files.single().sha256)
+        assertEquals("https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/28299f30ee4d43294517a4ac93abd6163412f07f/gemma-4-E4B-it.litertlm", e4b.files.single().url)
+    }
+
+    @Test
     fun parsesCurrentGemmaAndSpeechModels() {
         val manifest = loader.parse(sample)
         assertEquals(3, manifest.manifestVersion)

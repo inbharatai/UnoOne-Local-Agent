@@ -11,6 +11,7 @@ import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.tool
 import com.unoone.agent.core.model.BackendPreference
 import com.unoone.agent.core.model.BackendQualificationChoice
+import com.unoone.agent.core.model.BrainModelId
 import com.unoone.agent.core.model.BrainModelSpec
 import com.unoone.agent.core.model.CanonicalToolRegistry
 import com.unoone.agent.core.model.E4bRuntimeBudgets
@@ -87,6 +88,10 @@ class GemmaPlanner(
     @Volatile
     private var loadedSpec: BrainModelSpec? = null
 
+    @Volatile private var cleanupUncertain = false
+    @Volatile private var nativeQuarantined = false
+    private val retainedConversations = mutableListOf<Conversation>()
+
     private val nativeInference = LiteRtCancellableInference("GemmaPlanner")
 
     fun isLoaded(): Boolean = isLoaded
@@ -116,15 +121,20 @@ class GemmaPlanner(
      * to CPU so the brain still loads instead of hard-failing. Must be called from a coroutine
      * (initialization is slow). Never leaves [isLoaded] true after a partial failure.
      */
-    suspend fun load(modelPath: String, spec: BrainModelSpec): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun load(modelPath: String, spec: BrainModelSpec, ownerToken: String = E4bRuntimeCoordinator.PHONE_OWNER): Result<Unit> = withContext(Dispatchers.IO) {
         val loadStart = System.currentTimeMillis()
         // Guard against concurrent loads / model replacement: two callers could both pass the
         // isLoaded check, both close the existing engine, and both initialize — leaking one engine.
         // Also prevents simultaneous inference and model replacement.
         E4bRuntimeCoordinator.operationMutex.withLock {
+            if (!E4bRuntimeCoordinator.canReplaceAllocation(this@GemmaPlanner, ownerToken)) {
+                return@withLock Result.Error("Native allocation owned or reserved by another runtime")
+            }
             E4bRuntimeCoordinator.transition(E4bRuntimeState.LOADING_PHONE, PHONE_OWNER, spec.manifestId)
-            if (isLoaded) {
-                closeInternal()
+            check(nativeInference.awaitNativeIdle()) { "Native inference still active; load refused" }
+            if (!closeInternal()) return@withLock Result.Error(lastLoadError)
+            if (!E4bRuntimeCoordinator.claimAllocation(this@GemmaPlanner, ownerToken, PHONE_OWNER)) {
+                return@withLock Result.Error("Native allocation owned or reserved by another runtime")
             }
             lastLoadError = ""
             try {
@@ -132,6 +142,7 @@ class GemmaPlanner(
                 val backends = backendsToTry(spec.preferredBackend)
                 val (newEngine, backend) = tryLoadBackends(modelPath, backends, spec)
                     ?: run {
+                        E4bRuntimeCoordinator.acknowledgeClosed(this@GemmaPlanner)
                         lastLoadError = "${spec.displayName} failed to load on any backend (${backendsNames(backends)})"
                         return@withLock Result.Error(lastLoadError)
                     }
@@ -152,9 +163,6 @@ class GemmaPlanner(
                 Logger.e("GemmaPlanner: failed to load ${spec.displayName}", e)
                 // Full cleanup on any partial failure — never leave isLoaded true with no engine.
                 closeInternal()
-                isLoaded = false
-                activeBackend = ""
-                loadedSpec = null
                 lastLoadError = e.message ?: "Unknown load error"
                 E4bRuntimeCoordinator.transition(E4bRuntimeState.FAILED, PHONE_OWNER, lastLoadError)
                 Result.Error("Failed to load ${spec.displayName}: ${e.message}", e)
@@ -207,6 +215,8 @@ class GemmaPlanner(
                 EngineConfig(
                     modelPath = modelPath,
                     backend = backend,
+                    visionBackend = if (spec.id == BrainModelId.GEMMA_4_E2B) Backend.CPU() else null,
+                    maxNumImages = if (spec.id == BrainModelId.GEMMA_4_E2B) 1 else null,
                     maxNumTokens = E4bRuntimeBudgets.phone(spec).contextTokens
                 )
             )
@@ -216,7 +226,13 @@ class GemmaPlanner(
             Logger.w("GemmaPlanner: ${backendName(backend)} backend failed (${e.message}); will try fallback")
             try {
                 candidate?.close()
-            } catch (_: Exception) {
+            } catch (cleanup: Exception) {
+                cleanupUncertain = true
+                nativeQuarantined = true
+                E4bRuntimeCoordinator.quarantine(this)
+                engine = candidate
+                isLoaded = candidate != null // Residency proof, even when initialization failed.
+                throw cleanup
             }
             null
         }
@@ -305,40 +321,53 @@ class GemmaPlanner(
      * (`Message.user(Contents.of(Content.Text(prompt), Content.ImageBytes(bytes)))`), and returns the
      * model's free-text scene description.
      *
-     * **Honesty (INACTIVE with the shipped model):** the loaded Gemma 4 E4B `.litertlm`
-     * artifact is text-only — they have no vision weights — so this method either
-     * errors or ignores the image. The orchestrator does NOT call it unless a vision-capable model
-     * is loaded (gated by `VISION_MODEL_ENABLED`); when it is called and fails, the caller falls
-     * back to the always-available OCR + context description
-     * ([com.unoone.agent.core.agent.SceneDescriptionBuilder]). Wiring this against the real AAR
-     * (`Content.ImageBytes` + `EngineConfig.visionBackend`/`maxNumImages`) means a future
-     * vision-capable `.litertlm` artifact lights the path up without code changes here.
+     * E2B initializes the CPU vision executor and accepts actual encoded image bytes.
+     * E4B keeps its existing text-only runtime configuration and explicitly rejects this path.
+     * Device qualification remains required; no screenshot/OCR fallback is represented as vision.
      *
      * Device-time-only (not JVM-testable — litertlm bytecode newer than JDK 17). The same inference
      * [Mutex] + [INFERENCE_TIMEOUT_MS] bound + close-on-timeout discipline as [plan] applies.
      */
-    suspend fun describeSceneWithVision(imageBytes: ByteArray, aspect: String): Result<String> {
-        return runPhoneInference("vision") { activeEngine, spec ->
-            val prompt = if (aspect.isBlank()) {
-                "Describe what is on the phone screen in one or two short sentences for a user who cannot see it."
-            } else {
-                "Describe what is on the phone screen in one or two short sentences, focusing on: $aspect"
+    suspend fun describeSceneWithVision(imageBytes: ByteArray, aspect: String): Result<String> =
+        controllerRequest(VISION_SYSTEM_INSTRUCTION,
+            "Describe the screen, focusing on: ${aspect.take(500)}", imageBytes)
+
+    /** Isolated tool-less request on the shared engine, never a second engine. */
+    internal suspend fun controllerRequest(system: String, prompt: String, image: ByteArray? = null): Result<String> =
+        runPhoneInference("device controller") { activeEngine, spec ->
+            require(system.length <= 4096 && prompt.length <= 10000) { "Controller context exceeds budget" }
+            if (image != null) {
+                check(spec.id == BrainModelId.GEMMA_4_E2B) { "Loaded profile has no enabled vision runtime" }
+                require(image.isNotEmpty() && image.size <= 8 * 1024 * 1024) { "Missing or oversized screenshot" }
             }
-            val userMessage = Message.user(Contents.of(Content.Text(prompt), Content.ImageBytes(imageBytes)))
-            val conv = activeEngine.createConversation(
-                ConversationConfig(systemInstruction = Contents.of(VISION_SYSTEM_INSTRUCTION))
-            )
-            val responseMessage = try {
-                nativeInference.send(
-                    conv, userMessage, INFERENCE_TIMEOUT_MS,
-                    E4bRuntimeBudgets.chat(spec).outputTokens
-                )
+            val conv = activeEngine.createConversation(ConversationConfig(
+                systemInstruction = Contents.of(system), tools = emptyList(), automaticToolCalling = false
+            ))
+            val reducer = StreamingTextReducer()
+            val emittedTools = java.util.concurrent.atomic.AtomicBoolean(false)
+            try {
+                val parts = mutableListOf<Content>(Content.Text(prompt))
+                image?.let { parts.add(Content.ImageBytes(it)) }
+                val response = nativeInference.send(conv, Message.user(Contents.of(parts)),
+                    INFERENCE_TIMEOUT_MS, E4bRuntimeBudgets.phone(spec).outputTokens) { partial ->
+                    if (partial.toolCalls.isNotEmpty()) emittedTools.set(true)
+                    extractRawText(partial)?.let(reducer::onSnapshot)
+                }
+                check(!emittedTools.get() && response.toolCalls.isEmpty()) { "Controller must not emit tool calls" }
+                val text = reducer.fullText().trim().ifBlank { extractText(response).orEmpty() }
+                check(text.isNotBlank()) { "Model returned no controller response" }
+                Result.Success(text)
             } finally {
-                conv.close()
+                closeRequestConversation(conv)
             }
-            val text = extractText(responseMessage) ?: ""
-            if (text.isBlank()) Result.Error("Gemma vision produced no description")
-            else Result.Success(text)
+        }
+
+    /** Retain native handles rather than closing beneath an unacknowledged JNI callback. */
+    private suspend fun closeRequestConversation(conv: Conversation) {
+        withContext(kotlinx.coroutines.NonCancellable) {
+            if (nativeInference.awaitNativeIdle()) {
+                runCatching { conv.close() }.onFailure { retainedConversations.add(conv); cleanupUncertain = true; nativeQuarantined = true }
+            } else { retainedConversations.add(conv); nativeQuarantined = true }
         }
     }
 
@@ -402,7 +431,7 @@ class GemmaPlanner(
                     SAFETY_OUTPUT_TOKENS
                 )
             } finally {
-                conv.close()
+                closeRequestConversation(conv)
                 judgeConversation = null
             }
             val text = extractText(responseMessage) ?: ""
@@ -477,7 +506,7 @@ class GemmaPlanner(
                 extractText(responseMessage).orEmpty()
             }
         } finally {
-            conv.close()
+            closeRequestConversation(conv)
             chatConversation = null
         }
     }
@@ -488,18 +517,27 @@ class GemmaPlanner(
     ): Result<T> = E4bRuntimeCoordinator.operationMutex.withLock {
         val activeEngine = engine ?: return@withLock Result.Error("Gemma model not loaded")
         val spec = loadedSpec ?: return@withLock Result.Error("Gemma model profile missing")
-        E4bRuntimeCoordinator.transition(E4bRuntimeState.PHONE_INFERENCING, PHONE_OWNER, operation)
         try {
+            check(!nativeQuarantined && !cleanupUncertain) { "Native engine quarantined; request refused" }
+            check(nativeInference.awaitNativeIdle()) { nativeQuarantined = true; "Native inference still active; request refused" }
+            val iterator = retainedConversations.iterator()
+            try { while (iterator.hasNext()) { iterator.next().close(); iterator.remove() } }
+            catch (e: Exception) { cleanupUncertain = true; nativeQuarantined = true; throw e }
+            E4bRuntimeCoordinator.transition(E4bRuntimeState.PHONE_INFERENCING, PHONE_OWNER, operation)
             block(activeEngine, spec)
         } catch (error: TimeoutCancellationException) {
             Logger.w("GemmaPlanner: $operation timed out after ${INFERENCE_TIMEOUT_MS}ms")
             Result.Error("Gemma $operation timed out", error)
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
         } catch (error: Exception) {
-            Logger.e("GemmaPlanner: $operation failed", error)
+            Logger.e("GemmaPlanner: $operation failed")
             Result.Error("Gemma $operation failed: ${error.message}", error)
         } finally {
+            val idle = withContext(kotlinx.coroutines.NonCancellable) { nativeInference.awaitNativeIdle() }
+            if (!idle) nativeQuarantined = true
             E4bRuntimeCoordinator.transition(
-                if (isLoaded) E4bRuntimeState.PHONE_READY else E4bRuntimeState.FAILED,
+                if (isLoaded && idle && !nativeQuarantined && !cleanupUncertain && retainedConversations.isEmpty()) E4bRuntimeState.PHONE_READY else E4bRuntimeState.FAILED,
                 PHONE_OWNER,
                 activeBackend
             )
@@ -519,8 +557,8 @@ class GemmaPlanner(
             )
         )
 
-    private fun resetPlanningConversation() {
-        runCatching { conversation?.close() }
+    private suspend fun resetPlanningConversation() {
+        conversation?.let { closeRequestConversation(it) }
         conversation = null
     }
 
@@ -551,7 +589,7 @@ class GemmaPlanner(
             upper.contains("NEEDS_CONFIRM") || upper.contains("NEEDS CONFIRM") -> SafetyVerdict.NEEDS_CONFIRM
             upper.contains("SAFE") -> SafetyVerdict.SAFE
             else -> {
-                Logger.w("GemmaPlanner: judge verdict unparseable: ${text.take(80)}")
+                Logger.w("GemmaPlanner: judge verdict unparseable")
                 SafetyVerdict.UNCERTAIN
             }
         }
@@ -586,12 +624,12 @@ class GemmaPlanner(
                 Logger.w("GemmaPlanner: rejecting malformed args for '$name': $validation")
                 return Result.Error("Rejected malformed arguments for $name: $validation")
             }
-            Logger.d("GemmaPlanner: tool=$name, args=$args")
+            Logger.d("GemmaPlanner: validated tool proposal")
             return Result.Success(ToolCall(name, args))
         }
         // No tool selected — surface the model text as a speak_response so the user hears it.
         val text = extractText(responseMessage) ?: "I'm not sure how to do that yet."
-        Logger.d("GemmaPlanner: no tool call; speaking: $text")
+        Logger.d("GemmaPlanner: text response received")
         return Result.Success(ToolCall("speak_response", JsonObject(mapOf("text" to JsonPrimitive(text)))))
     }
 
@@ -631,48 +669,46 @@ class GemmaPlanner(
         nativeInference.cancelActive(reason)
     }
 
-    suspend fun close() {
+    suspend fun close(): Boolean {
         requestCancel("engine close")
-        E4bRuntimeCoordinator.operationMutex.withLock {
+        return E4bRuntimeCoordinator.operationMutex.withLock {
             E4bRuntimeCoordinator.transition(E4bRuntimeState.UNLOADING, PHONE_OWNER)
             if (!nativeInference.awaitNativeIdle()) {
                 lastLoadError = "Native inference did not stop; engine close refused to prevent a JNI use-after-free"
                 E4bRuntimeCoordinator.transition(E4bRuntimeState.FAILED, PHONE_OWNER, lastLoadError)
-                return@withLock
+                return@withLock false
             }
-            withContext(Dispatchers.IO) { closeInternal() }
+            if (!withContext(Dispatchers.IO) { closeInternal() }) return@withLock false
             E4bRuntimeCoordinator.transition(E4bRuntimeState.UNLOADED)
+            true
         }
     }
 
-    private fun closeInternal() {
-        try {
-            conversation?.close()
+    private fun closeInternal(): Boolean {
+        // A throwing close may already have freed native memory. No retry until process restart.
+        if (cleanupUncertain) { E4bRuntimeCoordinator.quarantine(this); E4bRuntimeCoordinator.transition(E4bRuntimeState.FAILED, PHONE_OWNER, "Native cleanup quarantined; restart required"); return false }
+        return try {
+            val iterator = retainedConversations.iterator()
+            while (iterator.hasNext()) { iterator.next().close(); iterator.remove() }
+            conversation?.close(); conversation = null
+            judgeConversation?.close(); judgeConversation = null
+            chatConversation?.close(); chatConversation = null
+            engine?.close(); engine = null
+            isLoaded = false
+            loadedSpec = null
+            activeBackend = ""
+            nativeQuarantined = false
+            E4bRuntimeCoordinator.acknowledgeClosed(this)
+            true
         } catch (e: Exception) {
-            Logger.w("GemmaPlanner: error closing conversation: ${e.message}")
+            E4bRuntimeCoordinator.quarantine(this)
+            cleanupUncertain = true
+            nativeQuarantined = true
+            E4bRuntimeCoordinator.transition(E4bRuntimeState.FAILED, PHONE_OWNER)
+            lastLoadError = "Native cleanup refused/failed: ${e.message}"
+            Logger.w("GemmaPlanner: $lastLoadError")
+            false
         }
-        try {
-            judgeConversation?.close()
-        } catch (e: Exception) {
-            Logger.w("GemmaPlanner: error closing judge conversation: ${e.message}")
-        }
-        try {
-            chatConversation?.close()
-        } catch (e: Exception) {
-            Logger.w("GemmaPlanner: error closing chat conversation: ${e.message}")
-        }
-        try {
-            engine?.close()
-        } catch (e: Exception) {
-            Logger.w("GemmaPlanner: error closing engine: ${e.message}")
-        }
-        conversation = null
-        judgeConversation = null
-        chatConversation = null
-        engine = null
-        isLoaded = false
-        loadedSpec = null
-        activeBackend = ""
     }
 
     private fun extractText(message: Message): String? =

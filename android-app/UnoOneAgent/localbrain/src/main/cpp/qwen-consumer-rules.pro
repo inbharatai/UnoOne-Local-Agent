@@ -1,0 +1,3 @@
+-keep class com.unoone.agent.localbrain.qwen.QwenMnnRuntime { *; }
+-keep class * implements com.unoone.agent.localbrain.qwen.QwenMnnRuntime$ChunkCallback { *; }
+-keep interface com.unoone.agent.localbrain.qwen.QwenMnnRuntime$ChunkCallback { *; }

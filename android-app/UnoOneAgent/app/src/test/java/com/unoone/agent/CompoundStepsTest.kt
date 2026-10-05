@@ -80,6 +80,39 @@ class CompoundStepsTest {
     }
 
     @Test
+    fun failedDependencyStopsBeforeLaterMutationAndPersistsPartial() = runBlocking {
+        // Enter the actual compound runner directly to supply a deterministic executor error.
+        // Empty summarize_text is Result.Error; neither parser nor model availability is involved.
+        val args = kotlinx.serialization.json.Json.parseToJsonElement("""
+            {"steps":[
+              {"tool":"create_note","args":{"title":"prefix","content":"saved"}},
+              {"tool":"summarize_text","args":{"text":""}},
+              {"tool":"create_note","args":{"title":"must-not-run","content":"bad"}}
+            ]}
+        """) as kotlinx.serialization.json.JsonObject
+        val call = com.unoone.agent.core.model.ToolCall("compound", args)
+        // This private helper is normally entered after processCommand creates an owned generation.
+        // Generation zero is intentionally cancelled; reproduce the real entry precondition.
+        val runField = AgentOrchestrator::class.java.getDeclaredField("currentRunId").apply { isAccessible = true }
+        (runField.get(orchestrator) as java.util.concurrent.atomic.AtomicLong).incrementAndGet()
+        kotlin.coroutines.intrinsics.suspendCoroutineUninterceptedOrReturn<Unit> { continuation ->
+            val method = AgentOrchestrator::class.java.declaredMethods.single {
+                it.name == "handleCompoundCommand"
+            }
+            method.isAccessible = true
+            method.invoke(orchestrator, call, "compound regression", InputType.TEXT,
+                com.unoone.agent.storage.entity.ActionLogEntity(inputText = "compound regression"),
+                System.currentTimeMillis(), continuation)
+        }
+        assertEquals(listOf("prefix"), db.noteDao().recent(100).map { it.title })
+        assertFalse(orchestrator.timelineSteps.value.any { it.detail == "Compound complete" })
+        val logs = db.actionLogDao().getRecentSync().filter { it.selectedTool == "compound" }
+        assertEquals(1, logs.size)
+        assertEquals("partial", logs.single().status)
+        assertTrue(logs.single().errorMessage.orEmpty().contains("Remaining steps were not run"))
+    }
+
+    @Test
     fun perStepSafetyStopsCompoundWhenAStepIsCancelled() = runBlocking {
         // Step 1 (create_note) is DIRECT and runs. Step 2 (open_url) is CONFIRM; denying the
         // confirmation must cancel the compound and stop further execution — but step 1 already

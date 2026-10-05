@@ -44,9 +44,13 @@
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
-    <!-- Android 11+ package visibility for the small, curated offline app launcher map. This is
-         intentionally exact-package visibility, not QUERY_ALL_PACKAGES. -->
+    <!-- Android 11+ visibility: launcher activities plus existing explicit integrations.
+         No QUERY_ALL_PACKAGES permission or non-launchable inventory access. -->
     <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <package android:name="com.whatsapp" />
         <package android:name="com.whatsapp.w4b" />
         <package android:name="com.google.android.gm" />

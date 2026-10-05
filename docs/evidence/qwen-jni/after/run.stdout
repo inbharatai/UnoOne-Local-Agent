@@ -1,0 +1,18 @@
+ACTUAL_HOST os=Linux arch=amd64
+STATIC_UNMEASURED_BACKEND_LABEL=MNN CPU arm64 / 024a946b0b8fcf87c8a418229fadd4cd7858ffba
+PASS load/config-receipt
+PASS stale-permit-before-generate
+PASS stale-no-callback
+PASS empty-image-size
+PASS oversize-image-size
+PASS invalid-image-header
+PASS over-context-before-decoder
+PASS text-json-full-output
+PASS real-image-bytes-full-output-32
+PASS real-image-bytes-full-output-256
+PASS close-ack
+PASS reload
+PASS reload-close-ack
+FINAL_CLOSE_ACK=true
+ALL_HARNESS_ASSERTIONS_PASSED
+The device supports: i8sdot:0, fp16:0, i8mm: 0, sve2: 0, sme2: 0, perfCores: 0

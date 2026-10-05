@@ -1,0 +1,134 @@
+[
+  {
+    "name": "compile-graph-verifier",
+    "command": [
+      "/usr/bin/c++",
+      "-O0",
+      "-std=c++11",
+      "-I<MNN_SOURCE>/schema/current",
+      "-I<MNN_SOURCE>/3rd_party/flatbuffers/include",
+      "<HOST_EVIDENCE>/verify_graph.cpp",
+      "-o",
+      "<HOST_EVIDENCE>/verify_graph"
+    ],
+    "started_epoch": 1791221728.5386221,
+    "exit_code": 0,
+    "guard_reason": null,
+    "elapsed_seconds": 3.0167362809988845,
+    "peak_rss_kib": 241340,
+    "sampled_peak_rss_kib": 3124,
+    "user_seconds": 2.433119,
+    "system_seconds": 0.372339,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "graph-verification",
+    "command": [
+      "<HOST_EVIDENCE>/verify_graph",
+      "<MODEL_DIR>/llm.mnn",
+      "<MODEL_DIR>/visual.mnn"
+    ],
+    "started_epoch": 1791221731.5568414,
+    "exit_code": 0,
+    "guard_reason": null,
+    "elapsed_seconds": 0.50498818199776,
+    "peak_rss_kib": 8320,
+    "sampled_peak_rss_kib": 3884,
+    "user_seconds": 0.261659,
+    "system_seconds": 0.007909,
+    "stdout_sha256": "1e09dacef1ba84d343be958c38216f546c66c00d7d8b4527e4b96c360d49f273",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "tokenizer",
+    "command": [
+      "<HOST_EVIDENCE>/build/tokenizer_demo",
+      "<MODEL_DIR>/tokenizer.txt",
+      "test"
+    ],
+    "started_epoch": 1791221732.0625808,
+    "exit_code": 0,
+    "guard_reason": null,
+    "elapsed_seconds": 0.5040567260002717,
+    "peak_rss_kib": 77016,
+    "sampled_peak_rss_kib": 73896,
+    "user_seconds": 0.258508,
+    "system_seconds": 0.053241,
+    "stdout_sha256": "d92b1e2d0f1960a82107e84f99c7e0db143244ff53f35d774c2011cd97e35249",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "vision-tokenizer",
+    "command": [
+      "<HOST_EVIDENCE>/build/tokenizer_demo",
+      "<MODEL_DIR>/tokenizer.txt",
+      "encode",
+      "<|vision_start|><|image_pad|><|vision_end|>"
+    ],
+    "started_epoch": 1791221732.5685215,
+    "exit_code": 0,
+    "guard_reason": null,
+    "elapsed_seconds": 0.5039988919997995,
+    "peak_rss_kib": 76656,
+    "sampled_peak_rss_kib": 62760,
+    "user_seconds": 0.268395,
+    "system_seconds": 0.049790999999999995,
+    "stdout_sha256": "cb847bcc15b6c5578908bee0b9dafa41c9423f31af8e2958fadf562d0fc3b76f",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "text",
+    "command": [
+      "<HOST_EVIDENCE>/build/llm_demo",
+      "<HOST_EVIDENCE>/cpu-32.json",
+      "<HOST_EVIDENCE>/text.txt"
+    ],
+    "started_epoch": 1791221733.0732422,
+    "exit_code": 0,
+    "guard_reason": null,
+    "elapsed_seconds": 20.076076348999777,
+    "peak_rss_kib": 1965240,
+    "sampled_peak_rss_kib": 1809096,
+    "user_seconds": 18.777803,
+    "system_seconds": 4.533514,
+    "stdout_sha256": "5b9b9c10b9f0668b7a62e390f46b45baa1b6e96955464cb738a89fff8a241a9e",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "json",
+    "command": [
+      "<HOST_EVIDENCE>/build/llm_demo",
+      "<HOST_EVIDENCE>/cpu-64.json",
+      "<HOST_EVIDENCE>/json.txt"
+    ],
+    "started_epoch": 1791221753.1539872,
+    "exit_code": 0,
+    "guard_reason": null,
+    "elapsed_seconds": 19.584899028999644,
+    "peak_rss_kib": 1965688,
+    "sampled_peak_rss_kib": 1819200,
+    "user_seconds": 17.829992,
+    "system_seconds": 3.964973,
+    "stdout_sha256": "40b7ff9cb2d9bb8f08762607b5e0c073c2d610fd67a4f177c72176b8cec89ac1",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "image",
+    "command": [
+      "<HOST_EVIDENCE>/build/llm_demo",
+      "<HOST_EVIDENCE>/cpu-64.json",
+      "<HOST_EVIDENCE>/image.txt"
+    ],
+    "started_epoch": 1791221772.7407863,
+    "exit_code": 0,
+    "guard_reason": null,
+    "elapsed_seconds": 19.331562491002842,
+    "peak_rss_kib": 1965308,
+    "sampled_peak_rss_kib": 1875816,
+    "user_seconds": 22.34273,
+    "system_seconds": 2.937577,
+    "stdout_sha256": "92cd48292f3ed2a1bf1070c25403634730b45ee0d6001fb3b18a27a8e0ec97e9",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

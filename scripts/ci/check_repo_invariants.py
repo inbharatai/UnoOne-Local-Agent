@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI when UnoOne V2's core architecture or integrity contracts regress.
+"""Fail CI when UnoOne V3's core architecture or integrity contracts regress.
 
 The text scan covers first-party executable source, tests and bundled manifests. Generated vendor
 bundles and lint baselines are excluded from string scanning; their source inputs and runtime safety
@@ -55,6 +55,12 @@ GEMMA_REVISION = "28299f30ee4d43294517a4ac93abd6163412f07f"
 LEGACY_GEMMA_ID = "gemma-4-e2b"
 LEGACY_GEMMA_FILE = "gemma-4-E2B-it.litertlm"
 LEGACY_GEMMA_SHA256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c"
+
+
+QWEN_ID = "qwen3.5-2b-mnn"
+QWEN_REVISION = "35781816d7b6a9dcb273a6765ac9563401951c3c"
+# Non-LFS response-byte hashes / LFS API SHA-256 metadata; not device verification.
+QWEN_FILES = {'config.json': (652, '92853033efe602f95efca3e1c05cd8b108f973c8beed417843a9671f8147ed8d'), 'export_args.json': (1040, 'a5b3a7d2c45e53c887e539259696d5fcec793637c9a3e9fbc7cd0dd008af6a87'), 'llm.mnn': (2148136, '23df98f8b341b277365e0bbca025c1d192939e3d32d7f79776352c6f32e77960'), 'llm.mnn.json': (5344018, '7131ff4f1a441add1039d371815ad94652ae6801f579591cb2f9ad90b5954025'), 'llm.mnn.weight': (1176647702, 'c93f71a2dbecf9328782bd38861656d8faa82e95e7f99607350074768a482054'), 'llm_config.json': (8692, 'a88234b36c2af0eff8e5c89667011badf71c15e30459eb0e21030a8f3f9ed240'), 'tokenizer.txt': (6465727, '7e75de1f279a10b65bd9dc1a5207205cb8993823861c4c42bbbd74e48e1c23a4'), 'visual.mnn': (488096, '88fc40a7b676e90eb2cb86d854db15cb90b9eb1f34087ab0f48c5e43572c8dac'), 'visual.mnn.weight': (195587264, '8f90e106f5b9ae9a939faed240305cfdd5c6740ae91d3fc418a990bee0cce36b')}
 
 
 def iter_active_files() -> Iterable[Path]:
@@ -113,8 +119,8 @@ def validate_model_manifest(errors: list[str]) -> set[str]:
     if not isinstance(value, dict) or set(value) != {"manifestVersion", "models"}:
         errors.append(f"{relative}: expected only manifestVersion and models top-level fields")
         return set()
-    if value.get("manifestVersion") != 3:
-        errors.append(f"{relative}: manifestVersion must be 3 for the E4B-only catalogue")
+    if value.get("manifestVersion") != 5:
+        errors.append(f"{relative}: manifestVersion must be 5 for exactly three known profiles")
     models = value.get("models")
     if not isinstance(models, list) or not models:
         errors.append(f"{relative}: models must be a non-empty array")
@@ -172,38 +178,54 @@ def validate_model_manifest(errors: list[str]) -> set[str]:
         if model_id == GEMMA_ID:
             gemma = model
 
-    if LEGACY_GEMMA_ID in ids:
-        errors.append(f"{relative}: legacy {LEGACY_GEMMA_ID} must not remain installable")
-    if len(llm_models) != 1:
-        errors.append(f"{relative}: expected exactly one installable LLM, found {len(llm_models)}")
-    if gemma is None:
-        errors.append(f"{relative}: missing {GEMMA_ID}")
-    else:
-        files = gemma.get("files")
-        artifact = files[0] if isinstance(files, list) and len(files) == 1 and isinstance(files[0], dict) else None
-        if artifact is None:
-            errors.append(f"{relative}: {GEMMA_ID} must have exactly one artifact")
-        else:
-            if artifact.get("name") != GEMMA_FILE:
-                errors.append(f"{relative}: Gemma filename mismatch")
-            if artifact.get("sizeBytes") != GEMMA_SIZE:
-                errors.append(f"{relative}: Gemma size mismatch")
-            if artifact.get("sha256") != GEMMA_SHA256:
-                errors.append(f"{relative}: Gemma SHA-256 mismatch")
-            url = str(artifact.get("url", ""))
-            if f"/resolve/{GEMMA_REVISION}/" not in url or "/resolve/main/" in url:
-                errors.append(f"{relative}: Gemma URL must pin immutable revision {GEMMA_REVISION}")
-            if "-web" in str(artifact.get("name")) or "-web" in str(artifact.get("url")):
-                errors.append(f"{relative}: web-specific E4B artifact must not be used by Android")
-
-    # The old production artifact must not accidentally survive in the active install catalogue.
-    manifest_text = json.dumps(value, sort_keys=True)
-    for legacy_value, label in (
-        (LEGACY_GEMMA_FILE, "legacy E2B filename"),
-        (LEGACY_GEMMA_SHA256, "legacy E2B SHA-256"),
-    ):
-        if legacy_value in manifest_text:
-            errors.append(f"{relative}: {label} remains in active catalogue")
+    expected = {
+        "gemma-4-e2b": ("gemma-4-E2B-it.litertlm", 2588147712, "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c", "b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1"),
+        GEMMA_ID: (GEMMA_FILE, GEMMA_SIZE, GEMMA_SHA256, GEMMA_REVISION),
+    }
+    if len(llm_models) != 3 or {m.get("id") for m in llm_models} != set(expected) | {QWEN_ID}:
+        errors.append(f"{relative}: expected exactly E2B, E4B and Qwen MNN LLM profiles")
+    for model in llm_models:
+        mid = model.get("id")
+        if mid == QWEN_ID:
+            if model.get("folder") != "brain/" + QWEN_ID or model.get("backend") != "cpu":
+                errors.append("Qwen requires exact folder and CPU backend")
+            if model.get("version") != "Qwen3.5-2B-MNN-" + QWEN_REVISION:
+                errors.append("Qwen requires pinned source version")
+            if type(model.get("minRamMb")) is not int or model["minRamMb"] < 8192:
+                errors.append("Qwen minimum RAM must be at least 8192 MB")
+            files = model.get("files", [])
+            if len(files) != 9 or any(not isinstance(f, dict) for f in files) or {f.get("name") for f in files if isinstance(f, dict)} != set(QWEN_FILES):
+                errors.append("Qwen requires all nine exact artifacts including visual, tokenizer and configs")
+            for artifact in files:
+                if not isinstance(artifact, dict) or artifact.get("name") not in QWEN_FILES:
+                    continue
+                name = artifact["name"]
+                size, sha = QWEN_FILES[name]
+                exact = {"name": name, "sizeBytes": size, "sha256": sha, "archive": False,
+                         "url": f"https://huggingface.co/taobao-mnn/Qwen3.5-2B-MNN/resolve/{QWEN_REVISION}/{name}"}
+                if artifact != exact:
+                    errors.append(f"Qwen exact artifact mismatch: {name}")
+            continue
+        if mid not in expected:
+            continue
+        name, size, sha, revision = expected[mid]
+        if model.get("folder") != "brain/" + mid:
+            errors.append(f"{mid}: wrong folder")
+        ram = model.get("minRamMb")
+        if type(ram) is not int or ram < 8192:
+            errors.append(f"{mid}: minimum RAM must be at least 8192 MB")
+        files = model.get("files")
+        if not isinstance(files, list) or len(files) != 1 or not isinstance(files[0], dict):
+            errors.append(f"{mid}: exactly one artifact required")
+            continue
+        artifact = files[0]
+        repo = name.removesuffix(".litertlm") + "-litert-lm"
+        exact_url = f"https://huggingface.co/litert-community/{repo}/resolve/{revision}/{name}"
+        for key, value in {"name": name, "sizeBytes": size, "sha256": sha, "url": exact_url, "archive": False}.items():
+            if artifact.get(key) != value:
+                errors.append(f"{mid}: exact pinned {key} mismatch")
+        if artifact.get("asset") is not None:
+            errors.append(f"{mid}: bundled artifact cannot override pinned download")
     return ids
 
 
@@ -272,8 +294,17 @@ def validate_secure_browser(errors: list[str]) -> None:
     for path in (runtime, tools, policy):
         if not path.exists():
             errors.append(f"missing required Secure Browser file: {path.relative_to(ROOT)}")
-    if runtime.exists() and "experimentalScriptExecutionTool: false" not in runtime.read_text(encoding="utf-8"):
-        errors.append("PageAgent arbitrary JavaScript execution is not explicitly disabled")
+    # V3 moves privileged orchestration out of the website realm. The old index.ts flag
+    # no longer proves the boundary; verify the actual bundle entry and native exposure.
+    adapter = ROOT / "web-runtime/page-agent-unoone/src/dom-adapter.js"
+    vite = ROOT / "web-runtime/page-agent-unoone/vite.config.ts"
+    controller = ROOT / "android-app/UnoOneAgent/securebrowser/src/main/java/com/unoone/agent/securebrowser/SecureWebViewController.kt"
+    if not adapter.is_file() or not vite.is_file() or "src/dom-adapter.js" not in vite.read_text():
+        errors.append("V3 browser must bundle the unprivileged DOM adapter")
+    elif any(token in adapter.read_text() for token in ("eval(", "new Function(", "MODEL_INVOKE", "__UNOONE_PAGE_AGENT_SESSION__", "postMessage(")):
+        errors.append("DOM adapter exposes script execution or privileged bridge authority")
+    if not controller.is_file() or any(token in controller.read_text() for token in ("addJavascriptInterface(", "addWebMessageListener(")):
+        errors.append("Native browser controller must not expose privileged calls to website JavaScript")
     if tools.exists() and "execute_javascript: null" not in tools.read_text(encoding="utf-8"):
         errors.append("PageAgent execute_javascript override is missing")
     if policy.exists():
@@ -283,20 +314,31 @@ def validate_secure_browser(errors: list[str]) -> None:
                 errors.append(f"Browser safety policy is missing {required}")
 
 
+def validate_v3_corpus(errors: list[str]) -> None:
+    # Execute schema, fixture, corpus and negative-aggregation tests, not source-text assertions.
+    import runpy
+    try:
+        validator = runpy.run_path(str(ROOT / "evaluation/device-agent/validate.py"))
+        validator["validate_corpus"]()
+    except Exception as exc:
+        errors.append(f"V3 schema/evaluation corpus: {exc}")
+
+
 def main() -> int:
     errors: list[str] = []
     scan_prohibited_text(errors)
     model_ids = validate_model_manifest(errors)
     validate_language_manifest(errors, model_ids)
     validate_secure_browser(errors)
+    validate_v3_corpus(errors)
 
     if errors:
-        print("UnoOne V2 invariant check failed:", file=sys.stderr)
+        print("UnoOne V3 invariant check failed:", file=sys.stderr)
         for error in errors:
             print(f" - {error}", file=sys.stderr)
         return 1
 
-    print("UnoOne V2 invariants passed")
+    print("UnoOne V3 invariants passed")
     return 0
 
 

@@ -1,0 +1,14 @@
+VERIFIED <MODEL_DIR>/llm.mnn ops=2257
+INPUT input_ids dtype=1 dims=1,1,2048,
+INPUT attention_mask dtype=1 dims=1,1,-1,-1,
+INPUT position_ids dtype=3 dims=3,-1,
+INPUT logits_index dtype=3 dims=1,
+OUTPUT logits
+OUTPUT hidden_states
+VERIFIED <MODEL_DIR>/visual.mnn ops=4075
+INPUT patches dtype=1 dims=1,1536,
+INPUT position_ids dtype=3 dims=2,-1,
+INPUT attention_mask dtype=1 dims=1,-1,-1,
+INPUT idx_tensor dtype=3 dims=4,-1,
+INPUT weight_tensor dtype=1 dims=4,-1,
+OUTPUT image_embeds

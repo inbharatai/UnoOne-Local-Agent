@@ -9,6 +9,8 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unoone.agent.browser.BrowserAsyncOwnership
+import com.unoone.agent.browser.PendingBrowserHandoff
 import com.unoone.agent.browser.SecureBrowserModelLease
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.onError
@@ -33,6 +35,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -85,10 +89,41 @@ class SecureBrowserViewModel(
     private val appContext = context.applicationContext
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val promptMutex = Mutex()
+    private val asyncOwnership = BrowserAsyncOwnership { com.unoone.agent.core.runtime.GlobalTaskCancellation.generation }
+    private val narrationMutex = Mutex()
+    private var voiceJob: Job? = null
+    private var narrationJob: Job? = null
+    private var voiceTicket: BrowserAsyncOwnership.Ticket? = null
+    @Volatile private var taskTicket: BrowserAsyncOwnership.Ticket? = null
+
+    // Called on the caller's thread: revoke authority BEFORE queued Main cleanup/native results.
+    private fun revokeAsyncWork(close: Boolean = false) {
+        asyncOwnership.revoke(close) {
+            voiceTicket = null
+            taskTicket = null
+            voiceJob?.cancel()
+            narrationJob?.cancel()
+            _isListening.value = false
+            lastNarration = ""
+            voiceModule?.stopRecording()
+            voiceModule?.stopSpeaking()
+        }
+    }
+
+    private fun ownedLaunch(ticket: BrowserAsyncOwnership.Ticket, voice: Boolean, block: suspend () -> Unit) {
+        asyncOwnership.runIfCurrent(ticket) {
+            val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+                if (asyncOwnership.isCurrent(ticket)) block()
+            }
+            if (voice) { voiceJob?.cancel(); voiceJob = job }
+            else { narrationJob?.cancel(); narrationJob = job }
+            job.start()
+        }
+    }
     private val json = Json { ignoreUnknownKeys = false; encodeDefaults = true }
 
     private val domainPolicy = BrowserDomainPolicy(APPROVED_ORIGINS)
-    private var controller: SecureWebViewController? = null
+    @Volatile private var controller: SecureWebViewController? = null
     private var pendingPrompt: CompletableDeferred<PromptAnswer>? = null
     private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
     private var fileChooserLauncher: ((Intent) -> Unit)? = null
@@ -98,8 +133,8 @@ class SecureBrowserViewModel(
     // Eyes-free (WS4): a (origin, task) stashed by the `secure_browser_task` tool before the
     // Secure Browser screen is composed. When the runtime becomes ready we auto-navigate to the
     // origin (if different) and run the task. A blank task means navigate-only.
-    @Volatile private var pendingOrigin: String? = null
-    @Volatile private var pendingTask: String? = null
+    private val pendingHandoff = PendingBrowserHandoff()
+    @Volatile private var navigationHandoffGeneration: Long? = null
     // Last spoken narration, to avoid repeating the identical status string verbatim.
     @Volatile private var lastNarration: String = ""
     @Volatile private var ownsForegroundTaskAudio = false
@@ -115,6 +150,9 @@ class SecureBrowserViewModel(
     private val _isListening = MutableStateFlow(false)
     val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
 
+    private val cleared = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val cancellationRegistration = com.unoone.agent.core.runtime.GlobalTaskCancellation.register(this) { it.stopTask() }
+
     init {
         (appContext as? com.unoone.agent.UnoOneApplication)?.let { app ->
             viewModelScope.launch {
@@ -126,6 +164,10 @@ class SecureBrowserViewModel(
     }
 
     private fun shutdownForDisable() {
+        revokeAsyncWork()
+        modelLease.requestStop()
+        pendingHandoff.revoke()
+        navigationHandoffGeneration = null
         releaseForegroundTaskAudio()
         startupJob?.cancel()
         startupJob = null
@@ -136,8 +178,6 @@ class SecureBrowserViewModel(
         pendingPrompt = null
         pendingFileCallback?.onReceiveValue(null)
         pendingFileCallback = null
-        pendingOrigin = null
-        pendingTask = null
         _prompt.value = null
         _isListening.value = false
         voiceModule?.stopRecording()
@@ -224,6 +264,7 @@ class SecureBrowserViewModel(
                                 _state.value = _state.value.copy(status = "Navigation blocked", error = reason)
                             },
                             onNavigationStarted = { pageUrl ->
+                                navigationHandoffGeneration = pendingHandoff.navigationStarted(pageUrl)
                                 _state.value = _state.value.copy(
                                     phase = "Loading",
                                     status = "Loading page…",
@@ -249,7 +290,11 @@ class SecureBrowserViewModel(
                                     prototypeSafetyOff = prototypeMode,
                                     error = ""
                                 )
-                                runPendingTaskIfAny()
+                                val readyGeneration = navigationHandoffGeneration
+                                // Defer until controller assignment finishes, keeping the event token.
+                                viewModelScope.launch {
+                                    runPendingTaskIfAny(readyGeneration, pageUrl, webView.url.orEmpty())
+                                }
                             },
                             onRuntimeError = { message ->
                                 _state.value = _state.value.copy(
@@ -259,7 +304,20 @@ class SecureBrowserViewModel(
                                     error = message
                                 )
                             },
-                            onShowFileChooser = ::openFileChooser
+                            onShowFileChooser = ::openFileChooser,
+                            onCancelPending = {
+                                modelLease.requestStop()
+                                viewModelScope.launch {
+                                    if (!modelLease.awaitStopAcknowledgement()) {
+                                        _state.value = _state.value.copy(status = "Native stop not acknowledged", error = "Browser inference is quarantined. Restart UnoOne before retrying.")
+                                    }
+                                }
+                                pendingPrompt?.cancel()
+                                pendingPrompt = null
+                                _prompt.value = null
+                                pendingFileCallback?.onReceiveValue(null)
+                                pendingFileCallback = null
+                            }
                         ).also { browser ->
                             val requestedUrl = _state.value.currentUrl
                             if (requestedUrl.isBlank()) {
@@ -431,7 +489,24 @@ class SecureBrowserViewModel(
         ctrl.loadLocalHtml(html, displayName)
     }
 
-    fun executeTask(task: String) {
+    fun executeTask(task: String, expectedStopGeneration: Long = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) {
+        val ticket = asyncOwnership.capture()
+        if (ticket.global != expectedStopGeneration) return
+        executeOwnedTask(task, ticket)
+    }
+
+    private fun executeOwnedTask(task: String, ticket: BrowserAsyncOwnership.Ticket) = asyncOwnership.runIfCurrent(ticket) {
+        executeAdmittedTask(task, ticket)
+    }
+
+    private fun executeAdmittedTask(task: String, ticket: BrowserAsyncOwnership.Ticket) {
+        val expectedStopGeneration = ticket.global
+        if (com.unoone.agent.voice.VoiceControlPolicy.routeStop(task) {
+                val app = appContext as? com.unoone.agent.UnoOneApplication
+                if (app != null) app.postVoiceCommand(task)
+                else com.unoone.agent.core.runtime.GlobalTaskCancellation.cancelAll()
+            }) return
+        if (cleared.get() || expectedStopGeneration != com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) return
         if (!AgentRuntimeGate.isEnabled()) {
             stopTask()
             _state.value = _state.value.copy(error = "UnoOne is disabled")
@@ -454,7 +529,9 @@ class SecureBrowserViewModel(
             error = ""
         )
         acquireForegroundTaskAudio()
-        activeController.executeTask(task) { success, result ->
+        taskTicket = ticket
+        activeController.executeTask(task, expectedStopGeneration) completion@{ success, result ->
+            if (!asyncOwnership.isCurrent(ticket) || controller !== activeController) return@completion
             releaseForegroundTaskAudio()
             _state.value = _state.value.copy(
                 taskRunning = false,
@@ -476,19 +553,32 @@ class SecureBrowserViewModel(
                         english = "I could not complete the page task. The error is shown on screen.",
                         hindi = "पेज का काम पूरा नहीं हुआ। त्रुटि स्क्रीन पर दिखाई गई है।"
                     )
-                }
+                }, ticket
             )
         }
     }
 
     fun stopTask() {
+        if (cleared.get()) return
+        revokeAsyncWork()
+        // These operations are thread-safe and MUST precede any main-thread cleanup.
+        pendingHandoff.revoke()
+        navigationHandoffGeneration = null
         controller?.stopTask()
-        releaseForegroundTaskAudio()
-        _state.value = _state.value.copy(
-            taskRunning = false,
-            phase = "Stopped",
-            status = "Browser task stopped"
-        )
+        modelLease.requestStop() // Also cancel while startup has not published a controller yet.
+        viewModelScope.launch(Dispatchers.Main.immediate) {
+            if (cleared.get()) return@launch
+            pendingPrompt?.cancel()
+            pendingPrompt = null
+            _prompt.value = null
+            pendingFileCallback?.onReceiveValue(null)
+            pendingFileCallback = null
+            releaseForegroundTaskAudio()
+            _state.value = _state.value.copy(taskRunning = false, phase = "Stopped", status = "Browser task stopped")
+            if (!modelLease.awaitStopAcknowledgement()) {
+                _state.value = _state.value.copy(status = "Native stop not acknowledged", error = "Browser inference is quarantined. Restart UnoOne before retrying.")
+            }
+        }
     }
 
     fun goBack(): Boolean {
@@ -500,6 +590,10 @@ class SecureBrowserViewModel(
     }
 
     fun closeSession() {
+        revokeAsyncWork()
+        modelLease.requestStop()
+        pendingHandoff.revoke()
+        navigationHandoffGeneration = null
         if (!attached) return
         attached = false
         startupJob?.cancel()
@@ -565,11 +659,13 @@ class SecureBrowserViewModel(
     }
 
     private suspend fun onNativeEvent(type: PageAgentRequestType, payload: String) {
+        val ticket = taskTicket ?: return
+        if (!asyncOwnership.isCurrent(ticket)) return
         when (type) {
             PageAgentRequestType.ACTIVITY_EVENT -> {
                 val summary = activitySummary(payload)
                 _state.value = _state.value.copy(status = summary)
-                activityNarration(payload)?.let(::narrate)
+                activityNarration(payload)?.let { narrate(it, ticket) }
             }
             PageAgentRequestType.TASK_RESULT -> {
                 _state.value = _state.value.copy(status = "PageAgent returned a task result")
@@ -578,7 +674,7 @@ class SecureBrowserViewModel(
                 val event = decodeAuditEvent(payload)
                 if (event != null) {
                     persistAudit(event)
-                    auditNarration(event)?.let(::narrate)
+                    auditNarration(event)?.let { narrate(it, ticket) }
                 }
             }
             else -> Unit
@@ -589,33 +685,33 @@ class SecureBrowserViewModel(
      * Eyes-free (WS4): stash a (origin, task) handed off by the `secure_browser_task` tool, before
      * the Secure Browser screen is composed. The pending origin is loaded when the WebView attaches
      * and the task auto-runs once the PageAgent runtime is ready ([runPendingTaskIfAny]). A blank
-     * task means "navigate to the origin only". Safe to call multiple times (last wins); safe to call
+     * task means "navigate to the origin only". Idle calls replace queued work; active-task calls explicitly reject before navigation. Safe to call
      * before [attachWebView] (the pending pair survives until the runtime is ready).
      */
-    fun setPendingTask(origin: String, task: String) {
-        if (!AgentRuntimeGate.isEnabled()) return
-        pendingOrigin = origin
-        pendingTask = task
-        _state.value = _state.value.copy(currentUrl = origin, status = "Opening $origin…", error = "")
-        // If the screen is already attached, ALWAYS navigate. The prior implementation first
-        // assigned currentUrl=origin, then compared currentUrl to origin and incorrectly skipped
-        // loading, so a voice task could execute against the previously-open page. Page start now
-        // clears runtimeReady; onRuntimeReady invokes runPendingTaskIfAny only after reinjection.
-        val ctrl = controller
-        if (ctrl != null) {
-            _state.value = _state.value.copy(runtimeReady = false)
-            ctrl.load(origin)
+    fun setPendingTask(origin: String, task: String): Boolean {
+        if (!AgentRuntimeGate.isEnabled()) return false
+        if (pendingHandoff.offer(origin, task, _state.value.taskRunning) == null) {
+            val message = "Browser handoff rejected: another task is running. Stop it before starting a new task."
+            _state.value = _state.value.copy(error = message)
+            narrate(message)
+            return false
         }
+        navigationHandoffGeneration = null
+        _state.value = _state.value.copy(currentUrl = origin, status = "Opening $origin…", runtimeReady = false, error = "")
+        controller?.load(origin)
+        return true
     }
 
-    private fun runPendingTaskIfAny() {
-        val task = pendingTask ?: return
-        val origin = pendingOrigin
-        pendingTask = null
-        pendingOrigin = null
-        controller ?: return
+    private fun runPendingTaskIfAny(generation: Long?, readyUrl: String, currentUrl: String) {
+        val ticket = asyncOwnership.capture()
+        val ctrl = controller ?: return
+        val request = pendingHandoff.consume(generation, readyUrl, currentUrl,
+            ctrl.isRuntimeInjected() && _state.value.runtimeReady, _state.value.taskRunning) ?: return
+        if (!asyncOwnership.isCurrent(ticket)) return
+        val task = request.task
+        val origin = request.origin
         if (task.isBlank()) {
-            narrate("Opened $origin.")
+            narrate("Opened $origin.", ticket)
             return
         }
         // Reading the current rendered page is deterministic and read-only. Sending this through
@@ -624,11 +720,11 @@ class SecureBrowserViewModel(
         // actions still use Page Agent below.
         if (isReadOnlyPageTask(task)) {
             _state.value = _state.value.copy(status = "Reading the current page")
-            readPageAloud()
+            readPageAloud(ticket)
             return
         }
-        narrate("Starting: $task")
-        executeTask(task)
+        narrate("Starting: $task", ticket)
+        executeOwnedTask(task, ticket)
     }
 
     /**
@@ -636,28 +732,39 @@ class SecureBrowserViewModel(
      * was (or would be) spoken via [onPageText] for the screen to display. The read is read-only
      * (it never drives the page); an empty result is spoken as a clear "no readable text" message.
      */
-    fun readPageAloud() {
-        if (!AgentRuntimeGate.isEnabled()) return
+    fun readPageAloud() = readPageAloud(asyncOwnership.capture())
+
+    private fun readPageAloud(ticket: BrowserAsyncOwnership.Ticket) {
+        if (!AgentRuntimeGate.isEnabled() || !asyncOwnership.isCurrent(ticket)) return
         val ctrl = controller
         if (ctrl == null || !_state.value.runtimeReady) {
-            narrate("The secure browser isn't ready yet.")
+            narrate("The secure browser isn't ready yet.", ticket)
             return
         }
         ctrl.readPageText { text ->
-            if (text.isBlank()) narrate("This page has no readable text yet.")
-            else narrate(text)
+            asyncOwnership.runIfCurrent(ticket) {
+                if (controller === ctrl) narrate(text.ifBlank { "This page has no readable text yet." }, ticket)
+            }
         }
     }
 
-    /** Speak a narration string through the shared VoiceModule (eyes-free). No-op without a voice module. */
-    private fun narrate(text: String) {
+    private fun narrate(text: String, ticket: BrowserAsyncOwnership.Ticket = asyncOwnership.capture()) {
         if (!AgentRuntimeGate.isEnabled()) return
         val vm = voiceModule ?: return
         val toSpeak = text.trim()
-        if (toSpeak.isBlank() || toSpeak == lastNarration) return
-        lastNarration = toSpeak
-        cleanupScope.launch {
-            vm.speakAwait(toSpeak).onError { msg, _ -> Logger.w("SecureBrowser: narration failed: $msg") }
+        asyncOwnership.runIfCurrent(ticket) {
+            if (toSpeak.isNotBlank() && toSpeak != lastNarration) {
+                lastNarration = toSpeak
+                ownedLaunch(ticket, voice = false) {
+                    // Old speakAwait cancellation/finally finishes before newer speech starts.
+                    narrationMutex.withLock {
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        if (asyncOwnership.isCurrent(ticket)) {
+                            vm.speakAwait(toSpeak).onError { msg, _ -> Logger.w("SecureBrowser: narration failed: $msg") }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -669,32 +776,43 @@ class SecureBrowserViewModel(
     fun startVoiceTask(context: Context) {
         if (!AgentRuntimeGate.isEnabled()) return
         val vm = voiceModule ?: return
-        if (_isListening.value || _state.value.taskRunning) return
-        viewModelScope.launch {
-            when (val r = vm.startRecording(context, viewModelScope)) {
-                is Result.Success -> _isListening.value = true
-                is Result.Error -> Logger.w("SecureBrowser: startRecording failed: ${r.message}")
+        val ticket = asyncOwnership.capture() // NEVER recapture at stop/transcribe/result.
+        asyncOwnership.runIfCurrent(ticket) {
+            if (_isListening.value || _state.value.taskRunning || voiceJob?.isActive == true) return@runIfCurrent
+            voiceTicket = ticket
+            ownedLaunch(ticket, voice = true) {
+                val result = vm.startRecording(context, viewModelScope)
+                asyncOwnership.runIfCurrent(ticket) {
+                    when (result) {
+                        is Result.Success -> _isListening.value = true
+                        is Result.Error -> Logger.w("SecureBrowser: startRecording failed: ${result.message}")
+                    }
+                }
             }
         }
     }
 
-    /** Stop the spoken-task recording, transcribe it offline, and run it as a PageAgent task. */
     fun stopVoiceTask() {
         val vm = voiceModule ?: return
-        if (!_isListening.value) return
-        _isListening.value = false
-        viewModelScope.launch {
-            when (val r = vm.stopAndTranscribe()) {
-                is Result.Success -> {
-                    val transcript = r.data.trim()
-                    if (transcript.isNotBlank()) {
-                        narrate("Running: $transcript")
-                        executeTask(transcript)
-                    } else {
-                        narrate("I didn't hear a task.")
+        val ticket = voiceTicket ?: return
+        asyncOwnership.runIfCurrent(ticket) {
+            if (!_isListening.value) return@runIfCurrent
+            _isListening.value = false
+            ownedLaunch(ticket, voice = true) {
+                val result = vm.stopAndTranscribe()
+                // Native ASR may ignore cancellation; its original authority still cannot return.
+                asyncOwnership.runIfCurrent(ticket) {
+                    when (result) {
+                        is Result.Success -> {
+                            val transcript = result.data.trim()
+                            if (transcript.isNotBlank()) {
+                                narrate("Running: $transcript", ticket)
+                                executeOwnedTask(transcript, ticket)
+                            } else narrate("I didn't hear a task.", ticket)
+                        }
+                        is Result.Error -> narrate("I didn't catch that.", ticket)
                     }
                 }
-                is Result.Error -> narrate("I didn't catch that.")
             }
         }
     }
@@ -706,7 +824,9 @@ class SecureBrowserViewModel(
 
     private suspend fun persistAudit(event: BrowserAuditEvent) {
         val status = when (event.decision) {
-            "allowed" -> "success"
+            "allowed" -> "authorized"
+            "page_observed" -> "page_observed"
+            "dispatched" -> "dispatched"
             "blocked", "user_takeover", "declined_or_blocked" -> "blocked"
             else -> "failed"
         }
@@ -771,7 +891,7 @@ class SecureBrowserViewModel(
     }
 
     private fun auditNarration(event: BrowserAuditEvent): String? {
-        if (event.decision != "allowed") return null
+        if (event.decision != "independently_verified") return null
         val field = safeFieldName(event.summary)
         return when (event.actionName) {
             "input_text" -> localized(
@@ -835,6 +955,11 @@ class SecureBrowserViewModel(
     }.getOrDefault(false)
 
     override fun onCleared() {
+        cleared.set(true)
+        revokeAsyncWork(close = true)
+        cancellationRegistration.close()
+        pendingHandoff.revoke()
+        modelLease.requestStop()
         releaseForegroundTaskAudio()
         startupJob?.cancel()
         startupJob = null

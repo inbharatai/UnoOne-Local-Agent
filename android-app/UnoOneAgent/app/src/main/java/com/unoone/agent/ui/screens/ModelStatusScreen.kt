@@ -44,7 +44,7 @@ import com.unoone.agent.ui.theme.DoneGreen
 import com.unoone.agent.ui.theme.FailedRed
 import com.unoone.agent.ui.viewmodel.ModelStatusViewModel
 
-/** Model health, installation and sole-brain qualification screen. */
+/** Model health, installation and selected-brain qualification screen. */
 @Composable
 fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
     val rows by viewModel.rows.collectAsState()
@@ -52,10 +52,21 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
     val storageUsageMb by viewModel.storageUsageMb.collectAsState()
     val resultMessage by viewModel.resultMessage.collectAsState()
     val busy by viewModel.busy.collectAsState()
+    val profiles by viewModel.profiles.collectAsState()
     val brainStatus by viewModel.brainStatus.collectAsState()
     val selfTest by viewModel.selfTest.collectAsState()
     val brainBusy by viewModel.brainBusy.collectAsState()
     val verifying by viewModel.verifying.collectAsState()
+    val pendingExperimentalSelection by viewModel.pendingExperimentalSelection.collectAsState()
+    pendingExperimentalSelection?.let {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissExperimentalSelection,
+            title = { Text("Opt in to experimental Qwen?") },
+            text = { Text("Qwen 3.5 2B uses MNN and a complete nine-file artifact set. Native/device, vision and performance qualification are pending. This changes only your selected profile; E2B/E4B remain available. No automatic fallback or screenshot capture is enabled.") },
+            confirmButton = { Button(onClick = viewModel::confirmExperimentalSelection) { Text("Opt in and select") } },
+            dismissButton = { TextButton(onClick = viewModel::dismissExperimentalSelection) { Text("Cancel") } }
+        )
+    }
     val pendingMeteredInstall by viewModel.pendingMeteredInstall.collectAsState()
 
     pendingMeteredInstall?.let { modelId ->
@@ -133,6 +144,23 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
             Spacer(modifier = Modifier.height(12.dp))
         }
 
+        Text("Planning profile", style = MaterialTheme.typography.titleMedium)
+        Text("E2B is the new-install default. Existing verified E4B installations are retained. Qwen is experimental and opt-in only. Selecting or downloading never deletes other profiles.",
+            style = MaterialTheme.typography.bodySmall)
+        profiles.forEach { profile ->
+            val selected = profile.manifestId == brainStatus?.manifestId
+            OutlinedButton(
+                onClick = { viewModel.selectBrain(profile.manifestId) },
+                enabled = !selected && !brainBusy && !verifying && !busy
+            ) {
+                Text("${if (selected) "Selected: " else "Select "}${profile.displayName} — ${if (profile.installed) "installed" else "not installed"}")
+            }
+        }
+        if (brainStatus?.installed == false) {
+            Text("Selected profile is not installed or failed integrity verification. Install it below, or explicitly select an installed profile above. No automatic fallback.",
+                style = MaterialTheme.typography.bodySmall)
+        }
+        Spacer(modifier = Modifier.height(12.dp))
         brainStatus?.let { brain ->
             BrainCard(
                 row = brain,
@@ -191,7 +219,10 @@ private fun BrainCard(
             HorizontalDivider()
             Spacer(modifier = Modifier.height(8.dp))
 
-            DetailLine("Runtime", "LiteRT-LM")
+            DetailLine("Runtime", row.runtime)
+            DetailLine("Artifact set", row.artifactSummary)
+            DetailLine("Runtime status", row.runtimeStatus)
+            DetailLine("Experimental vision", "Off — trusted privacy gate and fresh image provider not wired")
             DetailLine("Installed", if (row.installed) "Yes" else "No")
             DetailLine(
                 "Integrity",

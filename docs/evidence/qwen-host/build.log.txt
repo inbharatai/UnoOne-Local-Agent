@@ -1,0 +1,423 @@
+[1/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/AutoTime.cpp.o
+[2/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/BufferAllocator.cpp.o
+[3/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/Backend.cpp.o
+[4/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/Execution.cpp.o
+[5/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/FileLoader.cpp.o
+[6/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/ConvolutionCommon.cpp.o
+[7/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/KVCacheManager.cpp.o
+[8/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/MNNFileUtils.cpp.o
+[9/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/MNNMemoryUtils.cpp.o
+[10/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/Interpreter.cpp.o
+[11/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/Pipeline.cpp.o
+[12/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/RuntimeFactory.cpp.o
+[13/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/OpCommonUtils.cpp.o
+[14/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/Schedule.cpp.o
+[15/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/Session.cpp.o
+[16/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/Tensor.cpp.o
+[17/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/WorkerThread.cpp.o
+[18/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/TensorUtils.cpp.o
+[19/338] Building CXX object CMakeFiles/MNNCore.dir/source/core/WrapExecution.cpp.o
+[20/338] Building CXX object CMakeFiles/MNNCV.dir/source/cv/ImageProcess.cpp.o
+[21/338] Building CXX object CMakeFiles/MNNCV.dir/source/cv/Matrix_CV.cpp.o
+[22/338] Building CXX object CMakeFiles/MNNCV.dir/source/cv/ImageProcessUtils.cpp.o
+[23/338] Building CXX object CMakeFiles/MNNMath.dir/source/math/WingoradGenerater.cpp.o
+[24/338] Building CXX object CMakeFiles/MNNMath.dir/source/math/Matrix.cpp.o
+[25/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/ConvertUtils.cpp.o
+[26/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryCrop.cpp.o
+[27/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryBatchMatMul.cpp.o
+[28/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryBinary.cpp.o
+[29/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryBroadcastTo.cpp.o
+[30/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryComputer.cpp.o
+[31/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryConcat.cpp.o
+[32/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryComputerUtils.cpp.o
+[33/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryConv2DBackPropFilter.cpp.o
+[34/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryConv2D.cpp.o
+[35/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryConv3D.cpp.o
+[36/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryConvUtils.cpp.o
+[37/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryConvert.cpp.o
+[38/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryCosineSimilarity.cpp.o
+[39/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryDet.cpp.o
+[40/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryFill.cpp.o
+[41/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryDepthToSpace.cpp.o
+[42/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryCumSum.cpp.o
+[43/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryELU.cpp.o
+[44/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryDilation2D.cpp.o
+[45/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryLRN.cpp.o
+[46/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryLSTM.cpp.o
+[47/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryFusedProj.cpp.o
+[48/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryGatedRMSNorm.cpp.o
+[49/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryGather.cpp.o
+[50/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryImageOp.cpp.o
+[51/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryInnerProduct.cpp.o
+[52/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryShape.cpp.o
+[53/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryLayernorm.cpp.o
+<MNN_SOURCE>/source/geometry/GeometryLayernorm.cpp: In member function ‘virtual bool MNN::GeometryLayerNorm::onCompute(const MNN::Op*, const std::vector<MNN::Tensor*>&, const std::vector<MNN::Tensor*>&, MNN::GeometryComputer::Context&, MNN::CommandBuffer&) const’:
+<MNN_SOURCE>/source/geometry/GeometryLayernorm.cpp:120:21: warning: ‘void* memcpy(void*, const void*, size_t)’ reading between 4 and 8589934588 bytes from a region of size 0 [-Wstringop-overread]
+  120 |             ::memcpy(gamma.data(), layernorm->gamma()->data(), gammaSize * sizeof(float));
+      |             ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[54/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryOPRegister.cpp.o
+[55/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryPermute.cpp.o
+[56/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryPooling3D.cpp.o
+[57/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryPoolGrad.cpp.o
+[58/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryReduce.cpp.o
+[59/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryReshape.cpp.o
+[60/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryReverseSequence.cpp.o
+[61/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryScatter.cpp.o
+[62/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometrySelect.cpp.o
+[63/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometrySlice.cpp.o
+[64/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryTile.cpp.o
+[65/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometrySpaceToBatchND.cpp.o
+[66/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometrySpatialProduct.cpp.o
+[67/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryStridedSlice.cpp.o
+[68/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryTensorArray.cpp.o
+[69/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryThreshold.cpp.o
+[70/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryTopK.cpp.o
+[71/338] Building CXX object CMakeFiles/MNNTransform.dir/source/geometry/GeometryUnary.cpp.o
+[72/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeArgMax.cpp.o
+[73/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeAttention.cpp.o
+[74/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeBroadcastTo.cpp.o
+[75/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeBinaryOp.cpp.o
+[76/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeBatchToSpaceND.cpp.o
+[77/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeCast.cpp.o
+[78/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeConcat.cpp.o
+[79/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeConvTranspose3D.cpp.o
+[80/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeConvolution.cpp.o
+[81/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeCrop.cpp.o
+[82/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeConvolution3D.cpp.o
+[83/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeCosineSimilarity.cpp.o
+[84/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeDequantize.cpp.o
+[85/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeCropAndResize.cpp.o
+[86/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeDeconvolution.cpp.o
+[87/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeDepthToSpace.cpp.o
+[88/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeDet.cpp.o
+[89/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeExpandDims.cpp.o
+[90/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeDetectionOutput.cpp.o
+[91/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeDetectionPostProcess.cpp.o
+[92/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeDynamicQuant.cpp.o
+[93/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeFill.cpp.o
+[94/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUMatrixBandPart.cpp.o
+[95/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUPlugin.cpp.o
+[96/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeFusedProj.cpp.o
+[97/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeGatherV2.cpp.o
+[98/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeGatherND.cpp.o
+[99/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeGatedRMSNorm.cpp.o
+[100/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeGridSample.cpp.o
+[101/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeHistogram.cpp.o
+[102/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeLSTM.cpp.o
+[103/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeInnerProduct.cpp.o
+[104/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeInterp.cpp.o
+[105/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeLinSpace.cpp.o
+[106/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeMatMul.cpp.o
+[107/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeMoments.cpp.o
+[108/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapePack.cpp.o
+[109/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeNonMaxSuppressionV2.cpp.o
+[110/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeOneHot.cpp.o
+[111/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapePadding.cpp.o
+[112/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapePermute.cpp.o
+[113/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapePlugin.cpp.o
+[114/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapePool.cpp.o
+[115/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapePool3D.cpp.o
+[116/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapePriorbox.cpp.o
+[117/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeProposal.cpp.o
+[118/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeROIPooling.cpp.o
+[119/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeROIAlign.cpp.o
+[120/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeQuantizedAvgPool.cpp.o
+[121/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeQuantizedMaxPool.cpp.o
+[122/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeRNNSequenceGRU.cpp.o
+[123/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeReduction.cpp.o
+[124/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeRange.cpp.o
+[125/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeRegister.cpp.o
+[126/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeRandomUniform.cpp.o
+[127/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/IdstConvolutionInt8.cpp.o
+[128/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeReshape.cpp.o
+[129/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeResize.cpp.o
+[130/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeScatterNd.cpp.o
+[131/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeSegmentMean.cpp.o
+[132/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeSelect.cpp.o
+[133/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeSetDiff1D.cpp.o
+[134/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeShape.cpp.o
+[135/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeSize.cpp.o
+[136/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeSlice.cpp.o
+[137/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeSliceTf.cpp.o
+[138/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeSplitGelu.cpp.o
+[139/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeSqueeze.cpp.o
+[140/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeSpaceToBatchND.cpp.o
+[141/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeSpaceToDepth.cpp.o
+[142/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeStft.cpp.o
+[143/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeTensorArray.cpp.o
+[144/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeSvd.cpp.o
+[145/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeTopKV2.cpp.o
+[146/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeStridedSlice.cpp.o
+[147/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeTile.cpp.o
+[148/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeTensorConvert.cpp.o
+[149/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeTranspose.cpp.o
+[150/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeUnique.cpp.o
+[151/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeUnpack.cpp.o
+[152/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/SizeComputer.cpp.o
+[153/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeWhere.cpp.o
+[154/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/ShapeUnravelIndex.cpp.o
+[155/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUArgMax.cpp.o
+[156/338] Building CXX object CMakeFiles/MNNTransform.dir/source/shape/render/ShapeRasterAndInterpolate.cpp.o
+[157/338] Building CXX object CMakeFiles/MNNUtils.dir/source/utils/JNIHelper.cpp.o
+[158/338] Building CXX object CMakeFiles/MNNUtils.dir/source/utils/InitNet.cpp.o
+[159/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUAttention.cpp.o
+[160/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUCast.cpp.o
+[161/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUBinary.cpp.o
+[162/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUBinaryInt8.cpp.o
+[163/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUBackend.cpp.o
+[164/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUCropAndResize.cpp.o
+[165/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUDet.cpp.o
+[166/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUConvolution.cpp.o
+[167/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUConvolutionDepthwise.cpp.o
+[168/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUDeconvolution.cpp.o
+[169/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUDequantize.cpp.o
+[170/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUDeconvolutionDepthwise.cpp.o
+[171/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUDepthwiseConvInt8.cpp.o
+[172/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUEltwise.cpp.o
+[173/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUDynamicQuant.cpp.o
+[174/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUDetectionOutput.cpp.o
+[175/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUDetectionPostProcess.cpp.o
+[176/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUEltwiseInt8.cpp.o
+[177/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUInterp.cpp.o
+[178/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUExternalConst.cpp.o
+[179/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUFloatToInt8.cpp.o
+[180/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUHistogram.cpp.o
+[181/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUGridSample.cpp.o
+[182/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUImageProcess.cpp.o
+In file included from <MNN_SOURCE>/source/backend/cpu/CPUImageProcess.cpp:9:
+In constructor ‘MNN::CPUImageProcess::CPUImageProcess(MNN::Backend*, const MNN::ImageProcessParam*)’,
+    inlined from ‘virtual MNN::Execution* MNN::CPUImageProcessCreator::onCreate(const std::vector<MNN::Tensor*>&, const std::vector<MNN::Tensor*>&, const MNN::Op*, MNN::Backend*) const’ at <MNN_SOURCE>/source/backend/cpu/CPUImageProcess.cpp:63:52:
+<MNN_SOURCE>/source/backend/cpu/CPUImageProcess.hpp:55:32: warning: ‘void* __builtin_memmove(void*, const void*, long unsigned int)’ reading 16 bytes from a region of size 0 [-Wstringop-overread]
+   55 |             mImgConfig.mean[i] = process->mean()->Get(i);
+      |             ~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~
+<MNN_SOURCE>/source/backend/cpu/CPUImageProcess.hpp:56:34: warning: ‘void* __builtin_memmove(void*, const void*, long unsigned int)’ reading 16 bytes from a region of size 0 [-Wstringop-overread]
+   56 |             mImgConfig.normal[i] = process->normal()->Get(i);
+      |             ~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~
+<MNN_SOURCE>/source/backend/cpu/CPUImageProcess.hpp:56:34: warning: ‘void* __builtin_memmove(void*, const void*, long unsigned int)’ reading 16 bytes from a region of size 0 [-Wstringop-overread]
+[183/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUInstanceNorm.cpp.o
+[184/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUInt8ToFloat.cpp.o
+[185/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPULayerNorm.cpp.o
+[186/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUOPRegister.cpp.o
+[187/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUInterp3D.cpp.o
+[188/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUKVCacheManager.cpp.o
+[189/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPULinSpace.cpp.o
+[190/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUMatMul.cpp.o
+[191/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUMoments.cpp.o
+[192/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPULinearAttention.cpp.o
+[193/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUNonMaxSuppressionV2.cpp.o
+[194/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUOneHot.cpp.o
+[195/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUPool.cpp.o
+[196/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUPoolInt8.cpp.o
+[197/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUROIAlign.cpp.o
+[198/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUQuanConvolutionDepthwise.cpp.o
+[199/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUProposal.cpp.o
+[200/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUQuantizedAdd.cpp.o
+[201/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPURange.cpp.o
+[202/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUQuantizedAvgPool.cpp.o
+[203/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUQuantizedLogistic.cpp.o
+[204/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUQuantizedMaxPool.cpp.o
+[205/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUQuantizedSoftmax.cpp.o
+[206/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPURNNSequenceGRU.cpp.o
+[207/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUROIPooling.cpp.o
+[208/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPURandomUniform.cpp.o
+[209/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPURelu.cpp.o
+[210/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPURaster.cpp.o
+[211/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUResize.cpp.o
+[212/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUReduction.cpp.o
+[213/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUResizeCache.cpp.o
+[214/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPURoPE.cpp.o
+[215/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPURuntime.cpp.o
+<MNN_SOURCE>/source/backend/cpu/CPURuntime.cpp:108: warning: "CPU_SETSIZE" redefined
+  108 | #define CPU_SETSIZE 1024
+      | 
+In file included from /usr/include/pthread.h:22,
+                 from /usr/include/c++/11/x86_64-amazon-linux/bits/gthr-default.h:35,
+                 from /usr/include/c++/11/x86_64-amazon-linux/bits/gthr.h:148,
+                 from /usr/include/c++/11/ext/atomicity.h:35,
+                 from /usr/include/c++/11/bits/basic_string.h:39,
+                 from /usr/include/c++/11/string:55,
+                 from <MNN_SOURCE>/source/backend/cpu/CPURuntime.cpp:56:
+/usr/include/sched.h:91: note: this is the location of the previous definition
+   91 | # define CPU_SETSIZE __CPU_SETSIZE
+      | 
+<MNN_SOURCE>/source/backend/cpu/CPURuntime.cpp:120: warning: "CPU_ZERO" redefined
+  120 | #define CPU_ZERO(set) CPU_ZERO_S(sizeof(cpu_set_t), set)
+      | 
+In file included from /usr/include/pthread.h:22,
+                 from /usr/include/c++/11/x86_64-amazon-linux/bits/gthr-default.h:35,
+                 from /usr/include/c++/11/x86_64-amazon-linux/bits/gthr.h:148,
+                 from /usr/include/c++/11/ext/atomicity.h:35,
+                 from /usr/include/c++/11/bits/basic_string.h:39,
+                 from /usr/include/c++/11/string:55,
+                 from <MNN_SOURCE>/source/backend/cpu/CPURuntime.cpp:56:
+/usr/include/sched.h:96: note: this is the location of the previous definition
+   96 | # define CPU_ZERO(cpusetp)       __CPU_ZERO_S (sizeof (cpu_set_t), cpusetp)
+      | 
+<MNN_SOURCE>/source/backend/cpu/CPURuntime.cpp:125: warning: "CPU_ZERO_S" redefined
+  125 | #define CPU_ZERO_S(setsize, set) __builtin_memset(set, 0, setsize)
+      | 
+In file included from /usr/include/pthread.h:22,
+                 from /usr/include/c++/11/x86_64-amazon-linux/bits/gthr-default.h:35,
+                 from /usr/include/c++/11/x86_64-amazon-linux/bits/gthr.h:148,
+                 from /usr/include/c++/11/ext/atomicity.h:35,
+                 from /usr/include/c++/11/bits/basic_string.h:39,
+                 from /usr/include/c++/11/string:55,
+                 from <MNN_SOURCE>/source/backend/cpu/CPURuntime.cpp:56:
+/usr/include/sched.h:103: note: this is the location of the previous definition
+  103 | # define CPU_ZERO_S(setsize, cpusetp)       __CPU_ZERO_S (setsize, cpusetp)
+      | 
+<MNN_SOURCE>/source/backend/cpu/CPURuntime.cpp:130: warning: "CPU_SET" redefined
+  130 | #define CPU_SET(cpu, set) CPU_SET_S(cpu, sizeof(cpu_set_t), set)
+      | 
+In file included from /usr/include/pthread.h:22,
+                 from /usr/include/c++/11/x86_64-amazon-linux/bits/gthr-default.h:35,
+                 from /usr/include/c++/11/x86_64-amazon-linux/bits/gthr.h:148,
+                 from /usr/include/c++/11/ext/atomicity.h:35,
+                 from /usr/include/c++/11/bits/basic_string.h:39,
+                 from /usr/include/c++/11/string:55,
+                 from <MNN_SOURCE>/source/backend/cpu/CPURuntime.cpp:56:
+/usr/include/sched.h:92: note: this is the location of the previous definition
+   92 | # define CPU_SET(cpu, cpusetp)   __CPU_SET_S (cpu, sizeof (cpu_set_t), cpusetp)
+      | 
+<MNN_SOURCE>/source/backend/cpu/CPURuntime.cpp:135: warning: "CPU_SET_S" redefined
+  135 | #define CPU_SET_S(cpu, setsize, set)                              \
+      | 
+In file included from /usr/include/pthread.h:22,
+                 from /usr/include/c++/11/x86_64-amazon-linux/bits/gthr-default.h:35,
+                 from /usr/include/c++/11/x86_64-amazon-linux/bits/gthr.h:148,
+                 from /usr/include/c++/11/ext/atomicity.h:35,
+                 from /usr/include/c++/11/bits/basic_string.h:39,
+                 from /usr/include/c++/11/string:55,
+                 from <MNN_SOURCE>/source/backend/cpu/CPURuntime.cpp:56:
+/usr/include/sched.h:99: note: this is the location of the previous definition
+   99 | # define CPU_SET_S(cpu, setsize, cpusetp)   __CPU_SET_S (cpu, setsize, cpusetp)
+      | 
+[216/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUScale.cpp.o
+[217/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUSelect.cpp.o
+[218/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUScaleInt8.cpp.o
+[219/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUSegmentMean.cpp.o
+[220/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUSoftmax.cpp.o
+[221/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUSetDiff1D.cpp.o
+[222/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUSvd.cpp.o
+[223/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUStft.cpp.o
+[224/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUTensorConvert.cpp.o
+[225/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUTopKV2.cpp.o
+[226/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUTFQuantizedConv2D.cpp.o
+[227/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUUnique.cpp.o
+[228/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUUnary.cpp.o
+[229/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUWhere.cpp.o
+[230/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/CPUUnravelIndex.cpp.o
+[231/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/OneDNNConvInt8.cpp.o
+[232/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/ThreadPool.cpp.o
+[233/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/OneDNNConvolution.cpp.o
+[234/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ConvOpt.cpp.o
+[235/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ConvInt8TiledExecutor.cpp.o
+[236/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/CommonOptFunction.cpp.o
+[237/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ConvolutionIntFactory.cpp.o
+[238/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/Convolution1x1Strassen.cpp.o
+[239/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ConvInt8Winograd.cpp.o
+[240/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ConvolutionFloatFactory.cpp.o
+[241/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ConvolutionPackFreeWinograd.cpp.o
+[242/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ConvolutionGroup.cpp.o
+[243/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ConvolutionWinogradBridge.cpp.o
+[244/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ConvolutionPackWinograd.cpp.o
+[245/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ConvolutionTiledExecutor.cpp.o
+[246/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ConvolutionWinogradImpl.cpp.o
+[247/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/DenseConvolutionTiledExecutor.cpp.o
+[248/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ImageProcessFunction.cpp.o
+[249/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/SparseConvInt8TiledExecutor.cpp.o
+[250/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/SparseConvolutionTiledExecutor.cpp.o
+[251/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/OptimizedComputer.cpp.o
+[252/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/ResizeFunction.cpp.o
+[253/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/Int8FunctionsOpt.cpp.o
+[254/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/SharedGather.cpp.o
+[255/338] Building CXX object CMakeFiles/MNNX8664.dir/source/backend/cpu/x86_x64/AVX2Functions.cpp.o
+[256/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/WinogradOptFunction.cpp.o
+[257/338] Building CXX object CMakeFiles/MNNCPU.dir/source/backend/cpu/compute/StrassenMatmulComputor.cpp.o
+[258/338] Building CXX object CMakeFiles/MNNSSE.dir/source/backend/cpu/x86_x64/sse/GemmCommon.cpp.o
+[259/338] Building CXX object CMakeFiles/MNNX8664.dir/source/backend/cpu/x86_x64/cpu_id.cc.o
+[260/338] Building CXX object CMakeFiles/MNNX8664.dir/source/backend/cpu/x86_x64/AVX2Backend.cpp.o
+[261/338] Building CXX object CMakeFiles/MNNX8664.dir/source/backend/cpu/x86_x64/FunctionDispatcher.cpp.o
+[262/338] Building CXX object CMakeFiles/MNNSSE.dir/source/backend/cpu/x86_x64/sse/GemmInt8.cpp.o
+<MNN_SOURCE>/source/backend/cpu/x86_x64/sse/GemmInt8.cpp:478: warning: "COMPUTE" redefined
+  478 |     #define COMPUTE(i, j)\
+      | 
+<MNN_SOURCE>/source/backend/cpu/x86_x64/sse/GemmInt8.cpp:126: note: this is the location of the previous definition
+  126 |     #define COMPUTE(i, j)\
+      | 
+[263/338] Building CXX object CMakeFiles/MNNAVX.dir/source/backend/cpu/x86_x64/avx/GemmCommon.cpp.o
+[264/338] Building CXX object CMakeFiles/MNNSSE.dir/source/backend/cpu/x86_x64/sse/ImageProcessFunction.cpp.o
+[265/338] Building CXX object CMakeFiles/MNNSSE.dir/source/backend/cpu/x86_x64/sse/GemmSSE.cpp.o
+[266/338] Building CXX object CMakeFiles/MNNSSE.dir/source/backend/cpu/x86_x64/sse/ReorderFunctions.cpp.o
+[267/338] Building CXX object CMakeFiles/MNNSSE.dir/source/backend/cpu/x86_x64/sse/MathFunctions.cpp.o
+[268/338] Building CXX object CMakeFiles/MNNSSE.dir/source/backend/cpu/x86_x64/sse/PackedFunction.cpp.o
+[269/338] Building CXX object CMakeFiles/MNNAVX.dir/source/backend/cpu/x86_x64/avx/GemmAVX2.cpp.o
+[270/338] Building ASM object CMakeFiles/MNNAVX.dir/source/backend/cpu/x86_x64/avx/_AVX_MNNPackedSparseMatMulEpx1EFMA_ASM.S.o
+[271/338] Building CXX object CMakeFiles/MNNAVX.dir/source/backend/cpu/x86_x64/avx/LinearAttentionFunctions.cpp.o
+[272/338] Building CXX object CMakeFiles/MNNAVX.dir/source/backend/cpu/x86_x64/avx/GemmCommonBF16.cpp.o
+[273/338] Building CXX object CMakeFiles/MNNAVX.dir/source/backend/cpu/x86_x64/avx/GemmInt8.cpp.o
+[274/338] Building CXX object CMakeFiles/MNNAVX.dir/source/backend/cpu/x86_x64/avx/GemmSparse.cpp.o
+[275/338] Building CXX object CMakeFiles/MNNAVX.dir/source/backend/cpu/x86_x64/avx/ReorderFunctions.cpp.o
+[276/338] Building CXX object CMakeFiles/MNNAVX.dir/source/backend/cpu/x86_x64/avx/MathFunctions.cpp.o
+[277/338] Building CXX object CMakeFiles/MNNAVX.dir/source/backend/cpu/x86_x64/avx/PackedFunction.cpp.o
+[278/338] Building ASM object CMakeFiles/MNNAVX.dir/source/backend/cpu/x86_x64/avx/_AVX_MNNPackedSparseMatMulEpx4EFMA_ASM.S.o
+[279/338] Building CXX object CMakeFiles/MNNAVX.dir/source/backend/cpu/x86_x64/avx/WinogradFunctions.cpp.o
+[280/338] Building CXX object CMakeFiles/MNNAVXFMA.dir/source/backend/cpu/x86_x64/avxfma/GemmSparseFMA.cpp.o
+[281/338] Building CXX object CMakeFiles/MNNAVXFMA.dir/source/backend/cpu/x86_x64/avxfma/GemmAVX2FMABF16.cpp.o
+[282/338] Building ASM object CMakeFiles/MNNAVXFMA.dir/source/backend/cpu/x86_x64/avxfma/_AVX_MNNGemmFloatUnitMainFMA.S.o
+[283/338] Building CXX object CMakeFiles/MNNAVXFMA.dir/source/backend/cpu/x86_x64/avxfma/GemmAVX2FMA.cpp.o
+[284/338] Building CXX object CMakeFiles/MNNAVXFMA.dir/source/backend/cpu/x86_x64/avxfma/MathFunctions.cpp.o
+[285/338] Building ASM object CMakeFiles/MNNAVXFMA.dir/source/backend/cpu/x86_x64/avxfma/_AVX_MNNGemmFloatUnitMainFMA6x16.S.o
+[286/338] Building ASM object CMakeFiles/MNNAVXFMA.dir/source/backend/cpu/x86_x64/avxfma/_AVX_MNNGemmFloatUnitMainFMA_Fused.S.o
+[287/338] Building ASM object CMakeFiles/MNNAVXFMA.dir/source/backend/cpu/x86_x64/avxfma/_AVX_MNNPackedSparseMatMulEpx1NFMA_ASM.S.o
+[288/338] Building ASM object CMakeFiles/MNNAVXFMA.dir/source/backend/cpu/x86_x64/avxfma/_AVX_MNNPackedSparseMatMulEpx4NFMA_ASM.S.o
+[289/338] Building CXX object CMakeFiles/MNNAVXFMA.dir/source/backend/cpu/x86_x64/avxfma/PackedFunction.cpp.o
+[290/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/diskembedding.cpp.o
+[291/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/speculative_decoding/dflash.cpp.o
+[292/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/embedding.cpp.o
+[293/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/llmconfig.cpp.o
+[294/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/llm.cpp.o
+[295/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/sampler.cpp.o
+[296/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/speculative_decoding/generate.cpp.o
+[297/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/omni.cpp.o
+[298/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/speculative_decoding/lookahead.cpp.o
+[299/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/tokenizer/unicode_data.cpp.o
+[300/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/speculative_decoding/eagle.cpp.o
+[301/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/speculative_decoding/mtp.cpp.o
+[302/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/tokenizer/unicode.cpp.o
+[303/338] Building CXX object CMakeFiles/apply_template.dir/transformers/llm/engine/demo/apply_template.cpp.o
+[304/338] Building CXX object CMakeFiles/llm_demo.dir/transformers/llm/engine/demo/llm_demo.cpp.o
+[305/338] Building CXX object CMakeFiles/llm.dir/transformers/llm/engine/src/tokenizer/tokenizer.cpp.o
+[306/338] Building CXX object CMakeFiles/tokenizer_demo.dir/transformers/llm/engine/demo/tokenizer_demo.cpp.o
+[307/338] Building CXX object CMakeFiles/tokenizer_demo.dir/transformers/llm/engine/src/tokenizer/unicode_data.cpp.o
+[308/338] Building CXX object CMakeFiles/tokenizer_demo.dir/transformers/llm/engine/src/tokenizer/unicode.cpp.o
+[309/338] Building CXX object CMakeFiles/MNN.dir/cmake/dummy.cpp.o
+[310/338] Building CXX object CMakeFiles/tokenizer_demo.dir/transformers/llm/engine/src/tokenizer/tokenizer.cpp.o
+[311/338] Building CXX object express/CMakeFiles/MNN_Express.dir/ExecutorScope.cpp.o
+[312/338] Building CXX object express/CMakeFiles/MNN_Express.dir/Executor.cpp.o
+[313/338] Building CXX object express/CMakeFiles/MNN_Express.dir/MathOp.cpp.o
+[314/338] Building CXX object express/CMakeFiles/MNN_Express.dir/NeuralNetWorkOp.cpp.o
+[315/338] Building CXX object express/CMakeFiles/MNN_Express.dir/Optimizer.cpp.o
+[316/338] Building CXX object express/CMakeFiles/MNN_Express.dir/Expr.cpp.o
+[317/338] Building CXX object express/CMakeFiles/MNN_Express.dir/Utils.cpp.o
+[318/338] Building CXX object express/CMakeFiles/MNN_Express.dir/module/IfModule.cpp.o
+[319/338] Building CXX object express/CMakeFiles/MNN_Express.dir/module/MoEModule.cpp.o
+[320/338] Building CXX object express/CMakeFiles/MNN_Express.dir/module/Module.cpp.o
+[321/338] Building CXX object express/CMakeFiles/MNN_Express.dir/module/NMSModule.cpp.o
+[322/338] Building CXX object express/CMakeFiles/MNN_Express.dir/module/StaticModule.cpp.o
+[323/338] Building CXX object express/CMakeFiles/MNN_Express.dir/module/PipelineModule.cpp.o
+[324/338] Building CXX object tools/cv/CMakeFiles/MNNOpenCV.dir/source/imgproc/color.cpp.o
+[325/338] Building CXX object tools/cv/CMakeFiles/MNNOpenCV.dir/source/calib3d/calib3d.cpp.o
+[326/338] Building CXX object express/CMakeFiles/MNN_Express.dir/module/WhileModule.cpp.o
+[327/338] Building CXX object tools/cv/CMakeFiles/MNNOpenCV.dir/source/imgproc/geometric.cpp.o
+[328/338] Building CXX object tools/cv/CMakeFiles/MNNOpenCV.dir/source/imgproc/draw.cpp.o
+[329/338] Building CXX object tools/cv/CMakeFiles/MNNOpenCV.dir/source/imgproc/miscellaneous.cpp.o
+[330/338] Building CXX object tools/cv/CMakeFiles/MNNOpenCV.dir/source/imgproc/filter.cpp.o
+[331/338] Building CXX object tools/cv/CMakeFiles/MNNOpenCV.dir/source/imgproc/histograms.cpp.o
+[332/338] Building CXX object tools/cv/CMakeFiles/MNNOpenCV.dir/source/core/core.cpp.o
+[333/338] Building CXX object tools/cv/CMakeFiles/MNNOpenCV.dir/source/imgproc/structural.cpp.o
+[334/338] Building CXX object tools/cv/CMakeFiles/MNNOpenCV.dir/source/imgcodecs/imgcodecs.cpp.o
+[335/338] Linking CXX shared library libMNN.so
+[336/338] Linking CXX executable llm_demo
+[337/338] Linking CXX executable apply_template
+[338/338] Linking CXX executable tokenizer_demo

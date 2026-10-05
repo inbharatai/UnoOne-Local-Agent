@@ -1,0 +1,18 @@
+{
+  "exit_code": 0,
+  "guard_reason": null,
+  "elapsed_seconds": 553.7737989425659,
+  "sampled_peak_tree_rss_kib": 913752,
+  "ru_maxrss_kib": 564784,
+  "command": [
+    "<ANDROID_SDK>/cmake/3.22.1/bin/cmake",
+    "--build",
+    "<HOST_EVIDENCE>/build",
+    "--target",
+    "llm_demo",
+    "tokenizer_demo",
+    "apply_template",
+    "--parallel",
+    "2"
+  ]
+}

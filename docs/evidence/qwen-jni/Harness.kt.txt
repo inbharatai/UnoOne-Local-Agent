@@ -1,0 +1,66 @@
+import com.unoone.agent.localbrain.qwen.QwenMnnRuntime
+import java.io.File
+import java.io.ByteArrayOutputStream
+
+fun main(args: Array<String>) {
+    val dir = File(args[0]); val config = args[1]
+    val runtime = QwenMnnRuntime()
+    var failures = 0
+    fun test(name: String, block: () -> Unit) {
+        try { block(); println("PASS $name") }
+        catch (e: Throwable) { failures++; println("FAIL $name: ${e.javaClass.name}: ${e.message}"); e.printStackTrace() }
+    }
+    fun rejected(name: String, expected: String, block: () -> Unit) = test(name) {
+        var caught: Throwable? = null
+        try { block() } catch (e: Throwable) { caught = e }
+        check(caught != null && caught.message.orEmpty().contains(expected)) { "Expected rejection '$expected', got $caught" }
+    }
+    fun load(name: String) {
+        val receipt = runtime.load(config, contextLimit = 512, maxOutput = 64)
+        File(dir, "$name.json").writeText(receipt)
+        check(runtime.status == "LOADED" && runtime.imageSupported)
+        check(Regex("\"backend_type\"\\s*:\\s*\"cpu\"").findAll(receipt).count() >= 2)
+        check(Regex("\"thread_num\"\\s*:\\s*2(?:\\s*[,}])").findAll(receipt).count() >= 2)
+        check(Regex("\"enable_thinking\"\\s*:\\s*false").containsMatchIn(receipt))
+        check(Regex("\"sampler_type\"\\s*:\\s*\"greedy\"").containsMatchIn(receipt))
+    }
+    println("ACTUAL_HOST os=${System.getProperty("os.name")} arch=${System.getProperty("os.arch")}")
+    println("STATIC_UNMEASURED_BACKEND_LABEL=${runtime.backend}")
+    try {
+        load("receipt")
+        println("PASS load/config-receipt")
+        val stale = runtime.admitRequest(); runtime.cancel()
+        var staleChunks = 0
+        rejected("stale-permit-before-generate", "Stale request permit") {
+            runtime.generate("", "hello", tokenLimit = 16, permit = stale, onChunk = { staleChunks++ })
+        }
+        test("stale-no-callback") { check(staleChunks == 0) }
+        rejected("empty-image-size", "Encoded image budget exceeded") { runtime.generate("", "image", ByteArray(0), 16) }
+        rejected("oversize-image-size", "Encoded image budget exceeded") { runtime.generate("", "image", ByteArray(4194305), 16) }
+        rejected("invalid-image-header", "PNG/JPEG header") { runtime.generate("", "image", byteArrayOf(1,2,3,4), 16) }
+        rejected("over-context-before-decoder", "Prompt token budget exceeded") { runtime.generate("", "hello ".repeat(1600), tokenLimit = 16) }
+        test("text-json-full-output") {
+            val chunks = ByteArrayOutputStream()
+            val result = runtime.generate("Return only the JSON object requested. No explanation.", "Output exactly {\"action\":\"wait\"}", tokenLimit = 64, onChunk = { chunks.write(it) })
+            File(dir, "text-output.txt").writeText(result)
+            File(dir, "text-chunks.bin").writeBytes(chunks.toByteArray())
+            check(result == chunks.toString("UTF-8")) { "Returned full output differs from concatenated callback bytes" }
+            check(Regex("\\s*\\{\\s*\"action\"\\s*:\\s*\"wait\"\\s*}\\s*").matches(result)) { "Actual output is not exact requested JSON: $result" }
+        }
+        for (size in listOf(32,256)) test("real-image-bytes-full-output-$size") {
+            val chunks = ByteArrayOutputStream()
+            val result = runtime.generate("Answer with only one lowercase color word.", "What color is this image?", File(dir,"red$size.png").readBytes(), 32, onChunk = { chunks.write(it) })
+            File(dir,"image-$size-output.txt").writeText(result)
+            File(dir,"image-$size-chunks.bin").writeBytes(chunks.toByteArray())
+            check(result == chunks.toString("UTF-8"))
+            check(result.trim().trimEnd('.').equals("red", ignoreCase=true)) { "Color response was: $result" }
+        }
+        test("close-ack") { check(runtime.close()); check(runtime.status == "UNLOADED" && runtime.resolvedConfigReceipt == null && !runtime.imageSupported) }
+        test("reload") { load("reload-receipt") }
+        test("reload-close-ack") { check(runtime.close()); check(runtime.status == "UNLOADED") }
+    } finally {
+        val ack = runtime.close(); println("FINAL_CLOSE_ACK=$ack"); check(ack)
+    }
+    check(failures == 0) { "$failures harness assertions failed (see full logs/outputs)" }
+    println("ALL_HARNESS_ASSERTIONS_PASSED")
+}

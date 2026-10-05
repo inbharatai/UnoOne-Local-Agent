@@ -1,0 +1,39 @@
+
+> @unoone/page-agent-runtime@0.1.0 test:e2e
+> npm run build && playwright test
+
+
+> @unoone/page-agent-runtime@0.1.0 build
+> vite build
+
+vite v8.1.4 building client environment for production...
+
+ WARN  inlineDynamicImports option is ignored because codeSplitting: false is set.
+
+[2K
+transforming...✓ 2 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/unoone-page-agent.js  4.29 kB │ gzip: 1.98 kB │ map: 10.00 kB
+
+✓ built in 100ms
+
+Running 15 tests using 1 worker
+
+  ✓   1 e2e/dom-adapter.spec.ts:10:1 › admitted hostile page has DOM access but no model or consent capability (1.0s)
+  ✓   2 e2e/dom-adapter.spec.ts:18:1 › exact target writes verify, replacements and secrets fail closed (468ms)
+  ✓   3 e2e/native-contract.spec.ts:5:1 › literal planner contract: date, explicit checkbox, vertical and horizontal targeted scroll (517ms)
+  ✓   4 e2e/page-agent.spec.ts:24:1 › host/script fixture: text dispatch emits input and change (450ms)
+  ✓   5 e2e/page-agent.spec.ts:30:1 › host/script fixture: semantic form has no final send by default (1.1s)
+  ✓   6 e2e/page-agent.spec.ts:55:1 › host/script fixture: email numeric and multiline textarea (858ms)
+  ✓   7 e2e/page-agent.spec.ts:62:1 › upload dispatch requires handover; manual picker fixture attaches file (903ms)
+  ✓   8 e2e/page-agent.spec.ts:74:1 › unknown target and forged fingerprint fail without mutation (436ms)
+  ✓   9 e2e/page-agent.spec.ts:81:1 › stale state rejected and fresh observation permits next command (627ms)
+  ✓  10 e2e/page-agent.spec.ts:89:1 › identical replacement cannot inherit target identity (586ms)
+  ✓  11 e2e/page-agent.spec.ts:98:1 › invalid semantic commands do not mutate controls (498ms)
+  ✓  12 e2e/page-agent.spec.ts:106:1 › dispatch does not imply success if hostile handler rewrites state (313ms)
+  ✓  13 e2e/page-agent.spec.ts:112:1 › host policy fixture withholds payment command, not native authorization coverage (293ms)
+  ✓  14 e2e/page-agent.spec.ts:118:1 › hostile scripts and forged messages gain no native capability (454ms)
+  ✓  15 e2e/page-agent.spec.ts:126:1 › page spoof bridge/session ignored by real bundle (464ms)
+
+  15 passed (15.9s)

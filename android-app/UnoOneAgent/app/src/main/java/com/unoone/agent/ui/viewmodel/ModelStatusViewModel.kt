@@ -14,6 +14,10 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
+import com.unoone.agent.resolveBrainLoadPath
+import com.unoone.agent.core.model.BrainRuntime
+import com.unoone.agent.UnoOneApplication
+import com.unoone.agent.core.model.BrainModelSpec
 import com.unoone.agent.AgentOrchestrator
 import com.unoone.agent.brain.BrainSelfTest
 import com.unoone.agent.brain.BrainSelfTestResult
@@ -30,7 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Drives model installation, health and the sole Gemma 4 E4B brain card. */
+/** Drives model installation, health and the selected Gemma brain card. */
 class ModelStatusViewModel(
     context: Context,
     modelMetadataDao: ModelMetadataDao? = null,
@@ -38,6 +42,7 @@ class ModelStatusViewModel(
 ) : ViewModel() {
 
     private val appContext = context.applicationContext
+    private val application = appContext as UnoOneApplication
     private val modelManager = ModelManager(appContext, modelMetadataDao)
     private val brainSelfTest = orchestrator?.let { BrainSelfTest(it, modelManager) }
     private val workManager = WorkManager.getInstance(appContext)
@@ -68,7 +73,10 @@ class ModelStatusViewModel(
         val isLoaded: Boolean,
         val backend: String,
         val lastLoadError: String,
-        val description: String
+        val description: String,
+        val runtime: String,
+        val artifactSummary: String,
+        val runtimeStatus: String
     )
 
     data class InstallProgress(
@@ -83,6 +91,9 @@ class ModelStatusViewModel(
 
     private val _rows = MutableStateFlow<List<ModelRow>>(emptyList())
     val rows: StateFlow<List<ModelRow>> = _rows.asStateFlow()
+
+    private val _profiles = MutableStateFlow<List<BrainStatusRow>>(emptyList())
+    val profiles: StateFlow<List<BrainStatusRow>> = _profiles.asStateFlow()
 
     private val _brainStatus = MutableStateFlow<BrainStatusRow?>(null)
     val brainStatus: StateFlow<BrainStatusRow?> = _brainStatus.asStateFlow()
@@ -107,6 +118,16 @@ class ModelStatusViewModel(
 
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
+
+    private val _pendingExperimentalSelection = MutableStateFlow<String?>(null)
+    val pendingExperimentalSelection: StateFlow<String?> = _pendingExperimentalSelection.asStateFlow()
+
+    fun dismissExperimentalSelection() { _pendingExperimentalSelection.value = null }
+    fun confirmExperimentalSelection() {
+        val id = _pendingExperimentalSelection.value ?: return
+        _pendingExperimentalSelection.value = null
+        selectBrain(id, experimentalConsent = true)
+    }
 
     private val _pendingMeteredInstall = MutableStateFlow<String?>(null)
     val pendingMeteredInstall: StateFlow<String?> = _pendingMeteredInstall.asStateFlow()
@@ -159,7 +180,9 @@ class ModelStatusViewModel(
     fun refresh() {
         viewModelScope.launch {
             _rows.value = withContext(Dispatchers.IO) { buildRows() }
-            _brainStatus.value = withContext(Dispatchers.IO) { buildBrainStatus() }
+            val selected = application.resolveSelectedBrain()
+            _profiles.value = withContext(Dispatchers.IO) { BrainModelRegistry.all.map { buildBrainStatus(it) } }
+            _brainStatus.value = _profiles.value.first { it.manifestId == selected.manifestId }
             _storageUsageMb.value = withContext(Dispatchers.IO) { modelManager.getStorageUsageMb() }
         }
     }
@@ -228,9 +251,29 @@ class ModelStatusViewModel(
         }
     }
 
+    fun selectBrain(manifestId: String, experimentalConsent: Boolean = false) {
+        if (_brainBusy.value || _verifying.value) return
+        val spec = BrainModelRegistry.byManifestId(manifestId) ?: return
+        if (spec.runtime == BrainRuntime.MNN && !experimentalConsent) {
+            _pendingExperimentalSelection.value = manifestId
+            return
+        }
+        _brainBusy.value = true
+        viewModelScope.launch {
+            val result = application.selectBrainProfile(spec)
+            _brainBusy.value = false
+            _selfTest.value = null
+            _resultMessage.value = when (result) {
+                is Result.Success -> "Selected ${spec.displayName}. Load it explicitly; other profiles are retained."
+                is Result.Error -> result.message
+            }
+            refresh()
+        }
+    }
+
     fun loadBrain() {
         if (_brainBusy.value) return
-        val spec = BrainModelRegistry.GEMMA_4_E4B
+        val spec = _brainStatus.value?.manifestId?.let(BrainModelRegistry::byManifestId) ?: return
         if (orchestrator == null) {
             _resultMessage.value = "${spec.displayName} will load automatically when the app starts and the artifact is healthy."
             return
@@ -238,7 +281,7 @@ class ModelStatusViewModel(
         _brainBusy.value = true
         _resultMessage.value = null
         viewModelScope.launch {
-            val path = withContext(Dispatchers.IO) { modelManager.getLlmModelPath(spec) }
+            val path = withContext(Dispatchers.IO) { modelManager.resolveBrainLoadPath(spec) }
             if (path == null) {
                 _brainBusy.value = false
                 _resultMessage.value = "${spec.displayName} is not installed. Add the integrity-verified artifact first."
@@ -259,7 +302,7 @@ class ModelStatusViewModel(
     fun runBrainSelfTest() {
         val test = brainSelfTest
         if (test == null || _brainBusy.value) return
-        val spec = BrainModelRegistry.GEMMA_4_E4B
+        val spec = _brainStatus.value?.manifestId?.let(BrainModelRegistry::byManifestId) ?: return
         _brainBusy.value = true
         _resultMessage.value = null
         _selfTest.value = null
@@ -274,15 +317,18 @@ class ModelStatusViewModel(
 
     fun verifyBrainArtifact() {
         if (_brainBusy.value || _verifying.value) return
+        val spec = _brainStatus.value?.manifestId?.let(BrainModelRegistry::byManifestId) ?: return
         _verifying.value = true
-        _resultMessage.value = "Verifying the complete E4B file…"
+        _resultMessage.value = "Verifying the complete ${spec.displayName} artifact set…"
         viewModelScope.launch {
-            val health = withContext(Dispatchers.IO) { modelManager.verifyLlmArtifact() }
+            val health = withContext(Dispatchers.IO) {
+                modelManager.verifyLlmArtifact(spec)
+            }
             _verifying.value = false
             _resultMessage.value = if (health.verified) {
-                "Gemma 4 E4B size and SHA-256 are verified."
+                "${spec.displayName} size and SHA-256 are verified."
             } else {
-                "E4B verification failed: ${health.message}"
+                "${spec.displayName} verification failed: ${health.message}"
             }
             refresh()
         }
@@ -322,21 +368,26 @@ class ModelStatusViewModel(
         }
     }
 
-    private suspend fun buildBrainStatus(): BrainStatusRow {
-        val spec = BrainModelRegistry.GEMMA_4_E4B
+    private suspend fun buildBrainStatus(spec: BrainModelSpec): BrainStatusRow {
         val loaded = orchestrator?.loadedBrainProfile()
         val isLoaded = loaded?.manifestId == spec.manifestId
+        val descriptor = modelManager.findModel(spec.manifestId)
+        val bytes = descriptor?.files?.sumOf { it.sizeBytes } ?: 0L
         return BrainStatusRow(
             manifestId = spec.manifestId,
             displayName = spec.displayName,
             isDeviceVerified = spec.isDeviceVerified,
             minimumRamMb = spec.minimumRamMb,
             recommendedRamMb = spec.recommendedRamMb,
-            installed = modelManager.getLlmModelPath(spec) != null,
+            installed = modelManager.resolveBrainLoadPath(spec) != null,
             isLoaded = isLoaded,
             backend = if (isLoaded) orchestrator?.loadedBrainBackend().orEmpty() else "",
             lastLoadError = orchestrator?.lastBrainLoadError().orEmpty(),
-            description = spec.description
+            description = spec.description,
+            runtime = if (spec.runtime == BrainRuntime.MNN) "MNN (experimental CPU)" else "LiteRT-LM",
+            artifactSummary = "${descriptor?.files?.size ?: 0} files · $bytes bytes (${bytes / 1_000_000} MB download)",
+            runtimeStatus = if (isLoaded) "Loaded: ${orchestrator?.loadedBrainBackend().orEmpty()}. Load success is not physical-device qualification."
+                else "Not loaded; no runtime execution receipt."
         )
     }
 }

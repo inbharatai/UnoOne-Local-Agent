@@ -1,0 +1,10 @@
+{
+  "scope": "three toy smoke cases on hostCPU; not Android or accuracy qualification",
+  "outputs": {
+    "text": "4",
+    "json": "{\"sum\":4}",
+    "image": "red"
+  },
+  "passed": 3,
+  "failed": 0
+}

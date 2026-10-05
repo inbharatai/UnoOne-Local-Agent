@@ -1,0 +1,3 @@
+ninja: Entering directory `${REPO}/android-app/UnoOneAgent/localbrain/.cxx/Debug/43102549/arm64-v8a'
+[1/2] Building CXX object CMakeFiles/unoone_qwen.dir/qwen_jni.cpp.o
+[2/2] Linking CXX shared library ${REPO}/android-app/UnoOneAgent/localbrain/build/intermediates/cxx/Debug/43102549/obj/arm64-v8a/libunoone_qwen.so

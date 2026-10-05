@@ -21,6 +21,10 @@ build/
 **/build/
 .gradle/
 **/.gradle/
+.cxx/
+**/.cxx/
+.externalNativeBuild/
+**/.externalNativeBuild/
 local.properties
 *.apk
 *.aab
@@ -64,6 +68,9 @@ models/*/
 # --- Logs and local device diagnostics ---
 *.log
 artifacts/
+# Deliberately retained build-only checkpoint receipts (no device/private-content logs).
+!docs/evidence/repair4/repair4.log
+!docs/evidence/repair4/repair-final-playwright.log
 
 # --- Keystores & Secrets ---
 *.jks

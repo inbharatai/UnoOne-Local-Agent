@@ -26,13 +26,39 @@ class OcrControl(private val context: Context) {
         val image = InputImage.fromBitmap(bitmap, 0)
         recognizer.process(image)
             .addOnSuccessListener { visionText ->
-                Logger.d("OCR Success: ${visionText.text.take(20)}...")
-                continuation.resume(Result.Success(visionText.text))
+                // Never log OCR screen contents.
+                continuation.resume(Result.Success(com.unoone.agent.core.device.SensitiveReadRedaction.redactText(visionText.text)))
             }
             .addOnFailureListener { e ->
                 Logger.e("OCR Failed", e)
                 continuation.resume(Result.Error("Failed to read text from screen: ${e.message}"))
             }
+    }
+
+    /** Structured line OCR; confidence 0 means unknown (ML Kit line confidence is not exposed here). */
+    suspend fun recognizeRegions(bitmap: Bitmap, transform: ScreenTransform? = null): Result<List<com.unoone.agent.core.device.OcrRegion>> = suspendCoroutine { continuation ->
+        try {
+            require(transform == null || (transform.outputWidth == bitmap.width && transform.outputHeight == bitmap.height))
+            recognizer.process(InputImage.fromBitmap(bitmap, 0))
+                .addOnSuccessListener { text ->
+                    if (com.unoone.agent.core.device.SensitiveReadRedaction.hasSecretLabel(text.text)) {
+                        continuation.resume(Result.Success(emptyList()))
+                        return@addOnSuccessListener
+                    }
+                    val regions = text.textBlocks.flatMap { it.lines }.mapNotNull { line ->
+                        val box = line.boundingBox ?: return@mapNotNull null
+                        val left = box.left.coerceIn(0, bitmap.width)
+                        val top = box.top.coerceIn(0, bitmap.height)
+                        val right = box.right.coerceIn(0, bitmap.width)
+                        val bottom = box.bottom.coerceIn(0, bitmap.height)
+                        if (right <= left || bottom <= top) return@mapNotNull null
+                        val bounds = com.unoone.agent.core.device.RectData(left, top, right, bottom)
+                        com.unoone.agent.core.device.OcrRegion(line.text.take(256), transform?.toScreen(bounds) ?: bounds, 0f)
+                    }.take(128)
+                    continuation.resume(Result.Success(regions))
+                }
+                .addOnFailureListener { continuation.resume(Result.Error("Structured OCR failed: ${it.message}")) }
+        } catch (e: Exception) { continuation.resume(Result.Error("Structured OCR failed: ${e.message}")) }
     }
 
     /**
@@ -45,7 +71,7 @@ class OcrControl(private val context: Context) {
             return Result.Error("Screenshot OCR requires MediaProjection permission")
         }
         return when (val bitmapResult = screenshotCapture.captureScreen()) {
-            is Result.Success -> recognizeText(bitmapResult.data)
+            is Result.Success -> try { recognizeText(bitmapResult.data) } finally { bitmapResult.data.recycle() }
             is Result.Error -> Result.Error(bitmapResult.message)
         }
     }

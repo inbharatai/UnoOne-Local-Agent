@@ -7,8 +7,8 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: true,
     lib: {
-      entry: 'src/index.ts',
-      name: 'UnoOnePageAgentRuntime',
+      entry: 'src/dom-adapter.js',
+      name: 'UnoOneDomUtilities',
       formats: ['iife'],
       fileName: () => 'unoone-page-agent.js'
     },

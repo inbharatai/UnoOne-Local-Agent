@@ -1,5 +1,6 @@
 package com.unoone.agent.brain
 
+import com.unoone.agent.resolveBrainLoadPath
 import com.unoone.agent.AgentOrchestrator
 import com.unoone.agent.core.model.BrainModelSpec
 import com.unoone.agent.core.model.Result
@@ -33,7 +34,7 @@ data class BrainSelfTestResult(
 )
 
 /**
- * On-device self-test for a brain profile. Loads the profile's installed `.litertlm`, records the
+ * On-device self-test for a brain profile. Loads the profile's integrity-verified runtime artifact, records the
  * backend it loaded on + load latency + any load error, then runs strict **read-only** planning
  * probes through the model-only path. Nothing is executed — this never performs a phone action (no safety gate, no
  * permissions, no [com.unoone.agent.execution.ActionExecutor]).
@@ -51,7 +52,7 @@ class BrainSelfTest(
 ) {
 
     suspend fun run(spec: BrainModelSpec): BrainSelfTestResult {
-        val path = modelManager.getLlmModelPath(spec)
+        val path = modelManager.resolveBrainLoadPath(spec)
         if (path == null) {
             return BrainSelfTestResult(
                 spec.manifestId, spec.displayName,
@@ -99,7 +100,7 @@ class BrainSelfTest(
 
         // Best-effort restore of the previously-active brain if the test loaded a different one.
         if (previous != null && previous.manifestId != spec.manifestId) {
-            val prevPath = modelManager.getLlmModelPath(previous)
+            val prevPath = modelManager.resolveBrainLoadPath(previous)
             if (prevPath != null) {
                 runCatching { orchestrator.loadLlmModel(prevPath, previous) }
             }

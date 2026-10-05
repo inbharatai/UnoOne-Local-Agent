@@ -11,51 +11,13 @@ class AccessibilityControl {
         return UnoOneAccessibilityService.isEnabled()
     }
 
-    fun clickText(text: String): Result<Unit> {
-        val safeText = InputSanitizer.sanitizeForAccessibility(text)
-        val service = UnoOneAccessibilityService.getInstance()
-            ?: return Result.Error("Accessibility Service not enabled")
+    fun clickText(text: String): Result<Unit> { return Result.Error("Manual takeover required: use guarded device workflow") }
 
-        return if (service.clickNodeWithText(safeText)) {
-            Result.Success(Unit)
-        } else {
-            Result.Error("Could not find or click text: $safeText")
-        }
-    }
+    fun typeText(text: String): Result<Unit> { return Result.Error("Manual takeover required: use guarded device workflow") }
 
-    fun typeText(text: String): Result<Unit> {
-        val safeText = InputSanitizer.sanitizeForAccessibility(text)
-        val service = UnoOneAccessibilityService.getInstance()
-            ?: return Result.Error("Accessibility Service not enabled")
+    fun fillField(hint: String, text: String): Result<Unit> { return Result.Error("Manual takeover required: use guarded device workflow") }
 
-        return if (service.typeTextIntoFocused(safeText)) {
-            Result.Success(Unit)
-        } else {
-            Result.Error("Could not type text - no input field focused")
-        }
-    }
-
-    fun fillField(hint: String, text: String): Result<Unit> {
-        val service = UnoOneAccessibilityService.getInstance()
-            ?: return Result.Error("Accessibility Service not enabled")
-
-        return if (service.fillFieldWithText(hint, text)) {
-            Result.Success(Unit)
-        } else {
-            Result.Error("Could not find field with hint: $hint")
-        }
-    }
-
-    fun clickCoords(x: Float, y: Float): Result<Unit> {
-        val service = UnoOneAccessibilityService.getInstance()
-            ?: return Result.Error("Accessibility Service not enabled")
-
-        return if (service.clickAt(x, y)) {
-            Result.Success(Unit)
-        } else {
-            Result.Error("Failed to perform click at ($x, $y)")
-        }
-    }
+    fun clickCoords(x: Float, y: Float): Result<Unit> { return Result.Error("Manual takeover required: use guarded device workflow") }
 
     fun captureScreenText(): Result<String> {
         val service = UnoOneAccessibilityService.getInstance()
@@ -91,64 +53,14 @@ class AccessibilityControl {
         else Result.Error("Failed to scroll up")
     }
 
-    fun swipe(direction: String): Result<Unit> {
-        val service = UnoOneAccessibilityService.getInstance()
-            ?: return Result.Error("Accessibility Service not enabled")
-        val rootNode = service.rootInActiveWindow
-            ?: return Result.Error("No active window")
-        try {
-            val bounds = android.graphics.Rect()
-            rootNode.getBoundsInScreen(bounds)
-            val cx = bounds.exactCenterX()
-            val cy = bounds.exactCenterY()
-            val dx = bounds.width() * 0.4f
-            val dy = bounds.height() * 0.4f
-            val result = when (direction.lowercase()) {
-                "left" -> service.swipe(cx + dx, cy, cx - dx, cy)
-                "right" -> service.swipe(cx - dx, cy, cx + dx, cy)
-                "up" -> service.swipe(cx, cy + dy, cx, cy - dy)
-                "down" -> service.swipe(cx, cy - dy, cx, cy + dy)
-                else -> return Result.Error("Unknown swipe direction: $direction")
-            }
-            return if (result) Result.Success(Unit) else Result.Error("Swipe failed")
-        } finally {
-            rootNode.recycle()
-        }
-    }
+    fun swipe(direction: String): Result<Unit> { return Result.Error("Manual takeover required: use guarded device workflow") }
 
-    fun longPress(x: Float, y: Float): Result<Unit> {
-        val service = UnoOneAccessibilityService.getInstance()
-            ?: return Result.Error("Accessibility Service not enabled")
-        return if (service.longPress(x, y)) Result.Success(Unit)
-        else Result.Error("Long press failed")
-    }
+    fun longPress(x: Float, y: Float): Result<Unit> { return Result.Error("Manual takeover required: use guarded device workflow") }
 
     /**
      * Finds a node by text and performs a long-press gesture at its center coordinates.
      */
-    fun longPressNodeWithText(text: String): Result<Unit> {
-        val service = UnoOneAccessibilityService.getInstance()
-            ?: return Result.Error("Accessibility Service not enabled")
-        val rootNode = service.rootInActiveWindow
-            ?: return Result.Error("No active window")
-        try {
-            val nodes = rootNode.findAccessibilityNodeInfosByText(text)
-            try {
-                val targetNode = nodes.firstOrNull()
-                    ?: return Result.Error("Could not find node with text: $text")
-                val bounds = android.graphics.Rect()
-                targetNode.getBoundsInScreen(bounds)
-                val cx = bounds.exactCenterX()
-                val cy = bounds.exactCenterY()
-                return if (service.longPress(cx, cy)) Result.Success(Unit)
-                else Result.Error("Long press on '$text' failed")
-            } finally {
-                nodes.forEach { it.recycle() }
-            }
-        } finally {
-            rootNode.recycle()
-        }
-    }
+    fun longPressNodeWithText(text: String): Result<Unit> { return Result.Error("Manual takeover required: use guarded device workflow") }
 
     fun goBack(): Result<Unit> {
         val service = UnoOneAccessibilityService.getInstance()
@@ -178,21 +90,7 @@ class AccessibilityControl {
         else Result.Error("Could not open recents")
     }
 
-    suspend fun findAndClick(text: String, maxScrolls: Int = 5): Result<Unit> {
-        val service = UnoOneAccessibilityService.getInstance()
-            ?: return Result.Error("Accessibility Service not enabled")
-
-        // Try clicking without scrolling first
-        if (service.clickNodeWithText(text)) return Result.Success(Unit)
-
-        // Scroll and retry — using delay instead of Thread.sleep to avoid blocking the main thread
-        repeat(maxScrolls) {
-            service.scrollDown()
-            delay(500)
-            if (service.clickNodeWithText(text)) return Result.Success(Unit)
-        }
-        return Result.Error("Could not find '$text' after scrolling")
-    }
+    suspend fun findAndClick(text: String, maxScrolls: Int = 5): Result<Unit> { return Result.Error("Manual takeover required: use guarded device workflow") }
 
     fun getCurrentContext(): String? {
         val service = UnoOneAccessibilityService.getInstance() ?: return null

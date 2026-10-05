@@ -133,8 +133,9 @@ class CommandParser(
 
     suspend fun loadModel(modelPath: String): Result<Unit> = localBrain.loadModel(modelPath)
 
-    suspend fun loadModel(modelPath: String, spec: BrainModelSpec): Result<Unit> =
-        localBrain.loadModel(modelPath, spec)
+    suspend fun loadModel(modelPath: String, spec: BrainModelSpec,
+        ownerToken: String = com.unoone.agent.core.model.E4bRuntimeCoordinator.PHONE_OWNER): Result<Unit> =
+        localBrain.loadModel(modelPath, spec, ownerToken)
 
     suspend fun unloadModel() = localBrain.unloadModel()
 

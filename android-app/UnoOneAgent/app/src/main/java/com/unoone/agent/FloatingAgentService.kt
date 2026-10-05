@@ -1,5 +1,7 @@
 package com.unoone.agent
 
+import com.unoone.agent.core.runtime.GlobalTaskCancellation
+import com.unoone.agent.core.runtime.VoiceAdmissionTicket
 import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
@@ -322,6 +324,7 @@ fun ChatOverlayCard(
     var text by remember { mutableStateOf("") }
     var isListening by remember { mutableStateOf(false) }
     var captureJob by remember { mutableStateOf<Job?>(null) }
+    var recordingGeneration by remember { mutableStateOf<Long?>(null) }
     val ownsCapture = remember { mutableStateOf(false) }
     val latestAmplitude = remember { mutableFloatStateOf(0f) }
     val scope = rememberCoroutineScope()
@@ -344,6 +347,7 @@ fun ChatOverlayCard(
     }
 
     fun finishVoiceCapture() {
+        val generation = recordingGeneration ?: return
         if (!ownsCapture.value) return
         ownsCapture.value = false
         isListening = false
@@ -351,7 +355,10 @@ fun ChatOverlayCard(
         captureJob = null
         scope.launch {
             try {
-                when (val result = voiceModule.stopAndTranscribe()) {
+                val result = voiceModule.stopAndTranscribe()
+                if (result is Result.Success && com.unoone.agent.voice.VoiceControlPolicy.isStop(result.data)) { orchestrator.processCommand(result.data, InputType.VOICE, generation); return@launch }
+                if (generation != GlobalTaskCancellation.generation || !com.unoone.agent.core.runtime.AgentRuntimeGate.isEnabled()) return@launch
+                when (result) {
                     is Result.Success -> {
                         val command = result.data.trim()
                         if (command.isBlank()) {
@@ -359,7 +366,7 @@ fun ChatOverlayCard(
                         } else {
                             VoiceService.beginForegroundTask()
                             try {
-                                orchestrator.processCommand(command, InputType.VOICE)
+                                orchestrator.processCommand(command, InputType.VOICE, generation)
                             } finally {
                                 VoiceService.endForegroundTask()
                             }
@@ -378,6 +385,8 @@ fun ChatOverlayCard(
 
     fun startVoiceCapture() {
         if (ownsCapture.value) return
+        val generation = GlobalTaskCancellation.generation
+        recordingGeneration = generation
         scope.launch {
             // Pause the passive wake recorder before the audible cue and one-shot capture so the
             // two AudioRecord owners never contend or transcribe UnoOne's own voice.
@@ -386,6 +395,7 @@ fun ChatOverlayCard(
                 .onFailure { Logger.w("FloatingAgentService: voice service unavailable: ${it.message}") }
             runCatching { voiceModule.stopSpeaking() }
             voiceModule.speakAwait("Listening. Say one command.")
+            if (generation != GlobalTaskCancellation.generation || !com.unoone.agent.core.runtime.AgentRuntimeGate.isEnabled()) { VoiceService.foregroundSessionActive = false; return@launch }
             latestAmplitude.floatValue = 0f
             when (val result = voiceModule.startRecording(serviceContext, scope)) {
                 is Result.Success -> {

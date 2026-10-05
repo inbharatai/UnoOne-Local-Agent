@@ -1,0 +1,2 @@
+69bf5e097b85a1bc40da14c07609dde8ca765cbd
+BASE ONLY: V3 changes remain uncommitted. SOURCE_MANIFEST.json identifies the working tree. No V3 commit is claimed.

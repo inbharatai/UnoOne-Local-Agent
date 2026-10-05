@@ -117,7 +117,12 @@ fun UnoOneNavHost(
                 )
             }
             composable(Screen.Notes.route) { NotesScreen(viewModel = notesViewModel) }
-            composable(Screen.Skills.route) { SkillsScreen(viewModel = skillsViewModel) }
+            composable(Screen.Skills.route) {
+                SkillsScreen(viewModel = skillsViewModel, onReviewedWorkflows = { navController.navigate("skills-v2") })
+            }
+            composable("skills-v2") {
+                com.unoone.agent.ui.screens.SkillsV2Screen(onBack = { navController.popBackStack() })
+            }
             composable(Screen.Logs.route) { LogsScreen(viewModel = logsViewModel) }
             composable(Screen.Settings.route) {
                 SettingsScreen(

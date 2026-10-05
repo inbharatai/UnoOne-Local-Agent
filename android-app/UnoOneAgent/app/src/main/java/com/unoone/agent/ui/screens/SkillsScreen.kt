@@ -43,7 +43,7 @@ import com.unoone.agent.storage.entity.SkillEntity
 import com.unoone.agent.ui.viewmodel.SkillsViewModel
 
 @Composable
-fun SkillsScreen(viewModel: SkillsViewModel) {
+fun SkillsScreen(viewModel: SkillsViewModel, onReviewedWorkflows: () -> Unit = {}) {
     val skills by viewModel.skills.collectAsState()
     val message by viewModel.message.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -75,6 +75,8 @@ fun SkillsScreen(viewModel: SkillsViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(12.dp))
+
+            TextButton(onClick = onReviewedWorkflows) { Text("Reviewed native workflows (Skills V2)") }
 
             if (skills.isEmpty()) {
                 Column(

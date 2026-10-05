@@ -13,7 +13,10 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
-import java.util.zip.ZipInputStream
+import org.apache.commons.compress.archivers.zip.ZipFile
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.util.UUID
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
@@ -118,14 +121,14 @@ class ModelInstaller(
         val target = File(folder, file.name)
 
         // Archive fast path: the zip is deleted after extraction, so "valid" means the extracted
-        // directory already exists and is non-empty (not that the zip is present).
+        // payload exactly matches its archive-bound inventory (not just directory presence).
         if (file.archive && archiveAlreadyExtracted(file, folder)) {
             listener?.onProgress(modelId, index, total, file.name, file.sizeBytes, file.sizeBytes)
             return true
         }
 
         // Idempotent fast path: already present and valid.
-        if (fileAlreadyValid(target, file)) {
+        if (!file.archive && fileAlreadyValid(target, file)) {
             listener?.onProgress(modelId, index, total, file.name, target.length(), file.sizeBytes.coerceAtLeast(target.length()))
             return true
         }
@@ -139,13 +142,13 @@ class ModelInstaller(
         val ok = attemptDownloadAndVerify(file, target, modelId, index, total, listener, shouldCancel)
         if (!ok) {
             // Leave no corrupt artifact behind — detectModels/health must not see a bad file as present.
-            runCatching { target.delete() }
+            // Keep the previous target until verified atomic activation succeeds.
             // Preserve an ordinary interrupted .part for resume. attemptDownload deletes it only
             // when metadata proves it impossible/corrupt (for example larger than expected).
             return false
         }
         if (file.archive) {
-            extractArchive(target, folder)
+            extractArchiveVerified(target, folder, file)
             if (!target.delete()) Logger.w("ModelInstaller: could not delete archive ${target.name} after extraction")
         }
         return true
@@ -195,27 +198,22 @@ class ModelInstaller(
             Logger.e("ModelInstaller: asset '$assetName' not found for ${file.name}")
             return false
         }
+        val part = File(target.parentFile, "${target.name}.part")
         return try {
             input.use { src ->
-                FileOutputStream(target).use { out -> src.copyTo(out) }
+                FileOutputStream(part).use { out -> src.copyTo(out); out.fd.sync() }
             }
-            if (file.sizeBytes > 0 && target.length() != file.sizeBytes) {
-                Logger.w("ModelInstaller: asset ${file.name} size mismatch (got ${target.length()}, expected ${file.sizeBytes})")
-                return false
-            }
-            if (file.sha256.isNotBlank() && !verifyChecksum(target, file)) {
-                Logger.w("ModelInstaller: asset ${file.name} checksum mismatch")
-                return false
-            }
+            if (!verifyAfterDownload(part, file)) { part.delete(); return false }
+            if (!commitTemp(part, target)) return false
             if (file.archive) {
-                extractArchive(target, folder)
+                extractArchiveVerified(target, folder, file)
                 if (!target.delete()) Logger.w("ModelInstaller: could not delete asset archive ${target.name} after extraction")
             }
             listener?.onProgress(modelId, index, total, file.name, file.sizeBytes, file.sizeBytes)
             true
         } catch (e: Exception) {
             Logger.e("ModelInstaller: asset copy failed for ${file.name}", e)
-            runCatching { target.delete() }
+            runCatching { part.delete() }
             false
         }
     }
@@ -231,10 +229,77 @@ class ModelInstaller(
         if (!file.extractsTo.isNullOrBlank()) File(folder, file.extractsTo)
         else File(folder, file.name.substringBeforeLast('.'))
 
-    /** True when an archive has already been extracted (output dir present and non-empty). */
-    private fun archiveAlreadyExtracted(file: ModelFile, folder: File): Boolean {
-        val dir = archiveOutputDir(file, folder)
-        return dir.isDirectory && !dir.listFiles().isNullOrEmpty()
+    private fun archiveIdentity(file: ModelFile) = "${file.name}:${file.sizeBytes}:${file.sha256.lowercase()}"
+    private val inventoryName = ".unoone-inventory-v2"
+
+    /** A local receipt bound to the pinned archive, plus a full rehash of every regular output.
+     * Legacy identity-only markers are deliberately not accepted. This is not a signed receipt:
+     * an attacker able to rewrite both app-private data and receipt is outside this trust boundary.
+     */
+    internal fun archiveAlreadyExtracted(file: ModelFile, folder: File): Boolean = runCatching {
+        require(file.sizeBytes > 0 && file.sha256.matches(Regex("[a-fA-F0-9]{64}")))
+        val output = archiveOutputDir(file, folder)
+        require(output.canonicalFile.parentFile == folder.canonicalFile)
+        val receipt = File(output, inventoryName)
+        require(!Files.isSymbolicLink(receipt.toPath()))
+        receipt.readText() == archiveIdentity(file) + "\n" + inventory(output)
+    }.getOrDefault(false)
+
+    private fun inventory(root: File): String {
+        require(Files.isDirectory(root.toPath(), LinkOption.NOFOLLOW_LINKS))
+        val rows = mutableListOf<String>()
+        fun visit(dir: File) {
+            val children = checkNotNull(dir.listFiles()) { "Unreadable archive directory" }
+            for (child in children) {
+                require(!Files.isSymbolicLink(child.toPath())) { "Link in archive output" }
+                if (child == File(root, inventoryName)) continue
+                if (Files.isDirectory(child.toPath(), LinkOption.NOFOLLOW_LINKS)) visit(child)
+                else {
+                    require(Files.isRegularFile(child.toPath(), LinkOption.NOFOLLOW_LINKS))
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    child.inputStream().use { input ->
+                        val buffer = ByteArray(BUFFER_SIZE)
+                        while (true) { val n = input.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) }
+                    }
+                    val path = child.relativeTo(root).invariantSeparatorsPath
+                    require(!path.contains('\n') && !path.contains('\t'))
+                    rows += "$path\t${child.length()}\t${digest.digest().joinToString("") { "%02x".format(it) }}"
+                }
+            }
+        }
+        visit(root)
+        require(rows.isNotEmpty()) { "Archive contains no regular output files" }
+        return rows.sorted().joinToString("\n")
+    }
+
+    private fun extractArchiveVerified(target: File, folder: File, file: ModelFile) {
+        require(file.sizeBytes > 0 && file.sha256.matches(Regex("[a-fA-F0-9]{64}"))) { "Archive requires pinned size and SHA256" }
+        check(verifyAfterDownload(target, file)) { "Archive integrity mismatch" }
+        val live = archiveOutputDir(file, folder)
+        require(live.canonicalFile.parentFile == folder.canonicalFile && !Files.isSymbolicLink(live.toPath()))
+        val stage = File(folder, ".extract-${UUID.randomUUID()}")
+        check(stage.mkdir())
+        val backup = File(folder, ".backup-${UUID.randomUUID()}")
+        try {
+            extractArchive(target, stage)
+            val output = File(stage, live.name)
+            require(stage.listFiles()?.toList() == listOf(output)) { "Unexpected archive root outputs" }
+            val receipt = File(output, inventoryName)
+            require(!receipt.exists()) { "Reserved inventory entry" }
+            val contents = archiveIdentity(file) + "\n" + inventory(output)
+            FileOutputStream(receipt).use { it.write(contents.toByteArray()); it.fd.sync() }
+            check(archiveAlreadyExtracted(file, stage)) { "Staged inventory verification failed" }
+            // Compatibility path transaction: TWO renames, NOT an atomic pointer swap.
+            // A crash between renames leaves live absent and backup preserved (health fails closed).
+            val hadLive = live.exists()
+            if (hadLive) check(live.renameTo(backup)) { "Cannot preserve previous archive output" }
+            if (!output.renameTo(live)) {
+                if (hadLive) check(backup.renameTo(live)) { "Activation failed; previous output retained at ${backup.name}" }
+                error("Archive activation failed; previous output restored")
+            }
+            // Verified staging and its receipt move together. Never erase backup on failed activation.
+            if (hadLive) backup.deleteRecursively()
+        } finally { stage.deleteRecursively() }
     }
 
     /** Downloads (with resume) then verifies size/checksum; on mismatch deletes and retries once. */
@@ -247,22 +312,14 @@ class ModelInstaller(
         listener: ProgressListener?,
         shouldCancel: () -> Boolean
     ): Boolean {
-        if (!attemptDownload(file, target, modelId, index, total, listener, shouldCancel)) return false
-
-        if (file.sizeBytes > 0 && target.length() != file.sizeBytes) {
-            Logger.w("ModelInstaller: size mismatch for ${file.name} (got ${target.length()}, expected ${file.sizeBytes}); retrying once")
-            target.delete()
-            return attemptDownload(file, target, modelId, index, total, listener, shouldCancel) && verifyAfterDownload(target, file)
-        }
-        if (file.sha256.isNotBlank() && !verifyChecksum(target, file)) {
-            Logger.w("ModelInstaller: checksum mismatch for ${file.name}; deleting and retrying once")
-            target.delete()
-            return attemptDownload(file, target, modelId, index, total, listener, shouldCancel) && verifyAfterDownload(target, file)
-        }
-        return true
+        // attemptDownload verifies the staging file before any activation; retry only proven corruption.
+        if (attemptDownload(file, target, modelId, index, total, listener, shouldCancel)) return true
+        if (lastFailureReason != "Staging integrity mismatch" || shouldCancel()) return false
+        return attemptDownload(file, target, modelId, index, total, listener, shouldCancel)
     }
 
     private fun verifyAfterDownload(target: File, file: ModelFile): Boolean {
+        if (!target.isFile || target.length() == 0L) return false
         if (file.sizeBytes > 0 && target.length() != file.sizeBytes) return false
         if (file.sha256.isNotBlank() && !verifyChecksum(target, file)) return false
         // NOTE: archive extraction is owned by downloadFile() so a retried archive is extracted
@@ -288,7 +345,7 @@ class ModelInstaller(
         listener: ProgressListener?,
         shouldCancel: () -> Boolean
     ): Boolean {
-        val temp = File(target.parentFile, "${file.name}.part")
+        val temp = File(target.parentFile, "${target.name}.part")
         // Safety: a file.name with a subpath (e.g. nested under a dir) needs its parent created.
         target.parentFile?.mkdirs()
         val existingBytes = if (temp.exists()) temp.length() else 0L
@@ -305,7 +362,7 @@ class ModelInstaller(
         // make re-install fail forever.
         if (file.sizeBytes > 0 && existingBytes >= file.sizeBytes) {
             Logger.i("ModelInstaller: ${file.name} .part already complete ($existingBytes bytes); committing")
-            return commitTemp(temp, target)
+            return verifyAndCommit(temp, target, file)
         }
 
         var conn: HttpURLConnection? = null
@@ -318,7 +375,7 @@ class ModelInstaller(
                 // risk committing a partial file with no integrity fields to verify against.
                 if (file.sizeBytes > 0 && existingBytes >= file.sizeBytes) {
                     Logger.i("ModelInstaller: HTTP 416 for ${file.name}; .part complete, committing")
-                    return commitTemp(temp, target)
+                    return verifyAndCommit(temp, target, file)
                 }
                 Logger.w("ModelInstaller: HTTP 416 for ${file.name}; cannot verify completeness, failing")
                 return false
@@ -374,7 +431,7 @@ class ModelInstaller(
                 out.fd.sync()
             }
 
-            commitTemp(temp, target)
+            verifyAndCommit(temp, target, file)
         } catch (e: Exception) {
             if (isTransientNetworkFailure(e)) {
                 lastFailureRetryable = true
@@ -453,17 +510,21 @@ class ModelInstaller(
 
     private fun formatBytes(bytes: Long): String = "%.2f GiB".format(bytes.toDouble() / (1024.0 * 1024.0 * 1024.0))
 
-    /** Atomically commits the .part temp file to its final name (rename, with a copy fallback). */
-    private fun commitTemp(temp: File, target: File): Boolean = try {
-        if (target.exists() && !target.delete()) {
-            Logger.w("ModelInstaller: could not replace existing ${target.name}; copying over")
-            temp.copyTo(target, overwrite = true)
+    private fun verifyAndCommit(temp: File, target: File, file: ModelFile): Boolean {
+        if (!verifyAfterDownload(temp, file)) {
+            lastFailureReason = "Staging integrity mismatch"
             temp.delete()
-        } else if (!temp.renameTo(target)) {
-            temp.copyTo(target, overwrite = true)
-            temp.delete()
+            return false
         }
-        true
+        return commitTemp(temp, target)
+    }
+
+    /** Same-filesystem atomic rename only: never delete or copy over the previous target. */
+    private fun commitTemp(temp: File, target: File): Boolean = try {
+        if (!temp.renameTo(target)) {
+            Logger.w("ModelInstaller: atomic activation failed for ${target.name}; previous target retained")
+            false
+        } else true
     } catch (e: Exception) {
         Logger.e("ModelInstaller: commit failed for ${target.name}", e)
         false
@@ -491,74 +552,53 @@ class ModelInstaller(
      * guarded against zip-slip / tar-slip (paths escaping the dest folder).
      */
     private fun extractArchive(archiveFile: File, destFolder: File) {
-        destFolder.mkdirs()
+        val seen = mutableSetOf<String>()
+        fun destination(name: String): File {
+            require(name.isNotBlank() && !name.startsWith('/') && !name.contains('\\') &&
+                !name.contains('\n') && !name.contains('\t') && !name.contains(':') &&
+                name.trimEnd('/').split('/').none { it == ".." || it == "." || it.isEmpty() }) { "Unsafe archive path" }
+            require(seen.add(name.trimEnd('/'))) { "Duplicate archive entry" }
+            val out = File(destFolder, name)
+            require(out.canonicalPath.startsWith(destFolder.canonicalPath + File.separator))
+            return out
+        }
+        fun write(out: File, input: InputStream) {
+            check(out.parentFile!!.isDirectory || out.parentFile!!.mkdirs())
+            require(!out.exists()) { "Archive entry collision" }
+            FileOutputStream(out).use { input.copyTo(it); it.fd.sync() }
+        }
         val name = archiveFile.name.lowercase()
-        val isZip = name.endsWith(".zip")
-        if (isZip) {
-            // Original ZIP path, verbatim — preserves the behavior the existing asset tests rely on.
-            ZipInputStream(archiveFile.inputStream().buffered()).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    val out = File(destFolder, entry.name)
-                    if (!isInsideDest(out, destFolder)) {
-                        Logger.w("ModelInstaller: skipping zip entry outside dest folder: ${entry.name}")
-                        zis.closeEntry()
-                        entry = zis.nextEntry
-                        continue
-                    }
-                    if (entry.isDirectory) {
-                        out.mkdirs()
-                    } else {
-                        out.parentFile?.mkdirs()
-                        FileOutputStream(out).use { fos -> zis.copyTo(fos) }
-                    }
-                    zis.closeEntry()
-                    entry = zis.nextEntry
+        if (name.endsWith(".zip")) {
+            // Central-directory Unix mode is necessary: streaming java.util.zip hides symlinks.
+            ZipFile(archiveFile).use { zip ->
+                val entries = zip.entries
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    val mode = entry.unixMode and 0xF000
+                    require(!entry.isUnixSymlink && (mode == 0 || mode == 0x8000 || (mode == 0x4000 && entry.isDirectory))) { "Unsupported ZIP entry type" }
+                    require(zip.canReadEntryData(entry))
+                    val out = destination(entry.name)
+                    if (entry.isDirectory) check(out.isDirectory || out.mkdirs())
+                    else zip.getInputStream(entry).use { write(out, it) }
                 }
             }
             return
         }
-
-        // tar / tar.bz2 / tar.gz — decompress layer first, then the tar archive layer.
         val raw = archiveFile.inputStream().buffered()
-        val decompressed: java.io.InputStream = when {
-            name.endsWith(".tar.bz2") || name.endsWith(".tbz2") || name.endsWith(".tbz") ->
-                BZip2CompressorInputStream(raw)
-            name.endsWith(".tar.gz") || name.endsWith(".tgz") ->
-                GzipCompressorInputStream(raw)
-            else -> raw // plain .tar
+        val decompressed = when {
+            name.endsWith(".tar.bz2") || name.endsWith(".tbz2") || name.endsWith(".tbz") -> BZip2CompressorInputStream(raw)
+            name.endsWith(".tar.gz") || name.endsWith(".tgz") -> GzipCompressorInputStream(raw)
+            else -> raw
         }
-        val tarIn = TarArchiveInputStream(decompressed)
-        tarIn.use { ais ->
-            var entry = ais.nextEntry
-            while (entry != null) {
-                val out = File(destFolder, entry.name)
-                if (!isInsideDest(out, destFolder)) {
-                    Logger.w("ModelInstaller: skipping tar entry outside dest folder: ${entry.name}")
-                    entry = ais.nextEntry
-                    continue
-                }
-                if (entry.isDirectory) {
-                    out.mkdirs()
-                } else {
-                    out.parentFile?.mkdirs()
-                    FileOutputStream(out).use { fos ->
-                        // Copy only this entry's bytes; TarArchiveInputStream.read() returns -1 at
-                        // the entry boundary, so copyTo stops there (not at end of the whole tar).
-                        ais.copyTo(fos)
-                    }
-                }
-                entry = ais.nextEntry
+        TarArchiveInputStream(decompressed).use { tar ->
+            while (true) {
+                val entry = tar.nextEntry ?: break
+                require(!entry.isSymbolicLink && !entry.isLink && (entry.isDirectory || entry.isFile) && !entry.isSparse) { "Unsupported TAR entry type" }
+                require(tar.canReadEntryData(entry))
+                val out = destination(entry.name)
+                if (entry.isDirectory) check(out.isDirectory || out.mkdirs()) else write(out, tar)
             }
         }
-    }
-
-    /** True when [out] resolves inside [destFolder] (zip-slip / tar-slip guard). */
-    private fun isInsideDest(out: File, destFolder: File): Boolean {
-        val canonicalDest = destFolder.canonicalPath
-        val canonicalOut = out.canonicalPath
-        return canonicalOut == canonicalDest ||
-            canonicalOut.startsWith(canonicalDest + File.separator)
     }
 
     private suspend fun setStatus(descriptor: ModelDescriptor, status: String, path: String) {

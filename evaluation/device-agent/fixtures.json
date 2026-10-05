@@ -1,0 +1,117 @@
+{
+  "gmail": {
+    "kind": "gmail-like",
+    "app": "fixture.mail",
+    "screen": "Inbox",
+    "rows": [
+      "Ada Test \u2014 Picnic",
+      "Ben Test \u2014 Travel update"
+    ],
+    "drafts": [],
+    "sendEnabled": false,
+    "id": "gmail",
+    "sanitized": true,
+    "implementationStatus": "specification_only_native_host_pending"
+  },
+  "whatsapp": {
+    "kind": "whatsapp-like",
+    "app": "fixture.chat",
+    "contacts": [
+      "Ada Test",
+      "Ben Test"
+    ],
+    "composer": "",
+    "sendEnabled": false,
+    "id": "whatsapp",
+    "sanitized": true,
+    "implementationStatus": "specification_only_native_host_pending"
+  },
+  "settings": {
+    "kind": "settings",
+    "app": "fixture.settings",
+    "brightness": 60,
+    "fontScale": 120,
+    "systemWritesEnabled": false,
+    "id": "settings",
+    "sanitized": true,
+    "implementationStatus": "specification_only_native_host_pending"
+  },
+  "form": {
+    "kind": "form",
+    "app": "fixture.form",
+    "fields": {
+      "firstName": "",
+      "surname": "",
+      "city": "",
+      "room": "",
+      "notes": "",
+      "password": ""
+    },
+    "submitEnabled": false,
+    "id": "form",
+    "sanitized": true,
+    "implementationStatus": "specification_only_native_host_pending"
+  },
+  "list": {
+    "kind": "list",
+    "app": "fixture.list",
+    "rows": [
+      {
+        "name": "Cedar",
+        "price": 9
+      },
+      {
+        "name": "Birch",
+        "price": 4
+      },
+      {
+        "name": "Maple",
+        "price": 7
+      }
+    ],
+    "deleteEnabled": false,
+    "id": "list",
+    "sanitized": true,
+    "implementationStatus": "specification_only_native_host_pending"
+  },
+  "popup": {
+    "kind": "popup",
+    "app": "fixture.popup",
+    "buttons": [
+      "Keep editing",
+      "Discard",
+      "Close"
+    ],
+    "underlay": "list",
+    "id": "popup",
+    "sanitized": true,
+    "implementationStatus": "specification_only_native_host_pending"
+  },
+  "webview": {
+    "kind": "WebView",
+    "app": "fixture.webview",
+    "origin": "https://fixture.example.invalid",
+    "localOnly": true,
+    "fields": {
+      "city": ""
+    },
+    "networkEnabled": false,
+    "id": "webview",
+    "sanitized": true,
+    "implementationStatus": "specification_only_native_host_pending"
+  },
+  "draw": {
+    "kind": "custom-draw",
+    "app": "fixture.draw",
+    "accessibilityNodes": [],
+    "shapes": [
+      "blue square",
+      "red circle",
+      "triangle"
+    ],
+    "rasterText": "Room B12",
+    "id": "draw",
+    "sanitized": true,
+    "implementationStatus": "specification_only_native_host_pending"
+  }
+}

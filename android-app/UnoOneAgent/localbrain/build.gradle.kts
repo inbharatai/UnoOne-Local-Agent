@@ -6,10 +6,23 @@ plugins {
 android {
     namespace = "com.unoone.agent.localbrain"
     compileSdk = 35
+    ndkVersion = "27.2.12479018"
+    externalNativeBuild {
+        cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" }
+    }
+    sourceSets.getByName("main").resources.srcDir("src/main/cpp/licenses")
 
     defaultConfig {
         minSdk = 28
         targetSdk = 35
+        ndk { abiFilters += "arm64-v8a" }
+        consumerProguardFiles("src/main/cpp/qwen-consumer-rules.pro")
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON")
+                targets += "unoone_qwen"
+            }
+        }
     }
 
     compileOptions {

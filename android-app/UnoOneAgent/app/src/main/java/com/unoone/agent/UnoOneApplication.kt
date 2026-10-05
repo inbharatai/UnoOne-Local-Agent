@@ -1,5 +1,7 @@
 package com.unoone.agent
 
+import com.unoone.agent.core.runtime.GlobalTaskCancellation
+import com.unoone.agent.core.runtime.VoiceAdmissionTicket
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
@@ -9,6 +11,13 @@ import androidx.core.content.edit
 import com.unoone.agent.browser.SecureBrowserModelLease
 import com.unoone.agent.model.ModelDownloadWorker
 import androidx.work.WorkManager
+import com.unoone.agent.core.model.BrainModelSpec
+import com.unoone.agent.core.model.BrainSelectionPolicy
+import com.unoone.agent.storage.PreferencesManager
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import com.unoone.agent.core.model.BrainModelRegistry
 import com.unoone.agent.core.model.ExclusiveBrainLeaseState
 import com.unoone.agent.core.model.E4bRuntimeCoordinator
@@ -55,14 +64,56 @@ class UnoOneApplication : Application(), AgentRuntimeController {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private val _commandFlow = MutableSharedFlow<String>(extraBufferCapacity = 16)
-    val commandFlow: SharedFlow<String> = _commandFlow.asSharedFlow()
+    private val _commandFlow = MutableSharedFlow<VoiceAdmissionTicket>(extraBufferCapacity = 16)
+    val commandFlow: SharedFlow<VoiceAdmissionTicket> = _commandFlow.asSharedFlow()
 
     private val _isAgentEnabled = MutableStateFlow(true)
     override val isAgentEnabled: StateFlow<Boolean> = _isAgentEnabled.asStateFlow()
 
-    /** Remembered for restoring the main Gemma 4 E4B brain after memory-pressure unload. */
-    @Volatile private var lastLlmPath: String? = null
+    private val selectionMutex = Mutex()
+    private val preferences by lazy { PreferencesManager(this) }
+    val brainProviderPreferences by lazy { BrainProviderPreferences(this) }
+    @Volatile private var selectedProfile: BrainModelSpec? = null
+
+    /** One-time migration, shared by startup and UI; always invoked off the main thread. */
+    suspend fun resolveSelectedBrain(): BrainModelSpec = withContext(Dispatchers.IO) {
+        selectionMutex.withLock {
+            selectedProfile ?: run {
+                val saved = preferences.selectedBrainManifestId
+                val legacyInstalled = saved == null &&
+                    ModelManager(this@UnoOneApplication).getLlmModelPath(BrainModelRegistry.GEMMA_4_E4B) != null
+                val profile = BrainSelectionPolicy.resolve(saved, legacyInstalled)
+                preferences.setSelectedBrainManifestId(profile.manifestId)
+                selectedProfile = profile
+                profile
+            }
+        }
+    }
+
+    /** Explicit user action only; installation and load failures never choose another profile. */
+    suspend fun selectBrainProfile(profile: BrainModelSpec): Result<Unit> = withContext(Dispatchers.IO) {
+        selectionMutex.withLock {
+            if (ExclusiveBrainLeaseState.isActive() || secureBrowserModelLease.isActive() ||
+                orchestrator.isBlindAidActive.value) {
+                return@withLock Result.Error("Close the active exclusive mode before changing the brain.")
+            }
+            modelLoadJob?.cancelAndJoin()
+            try {
+                orchestrator.cancelLlmInference("explicit brain selection")
+                if (!orchestrator.unloadLlmModel() || orchestrator.isPhoneBrainResident()) {
+                    return@withLock Result.Error("Previous model did not acknowledge unload; selection is unchanged.")
+                }
+                preferences.setSelectedBrainManifestId(profile.manifestId)
+                if (profile.runtime == com.unoone.agent.core.model.BrainRuntime.MNN) {
+                    brainProviderPreferences.qwenOptIn = true
+                }
+                selectedProfile = profile
+                Result.Success(Unit)
+            } catch (error: Exception) {
+                Result.Error("Could not select ${profile.displayName}: ${error.message}", error)
+            }
+        }
+    }
 
     /** Prevents startup/onResume/memory-recovery callers from queueing duplicate multi-GB loads. */
     private val modelLoadGate = ModelLoadGate()
@@ -115,9 +166,11 @@ class UnoOneApplication : Application(), AgentRuntimeController {
                 orchestrator.skillsModule.ensureBuiltIns()
             }
         }
-        secureBrowserModelLease = SecureBrowserModelLease(this, orchestrator)
+        secureBrowserModelLease = SecureBrowserModelLease(this, orchestrator) {
+            checkNotNull(selectedProfile) { "Brain selection is still being initialized; try again shortly." }
+        }
 
-        // Blind Aid releases the resident E4B engine before camera analysis reaches steady state.
+        // Blind Aid releases the resident selected engine before camera analysis reaches steady state.
         // The Application owns the Secure Browser lease + ExclusiveBrainLeaseState, so it supplies
         // the safe-to-unload guard and guarded reload callback used when Blind Aid deactivates.
         orchestrator.brainReleaseGuard = {
@@ -135,25 +188,26 @@ class UnoOneApplication : Application(), AgentRuntimeController {
         modelManager.ensureModelDirectories()
         // Exact-path and integrity-related filesystem work must never block Application.onCreate.
         appScope.launch(Dispatchers.IO) {
-            val brainSpec = BrainModelRegistry.GEMMA_4_E4B
-            val llmPath = modelManager.getLlmModelPath(brainSpec)
+            val brainSpec = resolveSelectedBrain()
+            val llmPath = modelManager.resolveBrainLoadPath(brainSpec)
             if (llmPath != null) {
-                lastLlmPath = llmPath
                 if (persistedEnabled) scheduleLlmLoad(llmPath, brainSpec, "initial")
             } else {
-                Logger.i("UnoOneApplication: verified E4B artifact is not installed yet")
+                Logger.i("UnoOneApplication: selected ${brainSpec.displayName} artifact is not installed yet")
             }
         }
 
         appScope.launch {
-            commandFlow.collect { command ->
+            commandFlow.collect { ticket ->
+                val command = ticket.text
+                if (!ticket.isCurrent()) { VoiceService.endForegroundTask(); return@collect }
                 if (AgentRuntimeGate.isEnabled() && command.isNotBlank()) {
                     Logger.i("UnoOneApplication: received local voice command")
                     try {
-                        orchestrator.processCommand(command, com.unoone.agent.core.model.InputType.VOICE)
+                        orchestrator.processCommand(command, com.unoone.agent.core.model.InputType.VOICE, ticket.generation)
                     } finally {
                         VoiceService.endForegroundTask()
-                        if (AgentRuntimeGate.isEnabled()) {
+                        if (AgentRuntimeGate.isEnabled() && ticket.isCurrent()) {
                             VoiceAgentRuntime.transition(
                                 VoiceAgentState.WAKE_LISTENING,
                                 "voice command completed"
@@ -165,6 +219,7 @@ class UnoOneApplication : Application(), AgentRuntimeController {
         }
 
         VoiceService.voiceCommandCallback = { command -> postVoiceCommand(command) }
+        VoiceService.voiceTicketCallback = { ticket -> postVoiceCommand(ticket.text, ticket.generation) }
         // When the KWS loop fires a wake word, speak the listening cue through the shared voice
         // module off the audio thread so capture and TTS retain single-owner microphone discipline.
         VoiceService.onWakeWord = {
@@ -186,14 +241,22 @@ class UnoOneApplication : Application(), AgentRuntimeController {
         }
     }
 
-    fun postVoiceCommand(command: String) {
+    fun postVoiceCommand(command: String) = postVoiceCommand(command, GlobalTaskCancellation.generation)
+
+    fun postVoiceCommand(command: String, generation: Long) {
         if (!AgentRuntimeGate.isEnabled()) return
+        // Safety controls bypass the serial command collector and its processing lock.
+        if (com.unoone.agent.voice.VoiceControlPolicy.routeStop(command) {
+                orchestrator.cancelCurrentCommand(speak = false)
+                sharedVoiceModule.stopSpeaking()
+            }) return
         // The command collector is intentionally serial. A spoken "Uno confirm" must therefore
         // resolve a safety prompt directly instead of waiting behind the command that is awaiting
         // that very confirmation.
+        if (generation != GlobalTaskCancellation.generation) return
         if (orchestrator.resolvePendingVoiceConfirmation(command)) return
         VoiceService.beginForegroundTask()
-        if (!_commandFlow.tryEmit(command)) {
+        if (!_commandFlow.tryEmit(VoiceAdmissionTicket(command, generation))) {
             VoiceService.endForegroundTask()
             VoiceAgentRuntime.transition(VoiceAgentState.WAKE_LISTENING, "voice command queue full")
         }
@@ -251,6 +314,7 @@ class UnoOneApplication : Application(), AgentRuntimeController {
         E4bRuntimeCoordinator.transition(E4bRuntimeState.UNLOADED, detail = "explicit re-enable")
         _isAgentEnabled.value = true
         VoiceService.voiceCommandCallback = { command -> postVoiceCommand(command) }
+        VoiceService.voiceTicketCallback = { ticket -> postVoiceCommand(ticket.text, ticket.generation) }
         VoiceService.sharedVoiceModuleProvider = { sharedVoiceModule }
         VoiceAgentRuntime.transition(VoiceAgentState.INITIALISING, "explicit enable")
         VoiceService.onWakeWord = {
@@ -272,10 +336,9 @@ class UnoOneApplication : Application(), AgentRuntimeController {
 
             // The model may have been installed while UnoOne was disabled; resolve it again instead
             // of relying only on the path remembered at process startup.
-            val spec = BrainModelRegistry.GEMMA_4_E4B
-            val path = manager.getLlmModelPath(spec)
+            val spec = resolveSelectedBrain()
+            val path = manager.resolveBrainLoadPath(spec)
             if (path != null) {
-                lastLlmPath = path
                 scheduleLlmLoad(path, spec, "enable")
             }
         }
@@ -319,10 +382,12 @@ class UnoOneApplication : Application(), AgentRuntimeController {
     fun reloadLlmIfUnloaded() {
         if (!AgentRuntimeGate.isEnabled()) return
         if (ExclusiveBrainLeaseState.isActive() || secureBrowserModelLease.isActive()) return
-        val path = lastLlmPath ?: return
         if (orchestrator.isLlmLoaded()) return
-        val spec = BrainModelRegistry.GEMMA_4_E4B
-        scheduleLlmLoad(path, spec, "recovery")
+        appScope.launch(Dispatchers.IO) {
+            val spec = resolveSelectedBrain()
+            val path = ModelManager(this@UnoOneApplication).resolveBrainLoadPath(spec) ?: return@launch
+            scheduleLlmLoad(path, spec, "recovery")
+        }
     }
 
     /**
@@ -346,7 +411,7 @@ class UnoOneApplication : Application(), AgentRuntimeController {
                 // Let the landing screen and direct camera/voice controls become interactive first.
                 // Blind Aid cancels this delay, avoiding contention with a multi-GB native load.
                 if (reason == "initial") delay(8_000L)
-                if (!AgentRuntimeGate.isEnabled()) return@launch
+                if (!AgentRuntimeGate.isEnabled() || selectedProfile?.manifestId != spec.manifestId) return@launch
                 Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
                 if (ExclusiveBrainLeaseState.isActive() ||
                     secureBrowserModelLease.isActive() ||
@@ -361,7 +426,8 @@ class UnoOneApplication : Application(), AgentRuntimeController {
                 }
                 val result = orchestrator.loadLlmModel(path, spec)
                 if (result is Result.Success) {
-                    if (!AgentRuntimeGate.isEnabled() || orchestrator.isBlindAidActive.value) {
+                    if (!AgentRuntimeGate.isEnabled() || orchestrator.isBlindAidActive.value ||
+                        selectedProfile?.manifestId != spec.manifestId) {
                         // Native model creation is not cancellable once entered. If Blind Aid was
                         // activated mid-load, release the newly-created brain immediately.
                         orchestrator.unloadLlmModel()

@@ -1,6 +1,8 @@
 package com.unoone.agent.voice.stt
 
 import android.content.Context
+import com.unoone.agent.modelmanager.ModelType
+import com.unoone.agent.voice.stt.SpeechModelIntegrity
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineOmnilingualAsrCtcModelConfig
@@ -79,6 +81,7 @@ class SherpaSttEngine(
     @Synchronized
     fun initialize(): Result<Unit> {
         return try {
+            SpeechModelIntegrity.requireVerified(context, modelDir, ModelType.asr, mode)
             when (mode) {
                 SttMode.TRANSDUCER -> initializeTransducer()
                 SttMode.WHISPER -> initializeWhisper()

@@ -1,6 +1,7 @@
 package com.unoone.agent.securebrowser
 
 import com.unoone.agent.core.runtime.AgentRuntimeGate
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -115,6 +116,8 @@ class SecureBrowserNativeHandler(
             )
         }
 
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (!AgentRuntimeGate.isEnabled()) return failure(request, "AGENT_DISABLED", "UnoOne is disabled")
         val decisionLabel = when {
             response.allowed -> "allowed"
             response.requiresUserTakeover -> "user_takeover"

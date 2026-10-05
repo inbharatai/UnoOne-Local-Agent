@@ -1,6 +1,6 @@
 package com.unoone.agent.modelmanager
 
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -24,6 +24,6 @@ class E4bCleanupGateTest {
         assertTrue(E4bCleanupGate.rejectionReason(complete.copy(strictSelfTestPassed = false), true)!!.contains("self-test"))
         assertTrue(E4bCleanupGate.rejectionReason(complete.copy(sustainedRunCompleted = false), true)!!.contains("Sustained"))
         assertTrue(E4bCleanupGate.rejectionReason(complete.copy(noCrashAnrOom = false), true)!!.contains("stability"))
-        assertNull(E4bCleanupGate.rejectionReason(complete, true))
+        assertNotNull(E4bCleanupGate.rejectionReason(complete, true))
     }
 }

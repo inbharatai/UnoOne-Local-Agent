@@ -1,0 +1,15 @@
+{
+  "totalRequired": 100,
+  "counts": {
+    "pass": 0,
+    "partial": 0,
+    "fail": 0,
+    "blocked": 0,
+    "pending": 100,
+    "skipped": 0
+  },
+  "missingCountedPending": 0,
+  "successRate": 0.0,
+  "physicalQualification": "pending",
+  "note": "No pass inferred from skipped/pending, planner output or successful adb collection."
+}

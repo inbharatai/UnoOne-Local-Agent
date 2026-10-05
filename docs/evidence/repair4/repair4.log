@@ -1,0 +1,921 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.11.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+Configuration on demand is an incubating feature.
+> Task :accessibilitycontrol:clean
+> Task :agentrouter:clean
+> Task :app:clean
+> Task :core:clean
+> Task :languagepacks:clean
+> Task :localbrain:clean
+> Task :memory:clean
+> Task :modelmanager:clean
+> Task :observability:clean
+> Task :phonecontrol:clean
+> Task :safetyguard:clean
+> Task :securebrowser:clean
+> Task :skills:clean
+> Task :storage:clean
+> Task :voice:clean
+> Task :accessibilitycontrol:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :accessibilitycontrol:preBuild UP-TO-DATE
+> Task :accessibilitycontrol:preDebugBuild UP-TO-DATE
+> Task :accessibilitycontrol:generateDebugResValues FROM-CACHE
+> Task :accessibilitycontrol:generateDebugResources FROM-CACHE
+> Task :accessibilitycontrol:packageDebugResources FROM-CACHE
+> Task :accessibilitycontrol:parseDebugLocalResources FROM-CACHE
+> Task :accessibilitycontrol:generateDebugRFile FROM-CACHE
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:preBuild UP-TO-DATE
+> Task :core:preDebugBuild UP-TO-DATE
+> Task :core:generateDebugResValues FROM-CACHE
+> Task :core:generateDebugResources FROM-CACHE
+> Task :core:packageDebugResources FROM-CACHE
+> Task :core:parseDebugLocalResources FROM-CACHE
+> Task :core:generateDebugRFile FROM-CACHE
+> Task :core:compileDebugKotlin FROM-CACHE
+> Task :core:javaPreCompileDebug FROM-CACHE
+> Task :core:compileDebugJavaWithJavac NO-SOURCE
+> Task :accessibilitycontrol:javaPreCompileDebug FROM-CACHE
+> Task :accessibilitycontrol:preDebugUnitTestBuild UP-TO-DATE
+> Task :accessibilitycontrol:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :accessibilitycontrol:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :core:bundleLibCompileToJarDebug
+> Task :core:bundleLibRuntimeToJarDebug
+> Task :accessibilitycontrol:compileDebugKotlin FROM-CACHE
+> Task :accessibilitycontrol:compileDebugJavaWithJavac NO-SOURCE
+> Task :accessibilitycontrol:bundleLibRuntimeToJarDebug
+> Task :accessibilitycontrol:bundleLibCompileToJarDebug
+> Task :accessibilitycontrol:processDebugJavaRes
+> Task :accessibilitycontrol:compileDebugUnitTestKotlin NO-SOURCE
+> Task :accessibilitycontrol:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :accessibilitycontrol:processDebugUnitTestJavaRes NO-SOURCE
+> Task :core:processDebugJavaRes
+> Task :accessibilitycontrol:testDebugUnitTest NO-SOURCE
+> Task :agentrouter:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :agentrouter:preBuild UP-TO-DATE
+> Task :agentrouter:preDebugBuild UP-TO-DATE
+> Task :agentrouter:generateDebugResValues FROM-CACHE
+> Task :agentrouter:generateDebugResources FROM-CACHE
+> Task :agentrouter:packageDebugResources FROM-CACHE
+> Task :agentrouter:parseDebugLocalResources FROM-CACHE
+> Task :agentrouter:generateDebugRFile FROM-CACHE
+> Task :phonecontrol:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :phonecontrol:preBuild UP-TO-DATE
+> Task :phonecontrol:preDebugBuild UP-TO-DATE
+> Task :phonecontrol:generateDebugResValues FROM-CACHE
+> Task :phonecontrol:generateDebugResources FROM-CACHE
+> Task :phonecontrol:packageDebugResources FROM-CACHE
+> Task :phonecontrol:parseDebugLocalResources FROM-CACHE
+> Task :phonecontrol:generateDebugRFile FROM-CACHE
+> Task :phonecontrol:javaPreCompileDebug FROM-CACHE
+> Task :safetyguard:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :safetyguard:preBuild UP-TO-DATE
+> Task :safetyguard:preDebugBuild UP-TO-DATE
+> Task :safetyguard:generateDebugResValues FROM-CACHE
+> Task :safetyguard:generateDebugResources FROM-CACHE
+> Task :safetyguard:packageDebugResources FROM-CACHE
+> Task :safetyguard:parseDebugLocalResources FROM-CACHE
+> Task :safetyguard:generateDebugRFile FROM-CACHE
+> Task :safetyguard:compileDebugKotlin FROM-CACHE
+> Task :safetyguard:javaPreCompileDebug FROM-CACHE
+> Task :safetyguard:compileDebugJavaWithJavac NO-SOURCE
+> Task :safetyguard:bundleLibCompileToJarDebug
+> Task :storage:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :storage:preBuild UP-TO-DATE
+> Task :storage:preDebugBuild UP-TO-DATE
+> Task :storage:generateDebugResValues FROM-CACHE
+> Task :storage:generateDebugResources FROM-CACHE
+> Task :storage:packageDebugResources FROM-CACHE
+> Task :storage:parseDebugLocalResources FROM-CACHE
+> Task :storage:generateDebugRFile FROM-CACHE
+> Task :storage:kspDebugKotlin FROM-CACHE
+> Task :storage:compileDebugKotlin FROM-CACHE
+> Task :storage:javaPreCompileDebug FROM-CACHE
+> Task :storage:compileDebugJavaWithJavac NO-SOURCE
+> Task :storage:bundleLibCompileToJarDebug
+> Task :agentrouter:javaPreCompileDebug FROM-CACHE
+> Task :agentrouter:preDebugUnitTestBuild UP-TO-DATE
+> Task :agentrouter:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :agentrouter:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :safetyguard:bundleLibRuntimeToJarDebug
+> Task :safetyguard:processDebugJavaRes
+> Task :storage:bundleLibRuntimeToJarDebug
+> Task :storage:processDebugJavaRes
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :accessibilitycontrol:compileDebugLibraryResources FROM-CACHE
+> Task :agentrouter:compileDebugLibraryResources FROM-CACHE
+> Task :accessibilitycontrol:writeDebugAarMetadata
+> Task :agentrouter:writeDebugAarMetadata
+> Task :core:writeDebugAarMetadata
+> Task :languagepacks:preBuild UP-TO-DATE
+> Task :languagepacks:preDebugBuild UP-TO-DATE
+> Task :languagepacks:writeDebugAarMetadata
+> Task :localbrain:preBuild UP-TO-DATE
+> Task :localbrain:preDebugBuild UP-TO-DATE
+> Task :localbrain:writeDebugAarMetadata
+> Task :memory:preBuild UP-TO-DATE
+> Task :memory:preDebugBuild UP-TO-DATE
+> Task :memory:writeDebugAarMetadata
+> Task :modelmanager:preBuild UP-TO-DATE
+> Task :modelmanager:preDebugBuild UP-TO-DATE
+> Task :modelmanager:writeDebugAarMetadata
+> Task :observability:preBuild UP-TO-DATE
+> Task :observability:preDebugBuild UP-TO-DATE
+> Task :observability:writeDebugAarMetadata
+> Task :phonecontrol:writeDebugAarMetadata
+> Task :safetyguard:writeDebugAarMetadata
+> Task :securebrowser:verifyBrowserRuntime
+> Task :securebrowser:preBuild
+> Task :securebrowser:preDebugBuild
+> Task :securebrowser:writeDebugAarMetadata
+> Task :skills:preBuild UP-TO-DATE
+> Task :skills:preDebugBuild UP-TO-DATE
+> Task :skills:writeDebugAarMetadata
+> Task :storage:writeDebugAarMetadata
+> Task :voice:preBuild UP-TO-DATE
+> Task :voice:preDebugBuild UP-TO-DATE
+> Task :voice:writeDebugAarMetadata
+> Task :app:checkDebugAarMetadata
+> Task :app:generateDebugResValues FROM-CACHE
+> Task :languagepacks:generateDebugResValues FROM-CACHE
+> Task :languagepacks:generateDebugResources FROM-CACHE
+> Task :languagepacks:packageDebugResources FROM-CACHE
+> Task :localbrain:generateDebugResValues FROM-CACHE
+> Task :localbrain:generateDebugResources FROM-CACHE
+> Task :localbrain:packageDebugResources FROM-CACHE
+> Task :memory:generateDebugResValues FROM-CACHE
+> Task :memory:generateDebugResources FROM-CACHE
+> Task :memory:packageDebugResources FROM-CACHE
+> Task :modelmanager:generateDebugResValues FROM-CACHE
+> Task :modelmanager:generateDebugResources FROM-CACHE
+> Task :modelmanager:packageDebugResources FROM-CACHE
+> Task :observability:generateDebugResValues FROM-CACHE
+> Task :observability:generateDebugResources FROM-CACHE
+> Task :observability:packageDebugResources FROM-CACHE
+> Task :securebrowser:generateDebugResValues FROM-CACHE
+> Task :securebrowser:generateDebugResources FROM-CACHE
+> Task :securebrowser:packageDebugResources FROM-CACHE
+> Task :skills:generateDebugResValues FROM-CACHE
+> Task :skills:generateDebugResources FROM-CACHE
+> Task :skills:packageDebugResources FROM-CACHE
+> Task :voice:generateDebugResValues FROM-CACHE
+> Task :voice:generateDebugResources FROM-CACHE
+> Task :voice:packageDebugResources FROM-CACHE
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources FROM-CACHE
+> Task :app:mergeDebugResources FROM-CACHE
+> Task :app:packageDebugResources FROM-CACHE
+> Task :app:parseDebugLocalResources FROM-CACHE
+> Task :app:createDebugCompatibleScreenManifests
+> Task :accessibilitycontrol:extractDeepLinksDebug FROM-CACHE
+> Task :accessibilitycontrol:processDebugManifest FROM-CACHE
+> Task :agentrouter:extractDeepLinksDebug FROM-CACHE
+> Task :agentrouter:processDebugManifest FROM-CACHE
+> Task :app:extractDeepLinksDebug FROM-CACHE
+> Task :core:extractDeepLinksDebug FROM-CACHE
+> Task :core:processDebugManifest FROM-CACHE
+> Task :languagepacks:extractDeepLinksDebug FROM-CACHE
+> Task :languagepacks:processDebugManifest FROM-CACHE
+> Task :localbrain:extractDeepLinksDebug FROM-CACHE
+> Task :localbrain:processDebugManifest FROM-CACHE
+> Task :memory:extractDeepLinksDebug FROM-CACHE
+> Task :memory:processDebugManifest FROM-CACHE
+> Task :modelmanager:extractDeepLinksDebug FROM-CACHE
+> Task :modelmanager:processDebugManifest FROM-CACHE
+> Task :observability:extractDeepLinksDebug FROM-CACHE
+> Task :observability:processDebugManifest FROM-CACHE
+> Task :phonecontrol:extractDeepLinksDebug FROM-CACHE
+> Task :phonecontrol:processDebugManifest FROM-CACHE
+> Task :safetyguard:extractDeepLinksDebug FROM-CACHE
+> Task :safetyguard:processDebugManifest FROM-CACHE
+> Task :securebrowser:extractDeepLinksDebug FROM-CACHE
+> Task :securebrowser:processDebugManifest FROM-CACHE
+> Task :skills:extractDeepLinksDebug FROM-CACHE
+> Task :skills:processDebugManifest FROM-CACHE
+> Task :storage:extractDeepLinksDebug FROM-CACHE
+> Task :storage:processDebugManifest FROM-CACHE
+> Task :voice:extractDeepLinksDebug FROM-CACHE
+> Task :voice:processDebugManifest FROM-CACHE
+> Task :app:processDebugMainManifest FROM-CACHE
+> Task :app:processDebugManifest FROM-CACHE
+> Task :app:processDebugManifestForPackage FROM-CACHE
+> Task :core:compileDebugLibraryResources FROM-CACHE
+> Task :languagepacks:compileDebugLibraryResources FROM-CACHE
+> Task :languagepacks:parseDebugLocalResources FROM-CACHE
+> Task :languagepacks:generateDebugRFile FROM-CACHE
+> Task :localbrain:compileDebugLibraryResources FROM-CACHE
+> Task :localbrain:parseDebugLocalResources FROM-CACHE
+> Task :localbrain:generateDebugRFile FROM-CACHE
+> Task :memory:compileDebugLibraryResources FROM-CACHE
+> Task :memory:parseDebugLocalResources FROM-CACHE
+> Task :memory:generateDebugRFile FROM-CACHE
+> Task :modelmanager:compileDebugLibraryResources FROM-CACHE
+> Task :modelmanager:parseDebugLocalResources FROM-CACHE
+> Task :modelmanager:generateDebugRFile FROM-CACHE
+> Task :observability:compileDebugLibraryResources FROM-CACHE
+> Task :observability:parseDebugLocalResources FROM-CACHE
+> Task :observability:generateDebugRFile FROM-CACHE
+> Task :phonecontrol:compileDebugLibraryResources FROM-CACHE
+> Task :safetyguard:compileDebugLibraryResources FROM-CACHE
+> Task :securebrowser:compileDebugLibraryResources FROM-CACHE
+> Task :securebrowser:parseDebugLocalResources FROM-CACHE
+> Task :securebrowser:generateDebugRFile FROM-CACHE
+> Task :skills:compileDebugLibraryResources FROM-CACHE
+> Task :skills:parseDebugLocalResources FROM-CACHE
+> Task :skills:generateDebugRFile FROM-CACHE
+> Task :storage:compileDebugLibraryResources FROM-CACHE
+> Task :voice:compileDebugLibraryResources FROM-CACHE
+> Task :voice:parseDebugLocalResources FROM-CACHE
+> Task :voice:generateDebugRFile FROM-CACHE
+> Task :app:processDebugResources FROM-CACHE
+> Task :languagepacks:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :modelmanager:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :modelmanager:compileDebugKotlin FROM-CACHE
+> Task :modelmanager:javaPreCompileDebug FROM-CACHE
+> Task :modelmanager:compileDebugJavaWithJavac NO-SOURCE
+> Task :modelmanager:bundleLibCompileToJarDebug
+> Task :languagepacks:compileDebugKotlin FROM-CACHE
+> Task :languagepacks:javaPreCompileDebug FROM-CACHE
+> Task :languagepacks:compileDebugJavaWithJavac NO-SOURCE
+> Task :languagepacks:bundleLibCompileToJarDebug
+> Task :localbrain:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :observability:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :observability:compileDebugKotlin FROM-CACHE
+> Task :observability:javaPreCompileDebug FROM-CACHE
+> Task :observability:compileDebugJavaWithJavac NO-SOURCE
+> Task :observability:bundleLibCompileToJarDebug
+> Task :localbrain:compileDebugKotlin FROM-CACHE
+> Task :localbrain:javaPreCompileDebug FROM-CACHE
+> Task :localbrain:compileDebugJavaWithJavac NO-SOURCE
+> Task :localbrain:bundleLibCompileToJarDebug
+> Task :memory:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :memory:compileDebugKotlin FROM-CACHE
+> Task :memory:javaPreCompileDebug FROM-CACHE
+> Task :memory:compileDebugJavaWithJavac NO-SOURCE
+> Task :memory:bundleLibCompileToJarDebug
+> Task :securebrowser:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :securebrowser:compileDebugKotlin FROM-CACHE
+> Task :securebrowser:javaPreCompileDebug FROM-CACHE
+> Task :securebrowser:compileDebugJavaWithJavac NO-SOURCE
+> Task :securebrowser:bundleLibCompileToJarDebug
+> Task :skills:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :skills:compileDebugKotlin FROM-CACHE
+> Task :skills:javaPreCompileDebug FROM-CACHE
+> Task :skills:compileDebugJavaWithJavac NO-SOURCE
+> Task :skills:bundleLibCompileToJarDebug
+> Task :voice:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :voice:compileDebugKotlin FROM-CACHE
+> Task :voice:javaPreCompileDebug FROM-CACHE
+> Task :voice:compileDebugJavaWithJavac NO-SOURCE
+> Task :voice:bundleLibCompileToJarDebug
+> Task :app:javaPreCompileDebug FROM-CACHE
+> Task :languagepacks:bundleLibRuntimeToJarDebug
+> Task :voice:bundleLibRuntimeToJarDebug
+> Task :modelmanager:bundleLibRuntimeToJarDebug
+> Task :memory:bundleLibRuntimeToJarDebug
+> Task :skills:bundleLibRuntimeToJarDebug
+> Task :localbrain:bundleLibRuntimeToJarDebug
+> Task :observability:bundleLibRuntimeToJarDebug
+> Task :securebrowser:bundleLibRuntimeToJarDebug
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :languagepacks:processDebugJavaRes
+> Task :localbrain:processDebugJavaRes
+> Task :memory:processDebugJavaRes
+> Task :modelmanager:processDebugJavaRes
+> Task :observability:processDebugJavaRes
+> Task :securebrowser:processDebugJavaRes
+> Task :skills:processDebugJavaRes
+> Task :voice:processDebugJavaRes
+> Task :core:preDebugUnitTestBuild UP-TO-DATE
+> Task :core:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :core:compileDebugUnitTestKotlin FROM-CACHE
+> Task :core:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :core:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :core:processDebugUnitTestJavaRes
+> Task :core:testDebugUnitTest FROM-CACHE
+> Task :languagepacks:preDebugUnitTestBuild UP-TO-DATE
+> Task :languagepacks:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :languagepacks:compileDebugUnitTestKotlin FROM-CACHE
+> Task :languagepacks:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :languagepacks:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :languagepacks:processDebugUnitTestJavaRes
+> Task :languagepacks:testDebugUnitTest FROM-CACHE
+> Task :localbrain:preDebugUnitTestBuild UP-TO-DATE
+> Task :localbrain:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :localbrain:compileDebugUnitTestKotlin FROM-CACHE
+> Task :localbrain:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :localbrain:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :localbrain:processDebugUnitTestJavaRes
+> Task :localbrain:testDebugUnitTest FROM-CACHE
+> Task :memory:preDebugUnitTestBuild UP-TO-DATE
+> Task :memory:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :memory:compileDebugUnitTestKotlin NO-SOURCE
+> Task :memory:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :memory:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :memory:processDebugUnitTestJavaRes NO-SOURCE
+> Task :memory:testDebugUnitTest NO-SOURCE
+> Task :modelmanager:preDebugUnitTestBuild UP-TO-DATE
+> Task :modelmanager:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :modelmanager:compileDebugUnitTestKotlin FROM-CACHE
+> Task :modelmanager:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :modelmanager:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :modelmanager:processDebugUnitTestJavaRes
+> Task :modelmanager:testDebugUnitTest FROM-CACHE
+> Task :observability:preDebugUnitTestBuild UP-TO-DATE
+> Task :observability:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :observability:compileDebugUnitTestKotlin FROM-CACHE
+> Task :observability:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :observability:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :observability:processDebugUnitTestJavaRes
+> Task :observability:testDebugUnitTest FROM-CACHE
+> Task :phonecontrol:preDebugUnitTestBuild UP-TO-DATE
+> Task :phonecontrol:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :phonecontrol:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :safetyguard:preDebugUnitTestBuild UP-TO-DATE
+> Task :safetyguard:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :safetyguard:compileDebugUnitTestKotlin NO-SOURCE
+> Task :safetyguard:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :safetyguard:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :safetyguard:processDebugUnitTestJavaRes NO-SOURCE
+> Task :safetyguard:testDebugUnitTest NO-SOURCE
+> Task :securebrowser:preDebugUnitTestBuild
+> Task :securebrowser:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :securebrowser:compileDebugUnitTestKotlin FROM-CACHE
+> Task :securebrowser:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :securebrowser:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :securebrowser:processDebugUnitTestJavaRes
+> Task :securebrowser:testDebugUnitTest FROM-CACHE
+> Task :skills:preDebugUnitTestBuild UP-TO-DATE
+> Task :skills:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :skills:compileDebugUnitTestKotlin FROM-CACHE
+> Task :skills:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :skills:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :skills:processDebugUnitTestJavaRes
+> Task :skills:testDebugUnitTest FROM-CACHE
+> Task :storage:preDebugUnitTestBuild UP-TO-DATE
+> Task :storage:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :storage:kspDebugUnitTestKotlin NO-SOURCE
+> Task :storage:compileDebugUnitTestKotlin NO-SOURCE
+> Task :storage:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :storage:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :storage:processDebugUnitTestJavaRes NO-SOURCE
+> Task :storage:testDebugUnitTest NO-SOURCE
+> Task :voice:preDebugUnitTestBuild UP-TO-DATE
+> Task :voice:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :voice:compileDebugUnitTestKotlin FROM-CACHE
+> Task :voice:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :voice:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :voice:processDebugUnitTestJavaRes
+> Task :voice:testDebugUnitTest FROM-CACHE
+> Task :accessibilitycontrol:mergeDebugJniLibFolders
+> Task :accessibilitycontrol:mergeDebugNativeLibs NO-SOURCE
+> Task :accessibilitycontrol:stripDebugDebugSymbols NO-SOURCE
+> Task :accessibilitycontrol:copyDebugJniLibsProjectAndLocalJars
+> Task :accessibilitycontrol:extractDebugAnnotations FROM-CACHE
+> Task :accessibilitycontrol:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :accessibilitycontrol:mergeDebugShaders
+> Task :accessibilitycontrol:compileDebugShaders NO-SOURCE
+> Task :accessibilitycontrol:generateDebugAssets UP-TO-DATE
+> Task :accessibilitycontrol:mergeDebugAssets
+> Task :accessibilitycontrol:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :accessibilitycontrol:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :accessibilitycontrol:prepareDebugArtProfile UP-TO-DATE
+> Task :accessibilitycontrol:prepareLintJarForPublish UP-TO-DATE
+> Task :accessibilitycontrol:mergeDebugJavaResource
+> Task :accessibilitycontrol:syncDebugLibJars FROM-CACHE
+> Task :accessibilitycontrol:bundleDebugLocalLintAar
+> Task :core:mergeDebugJniLibFolders
+> Task :core:mergeDebugNativeLibs NO-SOURCE
+> Task :core:stripDebugDebugSymbols NO-SOURCE
+> Task :core:copyDebugJniLibsProjectAndLocalJars
+> Task :core:extractDebugAnnotations FROM-CACHE
+> Task :core:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :core:mergeDebugShaders
+> Task :core:compileDebugShaders NO-SOURCE
+> Task :core:generateDebugAssets UP-TO-DATE
+> Task :core:mergeDebugAssets
+> Task :core:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :core:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :core:prepareDebugArtProfile UP-TO-DATE
+> Task :core:prepareLintJarForPublish UP-TO-DATE
+> Task :core:mergeDebugJavaResource
+> Task :core:syncDebugLibJars FROM-CACHE
+> Task :core:bundleDebugLocalLintAar
+> Task :accessibilitycontrol:createFullJarDebug
+> Task :accessibilitycontrol:preDebugAndroidTestBuild UP-TO-DATE
+> Task :accessibilitycontrol:generateDebugAndroidTestResValues FROM-CACHE
+> Task :accessibilitycontrol:writeDebugLintModelMetadata
+> Task :core:createFullJarDebug
+> Task :core:writeDebugLintModelMetadata
+> Task :accessibilitycontrol:generateDebugAndroidTestLintModel
+> Task :accessibilitycontrol:extractProguardFiles
+> Task :core:extractProguardFiles
+> Task :core:generateDebugLintModel
+> Task :accessibilitycontrol:generateDebugLintModel
+> Task :accessibilitycontrol:generateDebugUnitTestLintModel
+> Task :phonecontrol:compileDebugKotlin
+> Task :core:lintAnalyzeDebug
+> Task :phonecontrol:compileDebugJavaWithJavac NO-SOURCE
+> Task :phonecontrol:bundleLibCompileToJarDebug
+> Task :agentrouter:compileDebugKotlin
+> Task :agentrouter:compileDebugJavaWithJavac NO-SOURCE
+> Task :agentrouter:bundleLibRuntimeToJarDebug
+> Task :agentrouter:bundleLibCompileToJarDebug
+> Task :agentrouter:compileDebugUnitTestKotlin NO-SOURCE
+> Task :agentrouter:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :agentrouter:processDebugJavaRes
+> Task :agentrouter:processDebugUnitTestJavaRes NO-SOURCE
+> Task :phonecontrol:bundleLibRuntimeToJarDebug
+> Task :phonecontrol:processDebugJavaRes
+> Task :agentrouter:testDebugUnitTest NO-SOURCE
+> Task :app:kspDebugKotlin
+> Task :app:compileDebugKotlin
+> Task :phonecontrol:compileDebugUnitTestKotlin
+> Task :phonecontrol:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :phonecontrol:processDebugUnitTestJavaRes
+> Task :phonecontrol:testDebugUnitTest
+> Task :accessibilitycontrol:lintAnalyzeDebug
+> Task :accessibilitycontrol:lintAnalyzeDebugAndroidTest FROM-CACHE
+> Task :accessibilitycontrol:lintAnalyzeDebugUnitTest FROM-CACHE
+> Task :agentrouter:mergeDebugJniLibFolders
+> Task :agentrouter:mergeDebugNativeLibs NO-SOURCE
+> Task :agentrouter:stripDebugDebugSymbols NO-SOURCE
+> Task :agentrouter:copyDebugJniLibsProjectAndLocalJars
+> Task :agentrouter:extractDebugAnnotations
+> Task :agentrouter:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :agentrouter:mergeDebugShaders
+> Task :agentrouter:compileDebugShaders NO-SOURCE
+> Task :agentrouter:generateDebugAssets UP-TO-DATE
+> Task :agentrouter:mergeDebugAssets
+> Task :agentrouter:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :agentrouter:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :agentrouter:prepareDebugArtProfile UP-TO-DATE
+> Task :agentrouter:prepareLintJarForPublish UP-TO-DATE
+> Task :agentrouter:mergeDebugJavaResource
+> Task :agentrouter:syncDebugLibJars FROM-CACHE
+> Task :agentrouter:bundleDebugLocalLintAar
+> Task :safetyguard:mergeDebugJniLibFolders
+> Task :safetyguard:mergeDebugNativeLibs NO-SOURCE
+> Task :safetyguard:stripDebugDebugSymbols NO-SOURCE
+> Task :safetyguard:copyDebugJniLibsProjectAndLocalJars
+> Task :safetyguard:extractDebugAnnotations FROM-CACHE
+> Task :safetyguard:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :safetyguard:mergeDebugShaders
+> Task :safetyguard:compileDebugShaders NO-SOURCE
+> Task :safetyguard:generateDebugAssets UP-TO-DATE
+> Task :safetyguard:mergeDebugAssets
+> Task :safetyguard:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :safetyguard:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :safetyguard:prepareDebugArtProfile UP-TO-DATE
+> Task :safetyguard:prepareLintJarForPublish UP-TO-DATE
+> Task :safetyguard:mergeDebugJavaResource
+> Task :safetyguard:syncDebugLibJars FROM-CACHE
+> Task :safetyguard:bundleDebugLocalLintAar
+> Task :phonecontrol:mergeDebugJniLibFolders
+> Task :phonecontrol:mergeDebugNativeLibs NO-SOURCE
+> Task :phonecontrol:stripDebugDebugSymbols NO-SOURCE
+> Task :phonecontrol:copyDebugJniLibsProjectAndLocalJars
+> Task :phonecontrol:extractDebugAnnotations
+> Task :phonecontrol:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :phonecontrol:mergeDebugShaders
+> Task :phonecontrol:compileDebugShaders NO-SOURCE
+> Task :phonecontrol:generateDebugAssets UP-TO-DATE
+> Task :phonecontrol:mergeDebugAssets
+> Task :phonecontrol:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :phonecontrol:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :phonecontrol:prepareDebugArtProfile UP-TO-DATE
+> Task :phonecontrol:prepareLintJarForPublish UP-TO-DATE
+> Task :phonecontrol:mergeDebugJavaResource
+> Task :phonecontrol:syncDebugLibJars
+> Task :phonecontrol:bundleDebugLocalLintAar
+> Task :storage:mergeDebugJniLibFolders
+> Task :storage:mergeDebugNativeLibs NO-SOURCE
+> Task :storage:stripDebugDebugSymbols NO-SOURCE
+> Task :storage:copyDebugJniLibsProjectAndLocalJars
+> Task :storage:extractDebugAnnotations FROM-CACHE
+> Task :storage:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :storage:mergeDebugShaders
+> Task :storage:compileDebugShaders NO-SOURCE
+> Task :storage:generateDebugAssets UP-TO-DATE
+> Task :storage:mergeDebugAssets
+> Task :storage:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :storage:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :storage:prepareDebugArtProfile UP-TO-DATE
+> Task :storage:prepareLintJarForPublish UP-TO-DATE
+> Task :storage:mergeDebugJavaResource
+> Task :storage:syncDebugLibJars FROM-CACHE
+> Task :storage:bundleDebugLocalLintAar
+> Task :agentrouter:createFullJarDebug
+> Task :agentrouter:preDebugAndroidTestBuild UP-TO-DATE
+> Task :agentrouter:generateDebugAndroidTestResValues FROM-CACHE
+> Task :agentrouter:writeDebugLintModelMetadata
+> Task :phonecontrol:createFullJarDebug
+> Task :phonecontrol:writeDebugLintModelMetadata
+> Task :safetyguard:createFullJarDebug
+> Task :safetyguard:writeDebugLintModelMetadata
+> Task :storage:createFullJarDebug
+> Task :storage:writeDebugLintModelMetadata
+> Task :agentrouter:generateDebugAndroidTestLintModel
+> Task :agentrouter:extractProguardFiles
+> Task :phonecontrol:extractProguardFiles
+> Task :phonecontrol:generateDebugLintModel
+> Task :safetyguard:extractProguardFiles
+> Task :safetyguard:generateDebugLintModel
+> Task :storage:extractProguardFiles
+> Task :storage:generateDebugLintModel
+> Task :agentrouter:generateDebugLintModel
+> Task :agentrouter:generateDebugUnitTestLintModel
+> Task :phonecontrol:lintAnalyzeDebug
+> Task :safetyguard:lintAnalyzeDebug
+> Task :storage:lintAnalyzeDebug
+> Task :agentrouter:lintAnalyzeDebug
+> Task :agentrouter:lintAnalyzeDebugAndroidTest
+> Task :agentrouter:lintAnalyzeDebugUnitTest
+> Task :modelmanager:mergeDebugJniLibFolders
+> Task :modelmanager:mergeDebugNativeLibs NO-SOURCE
+> Task :modelmanager:stripDebugDebugSymbols NO-SOURCE
+> Task :modelmanager:copyDebugJniLibsProjectAndLocalJars
+> Task :modelmanager:extractDebugAnnotations FROM-CACHE
+> Task :modelmanager:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :modelmanager:mergeDebugShaders
+> Task :modelmanager:compileDebugShaders NO-SOURCE
+> Task :modelmanager:generateDebugAssets UP-TO-DATE
+> Task :modelmanager:mergeDebugAssets
+> Task :modelmanager:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :modelmanager:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :modelmanager:prepareDebugArtProfile UP-TO-DATE
+> Task :modelmanager:prepareLintJarForPublish UP-TO-DATE
+> Task :modelmanager:mergeDebugJavaResource
+> Task :modelmanager:syncDebugLibJars FROM-CACHE
+> Task :modelmanager:bundleDebugLocalLintAar
+> Task :languagepacks:mergeDebugJniLibFolders
+> Task :languagepacks:mergeDebugNativeLibs NO-SOURCE
+> Task :languagepacks:stripDebugDebugSymbols NO-SOURCE
+> Task :languagepacks:copyDebugJniLibsProjectAndLocalJars
+> Task :languagepacks:extractDebugAnnotations FROM-CACHE
+> Task :languagepacks:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :languagepacks:mergeDebugShaders
+> Task :languagepacks:compileDebugShaders NO-SOURCE
+> Task :languagepacks:generateDebugAssets UP-TO-DATE
+> Task :languagepacks:mergeDebugAssets
+> Task :languagepacks:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :languagepacks:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :languagepacks:prepareDebugArtProfile UP-TO-DATE
+> Task :languagepacks:prepareLintJarForPublish UP-TO-DATE
+> Task :languagepacks:mergeDebugJavaResource
+> Task :languagepacks:syncDebugLibJars FROM-CACHE
+> Task :languagepacks:bundleDebugLocalLintAar
+> Task :localbrain:mergeDebugJniLibFolders
+> Task :localbrain:mergeDebugNativeLibs NO-SOURCE
+> Task :localbrain:stripDebugDebugSymbols NO-SOURCE
+> Task :localbrain:copyDebugJniLibsProjectAndLocalJars
+> Task :localbrain:extractDebugAnnotations FROM-CACHE
+> Task :localbrain:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :localbrain:mergeDebugShaders
+> Task :localbrain:compileDebugShaders NO-SOURCE
+> Task :localbrain:generateDebugAssets UP-TO-DATE
+> Task :localbrain:mergeDebugAssets
+> Task :localbrain:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :localbrain:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :localbrain:prepareDebugArtProfile UP-TO-DATE
+> Task :localbrain:prepareLintJarForPublish UP-TO-DATE
+> Task :localbrain:mergeDebugJavaResource
+> Task :localbrain:syncDebugLibJars FROM-CACHE
+> Task :localbrain:bundleDebugLocalLintAar
+> Task :voice:mergeDebugJniLibFolders
+> Task :voice:mergeDebugNativeLibs NO-SOURCE
+> Task :voice:stripDebugDebugSymbols NO-SOURCE
+> Task :voice:copyDebugJniLibsProjectAndLocalJars
+> Task :voice:extractDebugAnnotations FROM-CACHE
+> Task :voice:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :voice:mergeDebugShaders
+> Task :voice:compileDebugShaders NO-SOURCE
+> Task :voice:generateDebugAssets UP-TO-DATE
+> Task :voice:mergeDebugAssets
+> Task :voice:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :voice:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :voice:prepareDebugArtProfile UP-TO-DATE
+> Task :voice:prepareLintJarForPublish UP-TO-DATE
+> Task :voice:mergeDebugJavaResource
+> Task :voice:syncDebugLibJars FROM-CACHE
+> Task :voice:bundleDebugLocalLintAar
+> Task :memory:mergeDebugJniLibFolders
+> Task :memory:mergeDebugNativeLibs NO-SOURCE
+> Task :memory:stripDebugDebugSymbols NO-SOURCE
+> Task :memory:copyDebugJniLibsProjectAndLocalJars
+> Task :memory:extractDebugAnnotations FROM-CACHE
+> Task :memory:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :memory:mergeDebugShaders
+> Task :memory:compileDebugShaders NO-SOURCE
+> Task :memory:generateDebugAssets UP-TO-DATE
+> Task :memory:mergeDebugAssets
+> Task :memory:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :memory:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :memory:prepareDebugArtProfile UP-TO-DATE
+> Task :memory:prepareLintJarForPublish UP-TO-DATE
+> Task :memory:mergeDebugJavaResource
+> Task :memory:syncDebugLibJars FROM-CACHE
+> Task :memory:bundleDebugLocalLintAar
+> Task :skills:mergeDebugJniLibFolders
+> Task :skills:mergeDebugNativeLibs NO-SOURCE
+> Task :skills:stripDebugDebugSymbols NO-SOURCE
+> Task :skills:copyDebugJniLibsProjectAndLocalJars
+> Task :skills:extractDebugAnnotations FROM-CACHE
+> Task :skills:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :skills:mergeDebugShaders
+> Task :skills:compileDebugShaders NO-SOURCE
+> Task :skills:generateDebugAssets UP-TO-DATE
+> Task :skills:mergeDebugAssets
+> Task :skills:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :skills:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :skills:prepareDebugArtProfile UP-TO-DATE
+> Task :skills:prepareLintJarForPublish UP-TO-DATE
+> Task :skills:mergeDebugJavaResource
+> Task :skills:syncDebugLibJars FROM-CACHE
+> Task :skills:bundleDebugLocalLintAar
+> Task :observability:mergeDebugJniLibFolders
+> Task :observability:mergeDebugNativeLibs NO-SOURCE
+> Task :observability:stripDebugDebugSymbols NO-SOURCE
+> Task :observability:copyDebugJniLibsProjectAndLocalJars
+> Task :observability:extractDebugAnnotations FROM-CACHE
+> Task :observability:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :observability:mergeDebugShaders
+> Task :observability:compileDebugShaders NO-SOURCE
+> Task :observability:generateDebugAssets UP-TO-DATE
+> Task :observability:mergeDebugAssets
+> Task :observability:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :observability:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :observability:prepareDebugArtProfile UP-TO-DATE
+> Task :observability:prepareLintJarForPublish UP-TO-DATE
+> Task :observability:mergeDebugJavaResource
+> Task :observability:syncDebugLibJars FROM-CACHE
+> Task :observability:bundleDebugLocalLintAar
+> Task :securebrowser:mergeDebugJniLibFolders
+> Task :securebrowser:mergeDebugNativeLibs NO-SOURCE
+> Task :securebrowser:stripDebugDebugSymbols NO-SOURCE
+> Task :securebrowser:copyDebugJniLibsProjectAndLocalJars
+> Task :securebrowser:extractDebugAnnotations FROM-CACHE
+> Task :securebrowser:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :securebrowser:mergeDebugShaders
+> Task :securebrowser:compileDebugShaders NO-SOURCE
+> Task :securebrowser:generateDebugAssets UP-TO-DATE
+> Task :securebrowser:mergeDebugAssets
+> Task :securebrowser:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :securebrowser:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :securebrowser:prepareDebugArtProfile UP-TO-DATE
+> Task :securebrowser:prepareLintJarForPublish UP-TO-DATE
+> Task :securebrowser:mergeDebugJavaResource
+> Task :securebrowser:syncDebugLibJars FROM-CACHE
+> Task :securebrowser:bundleDebugLocalLintAar
+> Task :app:preDebugAndroidTestBuild SKIPPED
+> Task :app:generateDebugAndroidTestResValues FROM-CACHE
+> Task :languagepacks:createFullJarDebug
+> Task :languagepacks:writeDebugLintModelMetadata
+> Task :localbrain:createFullJarDebug
+> Task :localbrain:writeDebugLintModelMetadata
+> Task :memory:createFullJarDebug
+> Task :memory:writeDebugLintModelMetadata
+> Task :modelmanager:createFullJarDebug
+> Task :modelmanager:writeDebugLintModelMetadata
+> Task :observability:createFullJarDebug
+> Task :observability:writeDebugLintModelMetadata
+> Task :securebrowser:createFullJarDebug
+> Task :securebrowser:writeDebugLintModelMetadata
+> Task :skills:createFullJarDebug
+> Task :skills:writeDebugLintModelMetadata
+> Task :voice:createFullJarDebug
+> Task :voice:writeDebugLintModelMetadata
+> Task :app:extractProguardFiles
+> Task :languagepacks:extractProguardFiles
+> Task :modelmanager:extractProguardFiles
+> Task :modelmanager:generateDebugLintModel
+> Task :languagepacks:generateDebugLintModel
+> Task :localbrain:extractProguardFiles
+> Task :observability:extractProguardFiles
+> Task :observability:generateDebugLintModel
+> Task :localbrain:generateDebugLintModel
+> Task :memory:extractProguardFiles
+> Task :memory:generateDebugLintModel
+> Task :securebrowser:extractProguardFiles
+> Task :securebrowser:generateDebugLintModel
+> Task :skills:extractProguardFiles
+> Task :skills:generateDebugLintModel
+> Task :voice:extractProguardFiles
+> Task :voice:generateDebugLintModel
+
+> Task :app:compileDebugKotlin
+w: file:///agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/UnoOneApplication.kt:342:42 'static field TRIM_MEMORY_RUNNING_LOW: Int' is deprecated. Deprecated in Java.
+w: file:///agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/UnoOneApplication.kt:343:46 'static field TRIM_MEMORY_RUNNING_CRITICAL: Int' is deprecated. Deprecated in Java.
+w: file:///agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/ui/theme/Theme.kt:66:24 'var statusBarColor: Int' is deprecated. Deprecated in Java.
+
+> Task :modelmanager:lintAnalyzeDebug
+> Task :app:compileDebugJavaWithJavac
+> Task :app:hiltAggregateDepsDebug FROM-CACHE
+
+> Task :app:hiltJavaCompileDebug
+Note: /agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/build/generated/hilt/component_sources/debug/com/unoone/agent/Hilt_UnoOneApplication.java uses or overrides a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+
+> Task :app:processDebugJavaRes
+> Task :app:bundleDebugClassesToCompileJar
+> Task :app:transformDebugClassesWithAsm
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:generateDebugAndroidTestLintModel
+> Task :app:generateDebugLintReportModel
+> Task :app:generateDebugUnitTestLintModel
+> Task :app:kspDebugUnitTestKotlin
+> Task :languagepacks:lintAnalyzeDebug
+> Task :observability:lintAnalyzeDebug
+> Task :app:compileDebugUnitTestKotlin
+> Task :localbrain:lintAnalyzeDebug
+> Task :memory:lintAnalyzeDebug
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:hiltAggregateDepsDebugUnitTest FROM-CACHE
+> Task :app:hiltJavaCompileDebugUnitTest NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes
+> Task :app:transformDebugUnitTestClassesWithAsm
+> Task :securebrowser:lintAnalyzeDebug
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+> Task :app:testDebugUnitTest
+> Task :skills:lintAnalyzeDebug
+> Task :voice:lintAnalyzeDebug
+> Task :app:lintAnalyzeDebugAndroidTest
+> Task :app:lintAnalyzeDebug
+> Task :app:lintAnalyzeDebugUnitTest
+> Task :core:preDebugAndroidTestBuild UP-TO-DATE
+> Task :core:generateDebugAndroidTestResValues FROM-CACHE
+> Task :core:generateDebugAndroidTestLintModel
+> Task :core:generateDebugUnitTestLintModel
+> Task :core:lintAnalyzeDebugAndroidTest FROM-CACHE
+> Task :core:lintAnalyzeDebugUnitTest FROM-CACHE
+> Task :languagepacks:preDebugAndroidTestBuild UP-TO-DATE
+> Task :languagepacks:generateDebugAndroidTestResValues FROM-CACHE
+> Task :languagepacks:generateDebugAndroidTestLintModel
+> Task :languagepacks:generateDebugUnitTestLintModel
+> Task :languagepacks:lintAnalyzeDebugAndroidTest FROM-CACHE
+> Task :languagepacks:lintAnalyzeDebugUnitTest FROM-CACHE
+> Task :localbrain:preDebugAndroidTestBuild UP-TO-DATE
+> Task :localbrain:generateDebugAndroidTestResValues FROM-CACHE
+> Task :localbrain:generateDebugAndroidTestLintModel
+> Task :localbrain:generateDebugUnitTestLintModel
+> Task :localbrain:lintAnalyzeDebugAndroidTest FROM-CACHE
+> Task :localbrain:lintAnalyzeDebugUnitTest FROM-CACHE
+> Task :memory:preDebugAndroidTestBuild UP-TO-DATE
+> Task :memory:generateDebugAndroidTestResValues FROM-CACHE
+> Task :memory:generateDebugAndroidTestLintModel
+> Task :memory:generateDebugUnitTestLintModel
+> Task :memory:lintAnalyzeDebugAndroidTest FROM-CACHE
+> Task :memory:lintAnalyzeDebugUnitTest FROM-CACHE
+> Task :modelmanager:preDebugAndroidTestBuild UP-TO-DATE
+> Task :modelmanager:generateDebugAndroidTestResValues FROM-CACHE
+> Task :modelmanager:generateDebugAndroidTestLintModel
+> Task :modelmanager:generateDebugUnitTestLintModel
+> Task :modelmanager:lintAnalyzeDebugAndroidTest FROM-CACHE
+> Task :modelmanager:lintAnalyzeDebugUnitTest FROM-CACHE
+> Task :observability:preDebugAndroidTestBuild UP-TO-DATE
+> Task :observability:generateDebugAndroidTestResValues FROM-CACHE
+> Task :observability:generateDebugAndroidTestLintModel
+> Task :observability:generateDebugUnitTestLintModel
+> Task :observability:lintAnalyzeDebugAndroidTest FROM-CACHE
+> Task :observability:lintAnalyzeDebugUnitTest FROM-CACHE
+> Task :phonecontrol:preDebugAndroidTestBuild UP-TO-DATE
+> Task :phonecontrol:generateDebugAndroidTestResValues FROM-CACHE
+> Task :phonecontrol:generateDebugAndroidTestLintModel
+> Task :phonecontrol:generateDebugUnitTestLintModel
+> Task :phonecontrol:lintAnalyzeDebugAndroidTest
+> Task :phonecontrol:lintAnalyzeDebugUnitTest
+> Task :safetyguard:preDebugAndroidTestBuild UP-TO-DATE
+> Task :safetyguard:generateDebugAndroidTestResValues FROM-CACHE
+> Task :safetyguard:generateDebugAndroidTestLintModel
+> Task :safetyguard:generateDebugUnitTestLintModel
+> Task :safetyguard:lintAnalyzeDebugAndroidTest FROM-CACHE
+> Task :safetyguard:lintAnalyzeDebugUnitTest FROM-CACHE
+> Task :securebrowser:preDebugAndroidTestBuild
+> Task :securebrowser:generateDebugAndroidTestResValues FROM-CACHE
+> Task :securebrowser:generateDebugAndroidTestLintModel
+> Task :securebrowser:generateDebugUnitTestLintModel
+> Task :securebrowser:lintAnalyzeDebugAndroidTest FROM-CACHE
+> Task :securebrowser:lintAnalyzeDebugUnitTest
+> Task :skills:preDebugAndroidTestBuild UP-TO-DATE
+> Task :skills:generateDebugAndroidTestResValues FROM-CACHE
+> Task :skills:generateDebugAndroidTestLintModel
+> Task :skills:generateDebugUnitTestLintModel
+> Task :skills:lintAnalyzeDebugAndroidTest
+> Task :skills:lintAnalyzeDebugUnitTest
+> Task :storage:preDebugAndroidTestBuild UP-TO-DATE
+> Task :storage:generateDebugAndroidTestResValues FROM-CACHE
+> Task :storage:generateDebugAndroidTestLintModel
+> Task :storage:generateDebugUnitTestLintModel
+> Task :storage:lintAnalyzeDebugAndroidTest
+> Task :storage:lintAnalyzeDebugUnitTest
+> Task :voice:preDebugAndroidTestBuild UP-TO-DATE
+> Task :voice:generateDebugAndroidTestResValues FROM-CACHE
+> Task :voice:generateDebugAndroidTestLintModel
+> Task :voice:generateDebugUnitTestLintModel
+> Task :voice:lintAnalyzeDebugAndroidTest
+> Task :voice:lintAnalyzeDebugUnitTest
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:mergeDebugShaders
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets
+> Task :app:compressDebugAssets FROM-CACHE
+> Task :app:desugarDebugFileDependencies FROM-CACHE
+> Task :app:dexBuilderDebug
+> Task :app:mergeDebugGlobalSynthetics FROM-CACHE
+> Task :app:mergeDebugJavaResource
+> Task :app:checkDebugDuplicateClasses
+> Task :app:mergeExtDexDebug FROM-CACHE
+> Task :languagepacks:bundleLibRuntimeToDirDebug
+> Task :voice:bundleLibRuntimeToDirDebug
+> Task :modelmanager:bundleLibRuntimeToDirDebug
+> Task :agentrouter:bundleLibRuntimeToDirDebug
+> Task :memory:bundleLibRuntimeToDirDebug
+> Task :skills:bundleLibRuntimeToDirDebug
+> Task :localbrain:bundleLibRuntimeToDirDebug
+> Task :observability:bundleLibRuntimeToDirDebug
+> Task :storage:bundleLibRuntimeToDirDebug
+> Task :safetyguard:bundleLibRuntimeToDirDebug
+> Task :phonecontrol:bundleLibRuntimeToDirDebug
+> Task :accessibilitycontrol:bundleLibRuntimeToDirDebug
+> Task :securebrowser:bundleLibRuntimeToDirDebug
+> Task :core:bundleLibRuntimeToDirDebug
+> Task :app:mergeLibDexDebug
+> Task :app:mergeProjectDexDebug
+> Task :accessibilitycontrol:copyDebugJniLibsProjectOnly
+> Task :agentrouter:copyDebugJniLibsProjectOnly
+> Task :app:mergeDebugJniLibFolders
+> Task :core:copyDebugJniLibsProjectOnly
+> Task :languagepacks:copyDebugJniLibsProjectOnly
+> Task :localbrain:copyDebugJniLibsProjectOnly
+> Task :memory:copyDebugJniLibsProjectOnly
+> Task :modelmanager:copyDebugJniLibsProjectOnly
+> Task :observability:copyDebugJniLibsProjectOnly
+> Task :phonecontrol:copyDebugJniLibsProjectOnly
+> Task :safetyguard:copyDebugJniLibsProjectOnly
+> Task :securebrowser:copyDebugJniLibsProjectOnly
+> Task :skills:copyDebugJniLibsProjectOnly
+> Task :storage:copyDebugJniLibsProjectOnly
+> Task :voice:copyDebugJniLibsProjectOnly
+> Task :app:mergeDebugNativeLibs
+
+> Task :app:stripDebugDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libLiteRt.so, libLiteRtClGlAccelerator.so, libandroidx.graphics.path.so, libimage_processing_util_jni.so, liblitertlm_jni.so, libmediapipe_tasks_jni.so, libmlkit_google_ocr_pipeline.so, libonnxruntime.so, libsherpa-onnx-c-api.so, libsherpa-onnx-cxx-api.so, libsherpa-onnx-jni.so. Run with --info option to learn more.
+
+> Task :app:validateSigningDebug
+> Task :app:writeDebugAppMetadata
+> Task :app:writeDebugSigningConfigVersions
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+> Task :app:checkDebugAndroidTestAarMetadata
+> Task :app:mapDebugAndroidTestSourceSetPaths
+> Task :app:generateDebugAndroidTestResources FROM-CACHE
+> Task :app:mergeDebugAndroidTestResources FROM-CACHE
+> Task :app:processDebugAndroidTestManifest
+> Task :app:processDebugAndroidTestResources FROM-CACHE
+> Task :app:kspDebugAndroidTestKotlin
+
+> Task :app:lintReportDebug
+Lint found 2 hints (and 15 errors filtered by baseline lint-baseline.xml)
+
+17 errors/warnings were listed in the baseline file (/agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/lint-baseline.xml) but not found in the project; perhaps they have been fixed?
+
+> Task :app:lintDebug
+> Task :app:javaPreCompileDebugAndroidTest FROM-CACHE
+> Task :app:mergeDebugAndroidTestShaders
+> Task :app:compileDebugAndroidTestShaders NO-SOURCE
+> Task :app:generateDebugAndroidTestAssets UP-TO-DATE
+> Task :app:mergeDebugAndroidTestAssets
+> Task :app:compressDebugAndroidTestAssets FROM-CACHE
+> Task :app:desugarDebugAndroidTestFileDependencies FROM-CACHE
+> Task :app:checkDebugAndroidTestDuplicateClasses
+> Task :app:mergeExtDexDebugAndroidTest FROM-CACHE
+> Task :app:mergeLibDexDebugAndroidTest FROM-CACHE
+> Task :app:mergeDebugAndroidTestJniLibFolders
+> Task :app:mergeDebugAndroidTestNativeLibs NO-SOURCE
+> Task :app:stripDebugAndroidTestDebugSymbols NO-SOURCE
+> Task :app:validateSigningDebugAndroidTest
+> Task :app:writeDebugAndroidTestSigningConfigVersions
+> Task :app:compileDebugAndroidTestKotlin
+w: file:///agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/src/androidTest/java/com/unoone/agent/localbrain/V3E2BPhysicalQualificationTest.kt:110:9 'when' is exhaustive so 'else' is redundant here.
+
+> Task :app:compileDebugAndroidTestJavaWithJavac NO-SOURCE
+> Task :app:hiltAggregateDepsDebugAndroidTest FROM-CACHE
+> Task :app:hiltJavaCompileDebugAndroidTest NO-SOURCE
+> Task :app:processDebugAndroidTestJavaRes
+> Task :app:transformDebugAndroidTestClassesWithAsm
+> Task :app:dexBuilderDebugAndroidTest FROM-CACHE
+> Task :app:mergeDebugAndroidTestJavaResource
+> Task :app:mergeDebugAndroidTestGlobalSynthetics FROM-CACHE
+> Task :app:mergeProjectDexDebugAndroidTest FROM-CACHE
+> Task :app:packageDebugAndroidTest
+> Task :app:createDebugAndroidTestApkListingFileRedirect
+> Task :app:assembleDebugAndroidTest
+[Incubating] Problems report is available at: file:///agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 11m 6s
+705 actionable tasks: 365 executed, 270 from cache, 70 up-to-date

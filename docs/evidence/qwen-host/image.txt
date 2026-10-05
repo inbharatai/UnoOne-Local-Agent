@@ -1,0 +1,1 @@
+<img><HOST_EVIDENCE>/red.png</img>What is the dominant color of this image? Reply with only the color name.

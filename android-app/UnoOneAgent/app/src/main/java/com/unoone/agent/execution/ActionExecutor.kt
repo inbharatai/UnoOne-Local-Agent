@@ -6,6 +6,7 @@ import com.unoone.agent.agentrouter.AgentRouter
 import com.unoone.agent.core.interfaces.IActionExecutor
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.ToolCall
+import com.unoone.agent.core.model.ToolCallValidator
 import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.core.safety.ToolPermissionRegistry
 import com.unoone.agent.core.util.Logger
@@ -50,6 +51,14 @@ class ActionExecutor(
     private val screenshotCapture = ScreenshotCapture(context)
 
     override suspend fun executeTool(toolCall: ToolCall): Result<String> {
+        val normalized = try { ToolCallValidator.adaptLegacySkill(toolCall) } catch (e: IllegalArgumentException) {
+            return Result.Error(e.message ?: "Invalid legacy skill")
+        }
+        ToolCallValidator.rejection(normalized)?.let { return Result.Error(it) }
+        return executeValidatedTool(normalized)
+    }
+
+    private suspend fun executeValidatedTool(toolCall: ToolCall): Result<String> {
         if (!AgentRuntimeGate.isEnabled()) {
             return Result.Error("UnoOne is disabled. Enable it before running an action.")
         }
@@ -65,14 +74,7 @@ class ActionExecutor(
                 }
                 "create_skill" -> {
                     val name = toolCall.args["name"]?.jsonPrimitive?.content ?: "Custom Skill"
-                    // "steps" may arrive as a pipe-delimited string (rule-based parser) OR as a JSON
-                    // array of strings (LLM tool-calling, per UnoOneToolSet). Handle both so the
-                    // LLM path doesn't throw on .jsonPrimitive-of-a-JsonArray and silently fail.
-                    val stepsList: List<String> = when (val stepsEl = toolCall.args["steps"]) {
-                        null -> emptyList()
-                        is JsonArray -> stepsEl.mapNotNull { runCatching { it.jsonPrimitive.content }.getOrNull() }
-                        else -> stepsEl.jsonPrimitive.content.split("|").filter { it.isNotBlank() }
-                    }
+                    val stepsList = (toolCall.args.getValue("steps") as JsonArray).map { it.jsonPrimitive.content }
                     val module = _skillsModule
                         ?: return Result.Error("Skills module not available")
                     if (stepsList.isEmpty()) {
@@ -287,8 +289,8 @@ class ActionExecutor(
                     }
                 }
                 // "compound" is expanded into ordered sub-calls by AgentOrchestrator and never
-                // reaches executeTool; fall through to the plugin router for anything unrecognized.
-                else -> agentRouter.route(toolCall)
+                // reaches executeTool; unknown tools are rejected rather than routed around validation.
+                else -> Result.Error("Unknown tool: ${toolCall.tool}")
             }
         } catch (e: Exception) {
             Result.Error("Action failed: ${e.message}")
@@ -340,8 +342,8 @@ class ActionExecutor(
     /**
      * Optional multimodal-vision path for `describe_scene`: when set AND a vision-capable Gemma
      * model is loaded, the orchestrator supplies a callback that describes a screenshot image via
-     * LiteRT-LM `Content.ImageBytes`. Null by default → vision is inactive (the shipped Gemma 4 E4B
-     * artifact is text-only), so `describe_scene` falls back to the always-available
+     * LiteRT-LM `Content.ImageBytes`. Null by default → vision is inactive in this app configuration,
+     * not absent from the upstream multimodal E4B artifact. `describe_scene` falls back to the
      * OCR + foreground-context description built by [com.unoone.agent.core.agent.SceneDescriptionBuilder].
      * Device-time-only; not exercised by unit tests.
      */
@@ -444,18 +446,19 @@ class ActionExecutor(
      * MediaProjection permission is already gated by the safety pipeline before this runs.
      *
      * Two paths, in priority order:
-     *  1. Multimodal vision (device-time, INACTIVE with the shipped text-only models): when
+     *  1. Multimodal vision (device-time, INACTIVE in current production wiring): when
      *     [_describeSceneWithVision] is wired by the orchestrator AND a vision-capable Gemma model
      *     is loaded, the screenshot bytes are described by LiteRT-LM `Content.ImageBytes`. On any
-     *     Error (no vision weights, inference failure), this degrades to path 2 — never fails the
+     *     Error (image input disabled, inference failure), this degrades to path 2 — never fails the
      *     tool solely because vision is unavailable.
      *  2. Always-available fallback: OCR text + foreground app/activity, framed by the JVM-tested
      *     [com.unoone.agent.core.agent.SceneDescriptionBuilder]. This is what runs today.
      *
      * Honesty: the fallback is a structured description from OCR + context, not true visual
      * understanding of objects/layout; it never fabricates screen content (the builder says "could
-     * not read" when there are no signals). Vision understanding is pending a vision-capable
-     * `.litertlm` artifact and a device matrix — see DEVICE_VERIFICATION.md.
+     * not read" when there are no signals). Vision understanding is pending production image-input
+     * wiring and device qualification; E4B image input is disabled in this app configuration,
+     * although its upstream artifact is multimodal — see DEVICE_VERIFICATION.md.
      */
     private suspend fun describeScene(toolCall: ToolCall): Result<String> {
         if (!ScreenshotCapture.hasPermission()) {
@@ -511,33 +514,13 @@ class ActionExecutor(
 
     private suspend fun executeSystemAction(toolCall: ToolCall): Result<String> {
         val action = toolCall.args["action"]?.jsonPrimitive?.content ?: ""
-        val target = toolCall.args["target"]?.jsonPrimitive?.content ?: ""
         return when (action) {
-            "click" -> accessibilityControl.clickText(target).map { "Clicked $target" }
-            "type" -> accessibilityControl.typeText(target).map { "Typed text" }
-            "fill" -> {
-                val value = toolCall.args["value"]?.jsonPrimitive?.content ?: ""
-                accessibilityControl.fillField(target, value).map { "Filled $target" }
-            }
             "scroll_down" -> accessibilityControl.scrollDown().map { "Scrolled down" }
             "scroll_up" -> accessibilityControl.scrollUp().map { "Scrolled up" }
-            "swipe" -> accessibilityControl.swipe(target).map { "Swiped $target" }
-            "long_press" -> {
-                val x = target.toFloatOrNull()
-                val y = toolCall.args["y"]?.jsonPrimitive?.content?.toFloatOrNull()
-                if (x != null && y != null) {
-                    accessibilityControl.longPress(x, y).map { "Long pressed at ($x, $y)" }
-                } else if (target.isNotBlank()) {
-                    accessibilityControl.longPressNodeWithText(target).map { "Long pressed '$target'" }
-                } else {
-                    Result.Error("Long press requires either coordinates or a target text label")
-                }
-            }
             "go_back" -> accessibilityControl.goBack().map { "Went back" }
             "go_home" -> accessibilityControl.goHome().map { "Went home" }
             "open_notifications" -> accessibilityControl.openNotifications().map { "Opened notifications" }
             "open_recents" -> accessibilityControl.openRecents().map { "Opened recents" }
-            "find_and_click" -> accessibilityControl.findAndClick(target).map { "Found and clicked $target" }
             else -> Result.Error("Unknown system action: $action")
         }
     }

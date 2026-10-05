@@ -1,5 +1,7 @@
 # UnoOne Quick Start — Run It Now
 
+> **Historical setup reference.** For the current V3 candidate, use [UNOONE_V3_PHONE_SETUP.md](UNOONE_V3_PHONE_SETUP.md): SDK 35, JDK 17, NDK 27.2.12479018, CMake 3.22.1, browser bundle before Gradle, explicit Qwen opt-in. Old hard-coded laptop paths and model-push recipes below are not current installation instructions. Latest integrated gates and Android inference are pending.
+
 > **CRITICAL: The project is NOT on your Desktop.**  
 > **Open this exact path in Android Studio:**  
 > `C:\Users\reetu\Desktop\UnoOne-Local-Agent\android-app\UnoOneAgent`  

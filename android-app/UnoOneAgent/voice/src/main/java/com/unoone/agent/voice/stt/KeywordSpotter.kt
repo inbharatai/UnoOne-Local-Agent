@@ -1,6 +1,8 @@
 package com.unoone.agent.voice.stt
 
 import android.content.Context
+import com.unoone.agent.modelmanager.ModelType
+import com.unoone.agent.voice.stt.SpeechModelIntegrity
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.KeywordSpotter
 import com.k2fsa.sherpa.onnx.KeywordSpotterConfig
@@ -33,8 +35,14 @@ class KeywordSpotterEngine(
     private var stream: OnlineStream? = null
     private var keywordFilePath: String? = null
 
+    private var released = false
+
+    @Synchronized
     fun initialize(keywordEntries: List<String>): Result<Unit> {
+        if (released) return Result.Error("KWS already released")
+        if (initialized) return Result.Success(Unit)
         return try {
+            SpeechModelIntegrity.requireVerified(context, modelDir, ModelType.kws)
             Logger.i("KeywordSpotterEngine: Checking model files in $modelDir")
             val encoder = File("$modelDir/encoder.onnx")
             val decoder = File("$modelDir/decoder.onnx")
@@ -87,13 +95,12 @@ class KeywordSpotterEngine(
             Result.Success(Unit)
         } catch (e: Throwable) {
             Logger.e("KeywordSpotterEngine: Initialization failed: ${e::class.java.simpleName}: ${e.message}")
-            spotter = null
-            stream = null
-            initialized = false
+            release()
             Result.Error("KWS unavailable: ${e.message}")
         }
     }
 
+    @Synchronized
     fun processChunk(pcmBytes: ByteArray): String? {
         val kws = spotter
         if (!initialized || kws == null) return null
@@ -108,6 +115,7 @@ class KeywordSpotterEngine(
             if (keyword.isNotBlank()) {
                 Logger.i("KeywordSpotterEngine: Wake word detected: '$keyword'")
                 // Reset decoder state so the same wake word can fire again.
+                stream = null
                 try {
                     s.release()
                 } catch (_: Throwable) {
@@ -128,13 +136,16 @@ class KeywordSpotterEngine(
         // Android (only runs on clean JVM shutdown). We delete in release() instead.
         val dir = if (cacheDir != null) File(cacheDir) else File(System.getProperty("java.io.tmpdir") ?: "/tmp")
         dir.mkdirs()
-        val file = File(dir, "unoone_keywords.txt")
+        val file = File.createTempFile("unoone_keywords_", ".txt", dir)
         file.writeText(keywordEntries.joinToString("\n"))
         keywordFilePath = file.absolutePath
         return file.absolutePath
     }
 
+    @Synchronized
     fun release() {
+        if (released) return
+        released = true
         try {
             stream?.release()
         } catch (_: Throwable) {

@@ -40,7 +40,7 @@ class ModelManager(
     fun findModel(id: String): ModelDescriptor? = manifestLoader.find(context, id)
 
     /** Verifies every declared file against its exact size and SHA-256. */
-    suspend fun modelHealth(id: String): HealthResult = withContext(Dispatchers.IO) {
+    suspend fun modelHealth(id: String, forceVerify: Boolean = false): HealthResult = withContext(Dispatchers.IO) {
         val descriptor = findModel(id)
             ?: return@withContext HealthResult(
                 modelId = id,
@@ -66,6 +66,8 @@ class ModelManager(
                 val extracted = File(folder, extractedName)
                 if (!extracted.exists() || !extracted.isDirectory || extracted.listFiles().isNullOrEmpty()) {
                     missing += file.name
+                } else if (!installer.archiveAlreadyExtracted(file, folder)) {
+                    checksumMismatch += file.name
                 }
                 continue
             }
@@ -87,7 +89,8 @@ class ModelManager(
                 descriptor,
                 file,
                 target,
-                loadManifest().manifestVersion
+                loadManifest().manifestVersion,
+                force = forceVerify
             )
             if (!verification.verified) checksumMismatch += file.name
         }
@@ -197,28 +200,8 @@ class ModelManager(
             )
         }
 
-        val base = File(appPrivateModelPath)
-        val legacy = legacyE2BFolder()
-        if (!legacy.exists()) {
-            modelMetadataDao?.deleteByName(LEGACY_E2B_ID)
-            return@withContext LegacyCleanupResult(false, false, "No legacy E2B files found")
-        }
-        if (!isSafeChild(base, legacy)) {
-            Logger.w("ModelManager: refusing legacy cleanup outside models root (${legacy.canonicalPath})")
-            return@withContext LegacyCleanupResult(false, true, "Legacy path safety check failed")
-        }
-
-        val failures = deleteDirectoryContentsReportingFailures(legacy)
-        if (failures.isNotEmpty() || legacy.exists()) {
-            return@withContext LegacyCleanupResult(
-                removed = false,
-                legacyPresent = true,
-                message = "Legacy cleanup incomplete; ${failures.size} path(s) could not be deleted"
-            )
-        }
-        modelMetadataDao?.deleteByName(LEGACY_E2B_ID)
-        Logger.i("ModelManager: removed legacy E2B after explicit qualified approval")
-        LegacyCleanupResult(true, false, "Legacy E2B removed after complete qualification and user approval")
+        // Qualification is not yet backed by release-device evidence; preserve the legacy fallback.
+        LegacyCleanupResult(false, legacyE2BPresent(), "Legacy deletion disabled pending device qualification")
     }
 
     fun saveQualificationRecord(record: E4bQualificationRecord) {
@@ -394,6 +377,7 @@ class ModelManager(
      * incomplete copy or manually dropped model must never be selected as UnoOne's brain.
      */
     suspend fun getLlmModelPath(spec: BrainModelSpec, forceVerify: Boolean = false): String? {
+        if (spec.runtime != com.unoone.agent.core.model.BrainRuntime.LITERT_LM) return null
         val descriptor = findModel(spec.manifestId) ?: return null
         val artifact = descriptor.files.singleOrNull { file ->
             !file.archive && file.name.equals(spec.fileName, ignoreCase = false)
@@ -416,10 +400,17 @@ class ModelManager(
         return exact.absolutePath
     }
 
+    /** MNN consumes a complete verified folder, never a single LiteRT model path. */
+    suspend fun getMnnModelFolder(spec: BrainModelSpec): String? {
+        if (spec.runtime != com.unoone.agent.core.model.BrainRuntime.MNN) return null
+        val descriptor = findModel(spec.manifestId) ?: return null
+        if (descriptor.folder != spec.modelFolder || !modelHealth(spec.manifestId).verified) return null
+        return File(appPrivateModelPath, descriptor.folder).absolutePath
+    }
+
     /** User/developer explicit verification always performs a complete SHA-256 pass. */
     suspend fun verifyLlmArtifact(spec: BrainModelSpec = BrainModelRegistry.defaultProfile): HealthResult {
-        getLlmModelPath(spec, forceVerify = true)
-        return modelHealth(spec.manifestId)
+        return modelHealth(spec.manifestId, forceVerify = true)
     }
 
     private fun legacyE2BFolder(): File = File(appPrivateModelPath, LEGACY_E2B_RELATIVE_FOLDER)

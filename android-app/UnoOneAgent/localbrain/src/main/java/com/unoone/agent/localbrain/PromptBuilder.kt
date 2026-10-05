@@ -58,9 +58,11 @@ object PromptBuilder {
     /** Compatibility overload used by existing callers and tests. */
     fun buildSystemInstruction(): String = gemma4Instruction
 
-    /** UnoOne V2 accepts only [ModelFamily.GEMMA_4]. */
+    /** Shared policy; each runtime owns its exact output schema and parser. */
     fun buildSystemInstruction(family: ModelFamily): String = when (family) {
         ModelFamily.GEMMA_4 -> gemma4Instruction
+        ModelFamily.QWEN3_5 -> gemma4Instruction +
+            "\nPropose one strict JSON object with exactly tool and args; never execute or claim unverified success."
     }
 
     fun buildUserMessage(command: String, context: ContextSnapshot): String =

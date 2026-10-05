@@ -1,0 +1,8 @@
+{
+  "MNN_repository": "https://github.com/alibaba/MNN",
+  "MNN_commit": "024a946b0b8fcf87c8a418229fadd4cd7858ffba",
+  "model_repository": "https://huggingface.co/taobao-mnn/Qwen3.5-2B-MNN",
+  "model_revision": "35781816d7b6a9dcb273a6765ac9563401951c3c",
+  "platform": "Linux x86_64 host CPU; not Android",
+  "date": "2026-10-05"
+}

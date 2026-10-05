@@ -189,7 +189,13 @@ class VoiceModule(private val context: Context) {
         }
     }
 
+    private fun callActive(): Boolean {
+        val mode = context.getSystemService(android.media.AudioManager::class.java)?.mode ?: return true
+        return mode == android.media.AudioManager.MODE_IN_CALL || mode == android.media.AudioManager.MODE_IN_COMMUNICATION
+    }
+
     fun startRecording(context: Context, scope: CoroutineScope): Result<Unit> {
+        if (callActive()) return Result.Error("Voice capture unavailable during a call")
         if (!AgentRuntimeGate.isEnabled()) {
             return Result.Error("UnoOne is disabled. Enable it before using the microphone.")
         }
@@ -237,6 +243,11 @@ class VoiceModule(private val context: Context) {
     }
 
     suspend fun stopAndTranscribe(): Result<String> {
+        if (callActive()) {
+            stopRecording()
+            androidStt?.release()
+            return Result.Error("Voice capture discarded during call")
+        }
         if (!isRecordingFlag.getAndSet(false)) return Result.Error("No active voice capture session")
         VoiceAgentRuntime.transition(VoiceAgentState.PROCESSING, "transcribing final utterance")
 
@@ -245,6 +256,7 @@ class VoiceModule(private val context: Context) {
             val job = activeSttJob.getAndSet(null)
                 ?: return Result.Error("No active STT job")
             val res = job.await()
+            if (callActive()) return Result.Error("Voice capture discarded during call")
             // Android STT doesn't expose confidence; assume full only on a non-empty success,
             // otherwise reset to 0 so a stale value never feeds the low-confidence retry logic.
             lastSttConfidence = if (res is Result.Success && res.data.isNotBlank()) 1f else 0f
@@ -260,6 +272,7 @@ class VoiceModule(private val context: Context) {
                 if (pcm.isEmpty()) return@withContext Result.Error("No audio captured")
                 val sttStart = System.currentTimeMillis()
                 val res = engine.transcribe(pcm)
+                if (callActive()) return@withContext Result.Error("Voice capture discarded during call")
                 com.unoone.agent.observability.Diagnostics.recordSttLatency(System.currentTimeMillis() - sttStart)
                 lastSttConfidence = if (res is Result.Success) engine.lastConfidence else 0f
                 res
@@ -272,10 +285,12 @@ class VoiceModule(private val context: Context) {
      * engine. VoiceService no longer constructs a second full STT model.
      */
     suspend fun transcribePcm(pcmData: ByteArray): Result<String> = withContext(Dispatchers.IO) {
+        if (callActive()) return@withContext Result.Error("Voice capture unavailable during call")
         if (pcmData.isEmpty()) return@withContext Result.Error("No audio captured")
         val engine = sttEngine
             ?: return@withContext Result.Error("Offline STT model not installed")
         val result = engine.transcribe(pcmData)
+        if (callActive()) return@withContext Result.Error("Voice capture discarded during call")
         lastSttConfidence = if (result is Result.Success) engine.lastConfidence else 0f
         result
     }

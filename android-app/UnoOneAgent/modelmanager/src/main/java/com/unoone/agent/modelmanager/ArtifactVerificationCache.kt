@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap
 @Serializable
 data class VerifiedArtifactRecord(
     val modelId: String,
+    val artifactId: String,
     val expectedSha256: String,
     val expectedSize: Long,
     val canonicalPath: String,
@@ -27,7 +28,7 @@ data class VerifiedArtifactRecord(
 )
 
 interface VerificationRecordStore {
-    fun read(modelId: String): VerifiedArtifactRecord?
+    fun read(modelId: String, artifactId: String): VerifiedArtifactRecord?
     fun write(record: VerifiedArtifactRecord)
     fun remove(modelId: String)
 }
@@ -36,11 +37,11 @@ internal class PreferencesVerificationRecordStore(context: Context) : Verificati
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = false }
 
-    override fun read(modelId: String): VerifiedArtifactRecord? {
-        val raw = prefs.getString(modelId, null) ?: return null
+    override fun read(modelId: String, artifactId: String): VerifiedArtifactRecord? {
+        val raw = prefs.getString(cacheKey(modelId, artifactId), null) ?: return null
         return runCatching { json.decodeFromString(VerifiedArtifactRecord.serializer(), raw) }
             .onFailure {
-                prefs.edit().remove(modelId).apply()
+                prefs.edit().remove(cacheKey(modelId, artifactId)).apply()
                 Logger.w("Artifact verification cache: discarded corrupt record for $modelId")
             }
             .getOrNull()
@@ -48,14 +49,18 @@ internal class PreferencesVerificationRecordStore(context: Context) : Verificati
 
     override fun write(record: VerifiedArtifactRecord) {
         prefs.edit().putString(
-            record.modelId,
+            cacheKey(record.modelId, record.artifactId),
             json.encodeToString(VerifiedArtifactRecord.serializer(), record)
         ).apply()
     }
 
     override fun remove(modelId: String) {
-        prefs.edit().remove(modelId).apply()
+        val edit = prefs.edit().remove(modelId)
+        prefs.all.keys.filter { it.startsWith("${modelId.length}:$modelId:") }.forEach { edit.remove(it) }
+        edit.apply()
     }
+
+    private fun cacheKey(modelId: String, artifactId: String) = "${modelId.length}:$modelId:$artifactId"
 
     companion object { private const val PREFS = "verified_model_artifacts_v1" }
 }
@@ -92,6 +97,7 @@ class ArtifactVerifier(
             store.write(
                 VerifiedArtifactRecord(
                     modelId = descriptor.id,
+                    artifactId = fileDescriptor.name,
                     expectedSha256 = fileDescriptor.sha256.lowercase(),
                     expectedSize = fileDescriptor.sizeBytes,
                     canonicalPath = canonical,
@@ -124,6 +130,7 @@ class ArtifactVerifier(
                 ?: return@withLock ArtifactVerificationResult(false, false)
             val current = VerifiedArtifactRecord(
                 modelId = descriptor.id,
+                    artifactId = fileDescriptor.name,
                 expectedSha256 = fileDescriptor.sha256.lowercase(),
                 expectedSize = fileDescriptor.sizeBytes,
                 canonicalPath = canonical,
@@ -134,7 +141,7 @@ class ArtifactVerifier(
                 verified = true,
                 verifiedAtMs = 0L
             )
-            val cached = if (force) null else store.read(descriptor.id)
+            val cached = if (force) null else store.read(descriptor.id, fileDescriptor.name)
             if (cached != null && cached.verified && cached.sameIdentity(current)) {
                 return@withLock ArtifactVerificationResult(true, true, cached.expectedSha256)
             }
@@ -161,6 +168,7 @@ class ArtifactVerifier(
 
     private fun VerifiedArtifactRecord.sameIdentity(other: VerifiedArtifactRecord): Boolean =
         modelId == other.modelId &&
+            artifactId == other.artifactId &&
             expectedSha256 == other.expectedSha256 &&
             expectedSize == other.expectedSize &&
             canonicalPath == other.canonicalPath &&

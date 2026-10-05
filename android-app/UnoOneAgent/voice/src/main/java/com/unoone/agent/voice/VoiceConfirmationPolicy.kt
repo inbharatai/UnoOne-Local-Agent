@@ -18,7 +18,7 @@ object VoiceConfirmationPolicy {
         }
 
     fun decision(transcript: String, requiresExplicitConfirm: Boolean): Boolean? {
-        val normalized = normalize(transcript)
+        val normalized = normalize(VoiceControlPolicy.payload(transcript))
         if (normalized in DENY) return false
         return if (requiresExplicitConfirm) {
             normalized.takeIf { it in STRONG_ALLOW }?.let { true }

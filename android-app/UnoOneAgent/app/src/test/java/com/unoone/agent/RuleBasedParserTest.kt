@@ -4,6 +4,7 @@ import com.unoone.agent.core.model.compoundSteps
 import com.unoone.agent.localbrain.RuleBasedParser
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,6 +13,49 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class RuleBasedParserTest {
+    @Test
+    fun rejectsNegationAndReportedSpeechBeforeAnyAction() {
+        listOf(
+            "don't open chrome", "do not open chrome", "don’t open chrome",
+            "क्रोम खोलो मत", "व्हाट्सऐप खोलो मत", "क्रोम नहीं खोलो",
+            "chrome mat kholo", "open chrome nahi", "पंकज ने कहा क्रोम खोलो",
+            "Pankaj ne kaha open chrome", "Pankaj said open chrome",
+            "\"open chrome\"", "scroll down and don't open chrome",
+            "क्रोम खोलो और व्हाट्सऐप खोलो मत"
+        ).forEach { assertNull(it, RuleBasedParser.parse(it)) }
+    }
+
+    @Test
+    fun keepsDictatedNegationAndActionsAsOpaqueCasePreservedPayload() {
+        val body = "Don't Open Chrome and Delete Notes: Pankaj said Hello"
+        val note = RuleBasedParser.parse("create note: $body")!!
+        assertEquals("create_note", note.tool)
+        assertEquals(body, note.args["content"]!!.jsonPrimitive.content)
+        val email = RuleBasedParser.parse("draft email to Pankaj@Example.com body $body")!!
+        assertEquals("draft_email", email.tool)
+        assertEquals(body, email.args["body"]!!.jsonPrimitive.content)
+        assertEquals("Pankaj@Example.com", email.args["to"]!!.jsonPrimitive.content)
+        val message = RuleBasedParser.parse("write WhatsApp message $body")!!
+        assertEquals("send_whatsapp", message.tool)
+        assertEquals(body, message.args["message"]!!.jsonPrimitive.content)
+        val hindi = RuleBasedParser.parse("ईमेल लिखो कि क्रोम खोलो मत और Pankaj ने कहा Hello")!!
+        assertEquals("draft_email", hindi.tool)
+        assertEquals("क्रोम खोलो मत और Pankaj ने कहा Hello", hindi.args["body"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun compoundsNeverDropUnknownPartsOrTruncate() {
+        listOf(
+            "open chrome and frobnicate", "frobnicate and open chrome",
+            "open chrome and frobnicate and go home",
+            "go home and scroll down and go back and open chrome",
+            "क्रोम खोलो और कुछ अनजान", "open chrome then frobnicate"
+        ).forEach { assertNull(it, RuleBasedParser.parse(it)) }
+        val compound = RuleBasedParser.parse("open chrome and create note: Keep My Casing")!!
+        assertEquals("compound", compound.tool)
+        assertEquals("Keep My Casing", compound.compoundSteps()[1].args["content"]!!.jsonPrimitive.content)
+    }
+
     @Test
     fun routesOfflinePdfAndDocxFillCommands() {
         val pdf = RuleBasedParser.parse("fill a PDF form")!!

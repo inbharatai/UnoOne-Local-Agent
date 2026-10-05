@@ -1,5 +1,7 @@
 package com.unoone.agent.ui.viewmodel
 
+import com.unoone.agent.core.runtime.GlobalTaskCancellation
+import com.unoone.agent.core.runtime.VoiceAdmissionTicket
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -130,12 +132,17 @@ class AgentViewModel(
         }
     }
 
+    private var recordingGeneration: Long? = null
+
     fun startListening(context: Context) {
         if (!AgentRuntimeGate.isEnabled()) return
         if (_isListening.value || isProcessing.value) return
         listeningJob?.cancel()
         VoiceService.foregroundSessionActive = true
+        val generation = GlobalTaskCancellation.generation
+        recordingGeneration = generation
         listeningJob = viewModelScope.launch {
+            if (generation != GlobalTaskCancellation.generation) return@launch
             val result = voiceModuleInstance.startRecording(context, viewModelScope)
             if (result is Result.Success) {
                 _isListening.value = true
@@ -147,6 +154,7 @@ class AgentViewModel(
     }
 
     fun stopListening() {
+        val generation = recordingGeneration ?: return
         if (!_isListening.value) return
         _isListening.value = false
         _amplitude.value = 0f
@@ -155,6 +163,8 @@ class AgentViewModel(
             var shouldRetry = false
             try {
                 val result = voiceModuleInstance.stopAndTranscribe()
+                if (result is Result.Success && com.unoone.agent.voice.VoiceControlPolicy.isStop(result.data)) { routeVoiceInput(result.data, generation); return@launch }
+                if (generation != GlobalTaskCancellation.generation || !AgentRuntimeGate.isEnabled()) return@launch
                 if (result is Result.Success && result.data.isNotBlank()) {
                     val confidence = voiceModuleInstance.lastSttConfidence
                     // Low-confidence retry: ask the user to repeat once, then re-listen. Don't loop.
@@ -169,7 +179,7 @@ class AgentViewModel(
                         shouldRetry = true
                     } else {
                         retryArmed = false
-                        orchestrator.processCommand(result.data, InputType.VOICE)
+                        routeVoiceInput(result.data, generation)
                     }
                 } else if (result is Result.Error) {
                     retryArmed = false
@@ -180,7 +190,7 @@ class AgentViewModel(
             } finally {
                 VoiceService.foregroundSessionActive = _isHandsFree.value
             }
-            if (shouldRetry && AgentRuntimeGate.isEnabled()) {
+            if (shouldRetry && generation == GlobalTaskCancellation.generation && AgentRuntimeGate.isEnabled()) {
                 startListening(com.unoone.agent.UnoOneApplication.appContext)
             }
         }
@@ -192,6 +202,16 @@ class AgentViewModel(
      * state. Delegates to the orchestrator which cancels the run, clears the pending command, and
      * speaks "Stopped."
      */
+    private suspend fun routeVoiceInput(text: String, generation: Long) {
+        if (com.unoone.agent.voice.VoiceControlPolicy.routeStop(text) {
+                orchestrator.cancelCurrentCommand(speak = false)
+                voiceModuleInstance.stopSpeaking()
+            }) return
+        if (generation != GlobalTaskCancellation.generation || !AgentRuntimeGate.isEnabled()) return
+        if (orchestrator.resolvePendingVoiceConfirmation(text)) return
+        orchestrator.processCommand(text, InputType.VOICE, generation)
+    }
+
     fun cancelCommand() {
         orchestrator.cancelCurrentCommand()
     }
@@ -488,7 +508,10 @@ class AgentViewModel(
                 // transcribe its own "I'm listening" prompt as the user's command.
                 runCatching { voiceModuleInstance.speakAwait("I'm listening. Say a command.") }
                 while (isActive && _isHandsFree.value) {
+                    val generation = GlobalTaskCancellation.generation
                     val utterance = captureUtterance(context)
+                    if (utterance != null && com.unoone.agent.voice.VoiceControlPolicy.isStop(utterance)) { routeVoiceInput(utterance, generation); break }
+                    if (generation != GlobalTaskCancellation.generation || !AgentRuntimeGate.isEnabled()) break
                     if (!_isHandsFree.value) break
                     if (utterance.isNullOrBlank()) {
                         // No speech captured this round — brief pause then re-arm (no spam).
@@ -511,7 +534,9 @@ class AgentViewModel(
                     }
                     // Stop any TTS still playing so we don't talk over the user, then run the command.
                     runCatching { voiceModuleInstance.stopSpeaking() }
-                    orchestrator.processCommand(utterance, InputType.VOICE)
+                    VoiceService.foregroundSessionActive = false
+                    try { routeVoiceInput(utterance, generation) }
+                    finally { VoiceService.foregroundSessionActive = _isHandsFree.value }
                     // Wait for the command (incl. its spoken reply) to finish before re-listening,
                     // so the mic never captures the agent's own voice.
                     try {

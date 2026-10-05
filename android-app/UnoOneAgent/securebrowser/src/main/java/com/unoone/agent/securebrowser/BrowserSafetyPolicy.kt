@@ -20,7 +20,7 @@ object BrowserSafetyPolicy {
 
     /**
      * Keeps deterministic action classification in every mode, while allowing an explicitly chosen
-     * local prototype session to bypass confirm/takeover/block decisions. Origin isolation and the
+     * local prototype session to retain all confirm/takeover/block decisions. Native task ownership and the
      * restricted native bridge are enforced elsewhere and are never disabled by this setting.
      */
     fun evaluate(
@@ -29,7 +29,7 @@ object BrowserSafetyPolicy {
         mode: BrowserSafetyMode = BrowserSafetyMode.STANDARD
     ): BrowserActionDecision {
         val classified = classify(actionName, summary)
-        return if (mode == BrowserSafetyMode.PROTOTYPE_OFF) {
+        return if (mode == BrowserSafetyMode.PROTOTYPE_OFF && classified is BrowserActionDecision.Allow) {
             BrowserActionDecision.Allow(classified.actionClass())
         } else {
             classified
@@ -67,6 +67,8 @@ object BrowserSafetyPolicy {
                 "Legal declarations and terms must be reviewed and accepted by the user"
             )
         }
+        if (listOf("send", "delete", "remove", "submit", "buy", "transfer").any(text::contains) || action == "submit_form")
+            return BrowserActionDecision.UserTakeover(BrowserActionClass.FINAL_SUBMISSION, "Complete consequential actions directly on the page")
         if (containsAny(text, FINAL_SUBMIT_TERMS) || action in FINAL_SUBMIT_ACTIONS) {
             return BrowserActionDecision.Confirm(
                 BrowserActionClass.FINAL_SUBMISSION,
@@ -85,12 +87,20 @@ object BrowserSafetyPolicy {
                 "The browser task requires user input"
             )
         }
+        // A generic click can submit, send, delete, authenticate or invoke arbitrary handlers.
+        // Unknown-language labels are not a reason to bypass this conservative boundary.
+        if (action == "click_element_by_index" || action == "submit_form") {
+            if (summary.isBlank() || text.startsWith("interactive element index"))
+                return BrowserActionDecision.Block(BrowserActionClass.SENSITIVE_INPUT, "Unknown target")
+            return BrowserActionDecision.Confirm(BrowserActionClass.FINAL_SUBMISSION,
+                "Authorize this control on the current page? It may submit, send or delete. Target: ${summary.take(350)}")
+        }
         if (action in READ_ACTIONS) return BrowserActionDecision.Allow(BrowserActionClass.READ_ONLY)
-        if (action in INPUT_ACTIONS) return BrowserActionDecision.Allow(BrowserActionClass.ORDINARY_INPUT)
+        if (action in INPUT_ACTIONS) return BrowserActionDecision.Confirm(BrowserActionClass.ORDINARY_INPUT, "Authorize this field change? ${summary.take(1200)}")
 
-        return BrowserActionDecision.Confirm(
+        return BrowserActionDecision.Block(
             BrowserActionClass.SENSITIVE_INPUT,
-            "Unrecognized browser action requires confirmation"
+            "Unrecognized browser action is denied"
         )
     }
 
@@ -117,10 +127,10 @@ object BrowserSafetyPolicy {
     private val OTP_ACTIONS = setOf("enter_otp", "submit_otp")
     private val CAPTCHA_ACTIONS = setOf("solve_captcha", "bypass_captcha")
 
-    private val PAYMENT_TERMS = setOf("payment", "card number", "cvv", "upi pin", "bank account", "pay now")
-    private val CREDENTIAL_TERMS = setOf("password", "passcode", "pin field", "saved password")
+    private val PAYMENT_TERMS = setOf("payment", "credit card", "debit card", "card number", "cvv", "upi pin", "bank account", "pay now", "purchase", "checkout", "buy now")
+    private val CREDENTIAL_TERMS = setOf("password", "passcode", "pin field", "saved password", "sign in", "log in", "login", "authenticate")
     private val OTP_TERMS = setOf("otp", "one-time password", "verification code")
     private val CAPTCHA_TERMS = setOf("captcha", "i am not a robot", "recaptcha")
-    private val LEGAL_TERMS = setOf("accept terms", "legal declaration", "certify that", "declare that")
+    private val LEGAL_TERMS = setOf("accept terms", "legal declaration", "certify that", "declare that", "terms", "consent", "declaration")
     private val FINAL_SUBMIT_TERMS = setOf("final submit", "submit application", "confirm booking", "place order")
 }

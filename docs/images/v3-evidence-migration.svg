@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="836" viewBox="0 0 1120 836" role="img" aria-labelledby="title desc"><title id="title">Evidence is a checkpoint, not a release claim</title><desc id="desc">Recorded 0.5.0-alpha-v3 host evidence includes 770 JVM tests with zero failures errors or skips, 15 Playwright fixtures and 10 browser unit tests, lint with 15 historical errors suppressed and APK assembly. Device gates remain pending: 100 tasks, including a 50-task sustained subset. Model migration defaults new installs to E2B while preserving verified E4B and existing selection. No automatic deletion or cloud fallback.</desc>
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#496477" stroke-width="1.5"/></marker></defs>
+<rect width="1120" height="836" fill="#f4f7fa"/>
+<style>text{font-family:Arial,Helvetica,sans-serif;fill:#172d3e} .label{font-size:14px;letter-spacing:1.8px;font-weight:700} .head{font-size:32px;font-weight:700} .body{font-size:19px} .small{font-size:16px} .bold{font-size:21px;font-weight:700}</style>
+<text x="40" y="38" class="label">UNOONE V3 / CONCEPTUAL ARCHITECTURE</text>
+<text x="40" y="84" class="head">Evidence is a checkpoint, not a release claim</text>
+<text x="40" y="118" class="small">Source design — not hardware imagery, measured performance or live telemetry.</text>
+<text x="40" y="164" class="label">01 / RECORDED HOST CHECKPOINT</text>
+<rect x="40" y="184" width="500" height="190" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="60" y="216" class="bold">0.5.0-alpha-v3: host gate passed</text>
+<text x="60" y="246" class="body">770 JVM tests · 0 failures / errors / skips</text>
+<text x="60" y="272" class="body">15 Playwright fixtures · 10 browser unit tests</text>
+<text x="60" y="298" class="body">App lint · debug + test APK assembly</text>
+<text x="60" y="324" class="body">15 historical lint errors remain suppressed</text>
+<text x="60" y="350" class="body">Android arm64 JNI built; phone tests pending</text>
+<rect x="590" y="184" width="490" height="190" rx="9" fill="white" stroke="#a87936" stroke-width="1.5" stroke-dasharray="7 5"/>
+<text x="610" y="216" class="bold">02 / DEVICE GATES: PENDING</text>
+<text x="610" y="246" class="body">100 tasks · 0 device passes recorded</text>
+<text x="610" y="272" class="body">50-task sustained subset within the 100</text>
+<text x="610" y="298" class="body">Human audio / Stop / airplane mode</text>
+<text x="610" y="324" class="body">Real model / native races / RAM / thermal</text>
+<text x="610" y="350" class="body">No physical tests in this checkpoint</text>
+<path d="M540 278 L590 278" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"/>
+<text x="40" y="425" class="label">MODEL SELECTION / NON-DESTRUCTIVE MIGRATION</text>
+<rect x="40" y="447" width="500" height="116" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="60" y="479" class="bold">New / unknown selection → E2B</text>
+<text x="60" y="509" class="body">Pinned artifact + exact size / SHA-256</text>
+<text x="60" y="535" class="body">Pure-local CPU candidate, not qualified</text>
+<rect x="590" y="447" width="490" height="116" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="610" y="479" class="bold">Existing verified E4B → preserve</text>
+<text x="610" y="509" class="body">Keep files and persisted E4B selection</text>
+<text x="610" y="535" class="body">Explicit user selection to change profile</text>
+<rect x="40" y="605" width="1040" height="98" rx="9" fill="white" stroke="#496477" stroke-width="1.5"/>
+<text x="60" y="637" class="bold">Qwen opt-in: host toy text 4 / JSON sum 4 / image red</text>
+<text x="60" y="667" class="body">Android inference pending · CPU 2 threads / context 2048 / max 256 · E2B/E4B retained</text>
+<path d="M290 563 L290 605" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M835 563 L835 605" fill="none" stroke="#496477" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="40" y="734" width="1040" height="58" rx="9" fill="white" stroke="#a87936" stroke-width="1.5" stroke-dasharray="7 5"/>
+<text x="60" y="766" class="bold">Development delivery; physical qualification still pending</text>
+<text x="40" y="820" class="small">Solid: recorded checkpoint or wired policy. Dashed: pending progression. No NPU/GPU speed claims.</text>
+</svg>

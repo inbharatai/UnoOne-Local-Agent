@@ -10,6 +10,8 @@ import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.os.SystemClock
+import com.unoone.agent.core.device.RectData
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -27,6 +29,11 @@ import com.unoone.agent.core.util.Logger
  * - After permission is granted, [captureScreen] creates an [ImageReader], renders a frame,
  *   and returns a [Bitmap] for OCR.
  */
+data class CapturedScreen(val bitmap: Bitmap, val requestedAtNanos: Long, val capturedAtNanos: Long,
+    val displayBounds: RectData, val rotation: Int, val captureSequence: Long) {
+    val capturedAtMs: Long get() = capturedAtNanos / 1_000_000
+}
+
 class ScreenshotCapture(private val context: Context) {
 
     companion object {
@@ -40,6 +47,7 @@ class ScreenshotCapture(private val context: Context) {
 
         private var sharedImageReader: ImageReader? = null
         private var sharedVirtualDisplay: VirtualDisplay? = null
+        private var sequence: Long = 0
         private var sharedWidth: Int = 0
         private var sharedHeight: Int = 0
 
@@ -107,69 +115,97 @@ class ScreenshotCapture(private val context: Context) {
      * Capture the current screen into a [Bitmap]. Requires [mediaProjection] to be non-null.
      */
     @Suppress("DEPRECATION")
-    @Synchronized
-    fun captureScreen(): Result<Bitmap> {
+    fun captureScreen(): Result<Bitmap> = when (val frame = captureFrame()) {
+        is Result.Success -> Result.Success(frame.data.bitmap)
+        is Result.Error -> Result.Error(frame.message)
+    }
+
+    @Suppress("DEPRECATION")
+    fun captureFrame(): Result<CapturedScreen> = synchronized(Companion) {
         val projection = mediaProjection
-            ?: return Result.Error("Screen capture permission not granted")
+            ?: return@synchronized Result.Error("Screen capture permission not granted")
 
         val metrics = getDisplayMetrics()
         val width = metrics.widthPixels
         val height = metrics.heightPixels
         val density = metrics.densityDpi
 
-        return try {
+        try {
             // Android 14+ allows one createVirtualDisplay() call per MediaProjection grant. Keep
             // the display/reader alive and reuse it for subsequent voice "read screen" requests.
             if (sharedVirtualDisplay == null || sharedImageReader == null ||
                 sharedWidth != width || sharedHeight != height
             ) {
-                releaseCaptureSession()
                 val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-                sharedImageReader = reader
-                sharedWidth = width
-                sharedHeight = height
-                sharedVirtualDisplay = projection.createVirtualDisplay(
-                    "UnoOneScreenshot",
-                    width,
-                    height,
-                    density,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                    reader.surface,
-                    null,
-                    Handler(Looper.getMainLooper())
-                )
+                val oldReader = sharedImageReader
+                val existing = sharedVirtualDisplay
+                try {
+                    if (existing != null) {
+                        existing.resize(width, height, density)
+                        existing.surface = reader.surface
+                    } else sharedVirtualDisplay = projection.createVirtualDisplay(
+                        "UnoOneScreenshot",
+                        width,
+                        height,
+                        density,
+                        DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                        reader.surface,
+                        null,
+                        Handler(Looper.getMainLooper())
+                    )
+                    sharedImageReader = reader
+                    sharedWidth = width
+                    sharedHeight = height
+                    oldReader?.close()
+                } catch (e: Exception) { reader.close(); throw e }
             }
             val imageReader = sharedImageReader
-                ?: return Result.Error("Screen capture session unavailable")
+                ?: return@synchronized Result.Error("Screen capture session unavailable")
 
-            // Wait briefly for a frame to be available.
-            var image = imageReader.acquireLatestImage()
-            var retries = 10
-            while (image == null && retries > 0) {
-                Thread.sleep(50)
-                image = imageReader.acquireLatestImage()
-                retries--
+            // Drain every queued pre-request buffer. Timestamp, not acquisition time, proves freshness.
+            val drainDeadline = SystemClock.elapsedRealtimeNanos() + 100_000_000L
+            while (true) {
+                if (SystemClock.elapsedRealtimeNanos() >= drainDeadline)
+                    return@synchronized Result.Error("Screenshot queue did not drain")
+                val old = imageReader.acquireNextImage() ?: break
+                old.close()
+            }
+            val fence = SystemClock.elapsedRealtimeNanos()
+            val rotation = (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
+            val deadline = fence + 750_000_000L
+            var image: android.media.Image? = null
+            while (SystemClock.elapsedRealtimeNanos() < deadline) {
+                val candidate = imageReader.acquireLatestImage()
+                if (candidate != null) {
+                    val now = SystemClock.elapsedRealtimeNanos()
+                    if (candidate.timestamp > fence && candidate.timestamp <= now) { image = candidate; break }
+                    candidate.close()
+                }
+                Thread.sleep(10)
+            }
+            val fresh = image ?: return@synchronized Result.Error("No post-request screenshot frame")
+            if ((context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation != rotation) {
+                fresh.close()
+                return@synchronized Result.Error("Display rotated during capture")
             }
 
-            if (image == null) {
-                return Result.Error("Could not acquire screenshot frame")
-            }
+            try {
+                val planes = fresh.planes
+                val buffer = planes[0].buffer
+                val pixelStride = planes[0].pixelStride
+                val rowStride = planes[0].rowStride
+                val rowPadding = rowStride - pixelStride * width
 
-            val planes = image.planes
-            val buffer = planes[0].buffer
-            val pixelStride = planes[0].pixelStride
-            val rowStride = planes[0].rowStride
-            val rowPadding = rowStride - pixelStride * width
-
-            val bitmap = Bitmap.createBitmap(
-                width + rowPadding / pixelStride,
-                height,
-                Bitmap.Config.ARGB_8888
-            )
-            bitmap.copyPixelsFromBuffer(buffer)
-            image.close()
-
-            Result.Success(bitmap)
+                val bitmap = Bitmap.createBitmap(
+                    width + rowPadding / pixelStride,
+                    height,
+                    Bitmap.Config.ARGB_8888
+                )
+                bitmap.copyPixelsFromBuffer(buffer)
+                val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, height)
+                if (cropped !== bitmap) bitmap.recycle()
+                Result.Success(CapturedScreen(cropped, fence, fresh.timestamp, RectData(0, 0, width, height), rotation, ++sequence))
+            } finally { fresh.close() }
         } catch (e: Exception) {
             Logger.e("ScreenshotCapture: capture failed", e)
             Result.Error("Screenshot capture failed: ${e.message}")
@@ -185,7 +221,7 @@ class ScreenshotCapture(private val context: Context) {
             DisplayMetrics().apply {
                 widthPixels = bounds.width()
                 heightPixels = bounds.height()
-                densityDpi = DisplayMetrics.DENSITY_MEDIUM
+                densityDpi = context.resources.displayMetrics.densityDpi
             }
         } else {
             val displayMetrics = DisplayMetrics()

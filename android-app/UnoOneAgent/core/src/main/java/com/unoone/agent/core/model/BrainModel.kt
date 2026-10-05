@@ -1,16 +1,13 @@
 package com.unoone.agent.core.model
 
-/**
- * UnoOne V2 has one on-device planning brain: Gemma 4 E4B.
- *
- * The product intentionally exposes a single accuracy-first model profile. Deterministic Android
- * handlers still execute common phone actions without model inference; E4B is reserved for
- * ambiguity, conversation and bounded multi-step planning.
- */
-enum class BrainModelId { GEMMA_4_E4B }
+/** Selectable on-device planning profiles; existing E4B selections are preserved. */
+enum class BrainModelId { GEMMA_4_E4B, GEMMA_4_E2B, QWEN3_5_2B }
 
 /** Model family used by prompt construction. */
-enum class ModelFamily { GEMMA_4 }
+enum class ModelFamily { GEMMA_4, QWEN3_5 }
+
+/** Runtime format; never dispatch an MNN config to LiteRT-LM. */
+enum class BrainRuntime { LITERT_LM, MNN }
 
 /** Hardware backend preference. LiteRT-LM backend mapping lives in `:localbrain`. */
 enum class BackendPreference { GPU_FIRST, CPU_ONLY, ANY }
@@ -42,10 +39,11 @@ data class BrainModelSpec(
     val isLegacy: Boolean,
     val isDeviceVerified: Boolean,
     val experimentalLabel: String?,
-    val description: String
+    val description: String,
+    val runtime: BrainRuntime = BrainRuntime.LITERT_LM
 )
 
-/** Single source of truth for the Gemma 4 E4B runtime contract. */
+/** Single source of truth for the selectable Gemma 4 runtime contracts. */
 object BrainModelRegistry {
 
     val GEMMA_4_E4B: BrainModelSpec = BrainModelSpec(
@@ -70,20 +68,47 @@ object BrainModelRegistry {
         isLegacy = false,
         isDeviceVerified = false,
         experimentalLabel = "Xiaomi 14 qualification required",
-        description = "UnoOne's sole accuracy-first local planning brain. Common phone actions remain deterministic; Gemma 4 E4B handles conversation, ambiguity and bounded agent planning through LiteRT-LM with schema validation, safety checks and execution verification."
+        description = "UnoOne's retained accuracy-first local planning brain. Common phone actions remain deterministic; Gemma 4 E4B handles conversation, ambiguity and bounded agent planning through LiteRT-LM with schema validation, safety checks and execution verification."
     )
 
-    val all: List<BrainModelSpec> = listOf(GEMMA_4_E4B)
-    val defaultProfile: BrainModelSpec = GEMMA_4_E4B
+    // RAM/context values are conservative application policy, not device qualification claims.
+    val GEMMA_4_E2B: BrainModelSpec = GEMMA_4_E4B.copy(
+        id = BrainModelId.GEMMA_4_E2B,
+        manifestId = "gemma-4-e2b",
+        displayName = "Gemma 4 E2B",
+        modelFolder = "brain/gemma-4-e2b",
+        fileName = "gemma-4-E2B-it.litertlm",
+        description = "Default local planning profile using the pinned LiteRT-LM E2B artifact. Physical-device, image and grounding qualification is required; E4B remains selectable."
+    )
 
-    fun byId(id: BrainModelId): BrainModelSpec = GEMMA_4_E4B
+    val QWEN3_5_2B: BrainModelSpec = GEMMA_4_E2B.copy(
+        id = BrainModelId.QWEN3_5_2B,
+        manifestId = "qwen3.5-2b-mnn",
+        displayName = "Qwen 3.5 2B (EXPERIMENTAL)",
+        modelFamily = ModelFamily.QWEN3_5,
+        modelFolder = "brain/qwen3.5-2b-mnn",
+        fileName = "config.json",
+        fileExtension = ".json",
+        preferredBackend = BackendPreference.CPU_ONLY,
+        maximumContextTokens = 4_096,
+        defaultContextTokens = 2_048,
+        experimentalLabel = "EXPERIMENTAL — native/device qualification required",
+        description = "Pinned 4-bit MNN export. Opt-in only; no device performance or vision qualification claimed. E4B remains recoverable.",
+        runtime = BrainRuntime.MNN
+    )
+
+    val all: List<BrainModelSpec> = listOf(GEMMA_4_E2B, GEMMA_4_E4B, QWEN3_5_2B)
+    val defaultProfile: BrainModelSpec = GEMMA_4_E2B
+
+    fun byId(id: BrainModelId): BrainModelSpec = all.first { it.id == id }
 
     fun byManifestId(manifestId: String): BrainModelSpec? =
-        GEMMA_4_E4B.takeIf { manifestId == it.manifestId }
+        all.firstOrNull { it.manifestId == manifestId }
 
     fun byFolder(folder: String): BrainModelSpec? =
-        GEMMA_4_E4B.takeIf { folder == it.modelFolder }
+        all.firstOrNull { it.modelFolder == folder }
 
-    /** Older persisted model identifiers are intentionally migrated to the sole E4B brain. */
-    fun resolveOrDefault(manifestId: String?): BrainModelSpec = GEMMA_4_E4B
+    /** New/unknown selections use E2B; persisted E4B is never silently migrated. */
+    fun resolveOrDefault(manifestId: String?): BrainModelSpec =
+        manifestId?.let(::byManifestId) ?: defaultProfile
 }

@@ -70,6 +70,15 @@ fun SettingsScreen(
     var showClearConfirmation by remember { mutableStateOf(false) }
     var showDisableConfirmation by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    var showDiagnostics by remember { mutableStateOf(false) }
+    if (showDiagnostics) {
+        DeveloperDiagnosticsScreen(viewModel, onClose = { showDiagnostics = false },
+            interpretImage = { state, envelope, question ->
+                val app = context.applicationContext as com.unoone.agent.UnoOneApplication
+                app.orchestrator.analyzeReviewedScreen(state, envelope, question)
+            })
+        return
+    }
 
     Column(
         modifier = Modifier
@@ -125,6 +134,11 @@ fun SettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+        SettingsSection(title = "Developer (opt-in)") {
+            Button(onClick = { showDiagnostics = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Open runtime and screen diagnostics")
+            }
+        }
         SettingsSection(title = "Manage") {
             ManageButton("Model Status & Install", Icons.Default.Memory, onNavigateToModels)
             ManageButton("Offline Languages", Icons.Default.Language, onNavigateToLanguagePacks)
@@ -147,7 +161,7 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
             Text(
-                "Secure Browser reserves Gemma 4 E4B exclusively, automates approved HTTPS pages through the local Page Agent, and requires manual control for credentials, OTP, CAPTCHA, payments and legal declarations.",
+                "Secure Browser reserves the selected local planning profile exclusively, automates approved HTTPS pages through the local Page Agent, and requires manual control for credentials, OTP, CAPTCHA, payments and legal declarations.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 4.dp)
@@ -220,7 +234,7 @@ fun SettingsScreen(
                 Text("Privacy Settings")
             }
             Text(
-                "Control optional online tools and data sharing. Gemma 4 E4B, installed speech packs and PageAgent planning run locally.",
+                "Control optional online tools and data sharing. The selected local planning profile, installed speech packs and Page Agent planning run locally.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 modifier = Modifier.padding(top = 4.dp)
@@ -250,7 +264,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            "UnoOne v0.4.0-alpha-v2 · Gemma 4 E4B device qualification pending",
+            "UnoOne V3 development alpha · Not device-qualified",
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
         )

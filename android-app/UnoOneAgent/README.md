@@ -1,258 +1,104 @@
-# UnoOneAgent Android
+# UnoOneAgent Android — V3 development alpha
 
-Native Android implementation for UnoOne V2.
+Current Android build and runtime guidance. **V3 is not device-qualified or release-qualified.** V3 is a development label, not a newly assigned APK version; build configuration retains its existing alpha version. See the repository [README](../../README.md) and [model strategy](../../docs/UNOONE_V3_MODEL_STRATEGY.md).
 
-The repository [README](../../../README.md) is the product and architecture source of truth. This document covers Android build, model layout, runtime boundaries and device validation.
+## Current source boundaries
 
-## Current branch state
+- Android API 28+, JDK 17, Android SDK 35; AGP 8.10.0, Gradle 8.11.1 and Kotlin 2.2.21.
+- Gemma 4 E2B is the default local planning profile; E4B remains selectable/recoverable. Persisted E4B selection is not silently migrated.
+- Qwen3.5-2B is an explicit opt-in: compiled pinned MNN runtime is integrated with LocalBrain and browser selection. Nine artifacts total **1,386,691,327 bytes**, CPU 2 threads, context 2,048, max output 256. Real host toy probes observed text `4`, JSON sum `4`, image `red`; Android device inference is **PENDING**.
+- Skills → Reviewed native workflows (Skills V2) exposes import/review/export/run. Candidate updates require trusted fixtures; manual learn recording is unavailable.
+- Current-app ClickSearch/ReadScreen/Scroll/Back, bounded name-find and reviewed draft intents are supported source paths, not universal app automation.
+- Deterministic parsing precedes local inference. Canonical tool validation and native permission/safety policy precede execution. A schema-valid call does not prove recipient correctness or task success.
+- LiteRT-LM uses manual tool calling; `AUTO` retains the conservative CPU backend. Other backend choices require device qualification.
+- English/Hindi offline speech, Accessibility/OCR, independent CameraX/MediaPipe Blind Aid and document tooling are implemented; this does not establish held-out speech accuracy or physical task success.
 
-- Android API 28+.
-- AGP 8.10.0, Gradle 8.11.1, Kotlin 2.2.21 and JDK 17.
-- 15 Gradle modules.
-- Gemma 4 E4B is the sole installable planning model.
-- LiteRT-LM manual tool calling with CPU `AUTO`; GPU is an explicit developer qualification choice.
-- Deterministic command parsing before model inference.
-- Canonical tool-name and argument validation before execution.
-- Offline Sherpa-ONNX bilingual English/Hindi recognition with selectable English/Hindi reply speech.
-- Accessibility-based phone control and screen reading.
-- Bundled offline Latin + Devanagari OCR for English and Hindi screen text.
-- CameraX/MediaPipe Blind Aid independent of the language model.
-- Secure Browser Page Agent using an exclusive lease on the same E4B artifact.
-- Offline document reading and supported PDF/DOCX template filling.
-- Persistent master disable that stops voice, TTS, inference, camera, OCR, accessibility actions, browser work and recovery.
+The upstream E4B artifact is multimodal. **E4B image input is disabled in UnoOne's current runtime configuration**, not absent from that artifact. Reviewed per-capture local image analysis is now reachable through Settings → Developer (opt-in) → Open runtime and screen diagnostics and uses the selected model. Known secrets are denied/masked; unknown content still needs review and carries a warning. Output is advice only, not arbitrary visual clicks. Do not describe this as qualified multimodal phone control or Gemma audio-native inference.
 
-This branch is an alpha. Exact E4B integrity, CPU load and the 43-case phone-planner evaluation have passed on the Xiaomi 14. Sustained thermal/battery, strict in-app self-test, E4B-backed Page Agent planning, second-device and release gates remain. Existing E2B records are historical evidence only.
+## Modules and model storage
 
-## Modules
+Modules: `app`, `core`, `storage`, `modelmanager`, `languagepacks`, `localbrain`, `voice`, `agentrouter`, `safetyguard`, `phonecontrol`, `memory`, `skills`, `observability`, `accessibilitycontrol`, `securebrowser`.
+
+Models use app-private storage; all-files access is not required. Profile paths under `models/`:
 
 ```text
-:app
-:core
-:storage
-:modelmanager
-:languagepacks
-:localbrain
-:voice
-:agentrouter
-:safetyguard
-:phonecontrol
-:memory
-:skills
-:observability
-:accessibilitycontrol
-:securebrowser
+brain/gemma-4-e2b/gemma-4-E2B-it.litertlm
+brain/gemma-4-e4b/gemma-4-E4B-it.litertlm
 ```
 
-## Model filesystem
+Speech packs live under `speech/shared/` and `speech/languages/`; independent Blind Aid assets under `vision/blind-aid/`. Select/install the desired profile through **Model Status & Install**. Installation uses the declared artifact and staging, not the largest file found on disk. Do not delete E2B as obsolete: it is the current default.
 
-```text
-models/
-├── brain/
-│   └── gemma-4-e4b/
-│       └── gemma-4-E4B-it.litertlm
-├── speech/
-│   ├── shared/
-│   │   ├── sherpa-asr-en/
-│   │   ├── sherpa-asr-indic/
-│   │   └── sherpa-kws-en/
-│   └── languages/
-│       ├── en-IN/tts/
-│       ├── hi-IN/tts/
-│       └── retained language TTS folders
-├── vision/
-│   └── blind-aid/
-└── staging/
-```
+The registry and model manifest define IDs, pinned files and integrity checks. Byte integrity, load success, strict self-test and physical qualification are separate states. Both profiles use an 8,192 MB minimum RAM policy, 12,288 MB recommendation and 2,048-token default context: configured policy, not measured minimum working memory. See [model strategy](../../docs/UNOONE_V3_MODEL_STRATEGY.md) for provenance and pending image/grounding qualification.
 
-The app uses app-private storage and does not require all-files access.
+## Speech and mode boundaries
 
-## Gemma 4 E4B contract
+**Reply voice** selects English/Hindi TTS output rather than reloading STT. Microphone ownership, TTS suppression and OS AEC checks are implementation controls, not measured echo cancellation or interruption performance. Human audio collection/export and held-out evaluation remain pending; see [speech qualification](../../docs/UNOONE_V3_SPEECH_QUALIFICATION.md).
 
-| Field | Value |
-|---|---|
-| Manifest id | `gemma-4-e4b` |
-| File | `gemma-4-E4B-it.litertlm` |
-| Exact size | `3,659,530,240` bytes |
-| SHA-256 | `0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0` |
-| Runtime | LiteRT-LM `0.13.1` |
-| Production `AUTO` | CPU until exact device/build/hash qualification approves another backend |
-| Enforced engine context | 2,048 tokens |
-| Artifact capability ceiling | 32,768 tokens; not configured on phone |
-| Minimum RAM gate | 8,192 MB |
-| Recommended RAM gate | 12,288 MB |
-| Xiaomi 14 qualification | partial: CPU load + 43/43 planner cases passed; sustained/release gates pending |
-
-`ModelManager.getLlmModelPath()` returns only the exact declared file after exact size and SHA-256 verification. It does not select the largest `.litertlm` file and does not accept the web-specific E4B artifact.
-
-Existing E2B files are retained until exact integrity, load, strict self-test, evaluation, sustained stability, recorded device/build/backend evidence and explicit user approval all pass. Cleanup must use the fixed-path qualified migration rather than an unbounded filesystem deletion.
-
-## Agent execution order
-
-```text
-voice/text input
-      ↓
-normalisation and language handling
-      ↓
-deterministic parser
-      ├── direct Android handler
-      └── E4B planner for ambiguity or multi-step work
-                    ↓
-          canonical tool validation
-                    ↓
-       permission + safety + confirmation
-                    ↓
-         deterministic action executor
-                    ↓
-           post-action verification
-                    ↓
-            offline spoken response
-```
-
-The model proposes actions; native code authorises, executes and verifies them. A tool response cannot bypass permissions, safety rules, confirmation requirements or verification.
-
-Common app opening, language changes, Blind Aid control, Home/Back navigation, screen reading and stop commands should bypass the model where deterministic routing exists.
-
-## Voice and wake activation
-
-Wake phrases include:
-
-- Uno
-- Uno One
-- Hey Uno
-- Uno on
-- Uno start
-
-Wake and command may be spoken together. The voice service and foreground recorder maintain single microphone ownership, and TTS must not become a new command.
-
-Examples: “Uno, open Google Chrome,” “Uno, open Blind Aid,” and “Uno, read the screen.” Common offline-STT renderings of Chrome — “crome”, “crohm”, and “crope” — route to Chrome rather than a Google search. When an action needs confirmation, UnoOne says how to reply: say “Uno, yes” for an ordinary confirmation or “Uno, confirm” for a strong confirmation. The reply is resolved before the serial command queue so an eyes-free user is not locked behind the pending action.
-
-The floating assistant microphone captures one utterance per tap, stops on trailing silence or after eight seconds, and uses the same local command/tool route as hands-free wake input. Wake capture is privacy-paused during phone and VoIP calls and resumes when the call ends.
-
-English and Hindi are currently exposed. The shared Omnilingual recognizer accepts either language regardless of the selected reply voice. The **Reply voice** setting changes only the TTS output language, so switching it does not unload and reload STT. Assamese remains planned until exact speech artifacts pass licence, integrity, Android load and accuracy qualification.
+Blind Aid is independent of Gemma and can suspend planning to reduce memory contention. Profile-specific unload/recovery, cancellation and thermal behavior need physical evidence. Security-level settings alter native policy; prototype security-off behavior is not a production safety guarantee.
 
 ## Secure Browser model lease
 
-Secure Browser follows this order:
+The browser chooses the previously loaded phone profile, otherwise the selected profile, otherwise default E2B. The native lease flow reserves process-wide ownership, verifies the chosen artifact, unloads the phone planner and requires close acknowledgement before browser allocation. It prevents competing phone recovery allocation, closes the browser planner on release and restores the previous phone profile when required and permitted by close/residency state.
 
-1. acquire the process-wide model lease;
-2. verify the exact E4B artifact off the UI thread;
-3. unload the phone-agent planner if loaded;
-4. load one Page Agent planner using the same file;
-5. prevent phone recovery from allocating another engine;
-6. close the browser planner on release;
-7. restore the phone planner once when required.
+This is profile-aware, not an E4B-only lease. Coordination source and fake-engine tests do not prove JNI drainage or physical single residency; failure/quarantine behavior still needs device qualification.
 
-Two E4B engines must never be resident simultaneously.
+The website-facing adapter is DOM-only; the privileged planning loop is native-owned. The former website-facing privileged bridge/session/nonce description is historical, not current architecture. Native validation and security policy govern actions; credentials, OTPs, CAPTCHA, payments and legal acceptance require special handling/manual takeover under applicable policy. Prototype security-off settings are not evidence of production safety.
 
-The browser bridge continues to enforce session, nonce, origin and main-frame checks. Arbitrary JavaScript execution is not exposed. Payments remain blocked in Standard mode, while credentials, OTPs, CAPTCHA and legal acceptance require manual takeover.
+## Build instructions — commands, not current pass receipts
 
-## Blind Aid memory boundary
+Start each block at the **repository root**. Install JDK 17, Android SDK 35, **NDK 27.2.12479018**, **CMake 3.22.1** and Node.js 22.12+ and configure the SDK. CMake FetchContent downloads hash-pinned MNN revision `024a946b0b8fcf87c8a418229fadd4cd7858ffba`. Qwen JNI builds only for **arm64-v8a**; do not claim 32-bit Qwen support. Raw model weights are not committed. See the [paste-ready Windows phone setup](../../docs/UNOONE_V3_PHONE_SETUP.md), [model artifact pin/license](../../docs/UNOONE_V3_QWEN35_MNN.md), and [native notices](localbrain/src/main/cpp/licenses/). Physical hardware is required for runtime, speech, Accessibility, background voice and camera qualification.
 
-Blind Aid can operate without Gemma. Starting Blind Aid may cancel an in-flight brain load or unload the resident E4B engine before sustained camera analysis. Stopping Blind Aid must:
-
-- close camera and detector state;
-- stop stale detections and narration;
-- release exclusive ownership;
-- reload E4B once when the agent is enabled and no other mode owns it.
-
-## Build prerequisites
-
-- JDK 17
-- Android SDK 35
-- Node.js 24 for Page Agent
-- physical Android device for LiteRT-LM, Sherpa, Accessibility, background voice and camera qualification
-
-## Build Page Agent first
+Build/copy the browser asset first:
 
 ```bash
-cd ../../../web-runtime/page-agent-unoone
-npm install --no-audit --no-fund
+cd web-runtime/page-agent-unoone
+npm ci --no-audit --no-fund
 npm run typecheck
 npm test
 npm run bundle:android
-```
-
-For the full browser matrix:
-
-```bash
+# Browser fixtures only; not physical Android/model task evidence:
 npx playwright install chromium
 npm run test:e2e
 ```
 
-The generated asset must exist at:
+Generated asset: `android-app/UnoOneAgent/securebrowser/src/main/assets/page-agent/unoone-page-agent.js` relative to repository root.
 
-```text
-securebrowser/src/main/assets/page-agent/unoone-page-agent.js
-```
-
-## Android gates
+From repository root, run Android host gates:
 
 ```bash
 cd android-app/UnoOneAgent
-chmod +x gradlew
-./gradlew \
-  :app:lintDebug \
-  testDebugUnitTest \
-  :app:assembleDebug \
-  :app:assembleDebugAndroidTest \
-  --stacktrace
+./gradlew clean testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
 ```
 
-Repository invariants:
+Android-test APK assembly is not instrumentation execution. The archived **repair4** receipt records a successful host gate for an earlier frozen snapshot (717 JVM tests). Source has changed since that receipt: it does **not** validate this edited worktree. Latest integrated `qwen2` gates are still running; no final pass is claimed. A future main commit/push is planned, with no invented commit ID. See [repair report](../../docs/UNOONE_V3_REPAIR_REPORT.md); bind new receipts to the exact final source before making fresh pass claims.
+
+## Install and collect evidence
+
+From repository root after building:
 
 ```bash
-cd ../../..
-python3 scripts/ci/check_repo_invariants.py
-python3 scripts/verify_unoone_v2_invariants.py
-```
-
-## Install on Xiaomi/HyperOS
-
-Preferred:
-
-```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r android-app/UnoOneAgent/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 If streamed installation is blocked:
 
 ```bash
-adb push app/build/outputs/apk/debug/app-debug.apk /data/local/tmp/unoone-e4b-debug.apk
-adb shell pm install -r /data/local/tmp/unoone-e4b-debug.apk
+adb push android-app/UnoOneAgent/app/build/outputs/apk/debug/app-debug.apk /data/local/tmp/unoone-debug.apk
+adb shell pm install -r /data/local/tmp/unoone-debug.apk
 ```
 
-HyperOS can disable Accessibility after an APK update. Re-enable **UnoOne → Accessibility** before cross-app tests.
+HyperOS may disable Accessibility after updates; verify/re-enable it before cross-app tests. Record device/OS/build identity, profile/hash/backend, latency, memory, thermal/battery behavior, cancellation/unload acknowledgement, external-app verification, browser lease/restoration and voice/recovery behavior. Failures remain failures; unexecuted tasks remain pending. Follow the [V3 benchmark plan](../../docs/UNOONE_V3_BENCHMARKS.md): the 100-task matrix is pending, not an achieved score.
 
-## Required device evidence
+## Historical evidence — archived references, not current qualification
 
-Follow [E4B Xiaomi 14 Handoff](../../../docs/E4B_XIAOMI14_HANDOFF.md). Record:
+These existing records are retained unchanged and must be read within their original source/build/device boundaries:
 
-- device, Android and HyperOS build;
-- physical memory and free storage;
-- E4B download and checksum time;
-- actual backend and any GPU failure reason;
-- load, first-token and total planning latency;
-- process memory, heat and battery behaviour;
-- deterministic English/Hindi commands;
-- exact tool-name and argument accuracy;
-- external-app foreground and draft verification;
-- Blind Aid unload/reload;
-- Secure Browser exclusive lease;
-- background/foreground and lock/unlock recovery;
-- sustained 50-task stability;
-- crash, ANR, native-signal, OOM and low-memory scan.
+- [E4B Xiaomi 14 handoff](../../docs/E4B_XIAOMI14_HANDOFF.md).
+- [Device verification history](../../DEVICE_VERIFICATION.md), including historical E2B records.
+- [Repair report](../../docs/UNOONE_V3_REPAIR_REPORT.md) and archived repair4 host receipts.
 
-Compilation alone does not qualify E4B.
+Historical Xiaomi 14 E4B integrity/load and 43/43 planner cases do not establish V3 held-out accuracy, current E2B qualification, sustained browser performance or release readiness. Historical E2B evidence likewise does not qualify the current selectable E2B path. Old E2B-removal migration instructions are not current V3 installation guidance.
 
-## Release rules
+## Qualification and release holds
 
-Do not merge or release until:
-
-- latest Android and Distribution CI are green on the final head;
-- E4B loads and passes the self-test on Xiaomi 14;
-- the sustained device matrix passes;
-- E2B cleanup occurs only after verified E4B success;
-- model and speech licences/notices are reviewed;
-- production storage and catalogue signing are configured;
-- the release APK is signed and checksum-published;
-- security, privacy, dependency and SBOM reviews are complete.
+Keep V3 unqualified until final-source host validation and actual profile/device testing are recorded: strict self-test, reviewed screenshot-input execution on device, sustained cancellation/memory/thermal/offline operation, browser tasks and human speech evaluation. Release also requires current CI, licence/notice review, production storage/catalogue signing, signed APK/checksum publication and security/privacy/dependency review. Historical host receipts and artifact capability claims do not substitute for these gates.

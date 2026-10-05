@@ -1,5 +1,7 @@
 # UnoOne Local Agent — Laptop Setup Guide
 
+> **Historical setup reference.** For the current V3 candidate, use [UNOONE_V3_PHONE_SETUP.md](UNOONE_V3_PHONE_SETUP.md): SDK 35, JDK 17, NDK 27.2.12479018, CMake 3.22.1, browser bundle before Gradle, explicit Qwen opt-in. Old hard-coded laptop paths and model-push recipes below are not current installation instructions. Latest integrated gates and Android inference are pending.
+
 ## Who is this for?
 
 You have never built a native Android app before. This guide tells you exactly what to click, what to install, what folder to create, what command to run, and how to test each part on your laptop and Xiaomi 14 phone.

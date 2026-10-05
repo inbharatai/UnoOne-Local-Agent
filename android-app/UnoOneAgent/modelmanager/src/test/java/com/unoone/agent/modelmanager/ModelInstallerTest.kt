@@ -189,7 +189,7 @@ class ModelInstallerTest {
     fun extractsZipArchiveAndDeletesArchive() {
         val zipBytes = ByteArrayOutputStream().also { baos ->
             ZipOutputStream(baos).use { zos ->
-                zos.putNextEntry(ZipEntry("inner.txt"))
+                zos.putNextEntry(ZipEntry("arch/inner.txt"))
                 zos.write("inside the zip".toByteArray())
                 zos.closeEntry()
             }
@@ -199,12 +199,12 @@ class ModelInstallerTest {
             val descriptor = ModelDescriptor(
                 id = "m", folder = "m", type = ModelType.tts, version = "v",
                 minRamMb = 0, backend = ModelBackend.cpu, defaultLanguage = "en",
-                files = listOf(ModelFile("arch.zip", server.url("arch.zip"), "", 0L, archive = true))
+                files = listOf(ModelFile("arch.zip", server.url("arch.zip"), sha256(zipBytes), zipBytes.size.toLong(), archive = true))
             )
             val result = runBlocking { installer.install(descriptor) }
             assertTrue(result is ModelInstaller.InstallResult.Success)
-            assertTrue(File(modelDir, "m/inner.txt").exists())
-            assertEquals("inside the zip", File(modelDir, "m/inner.txt").readText())
+            assertTrue(File(modelDir, "m/arch/inner.txt").exists())
+            assertEquals("inside the zip", File(modelDir, "m/arch/inner.txt").readText())
             // The archive file itself is deleted after extraction.
             assertFalse(File(modelDir, "m/arch.zip").exists())
         } finally {
@@ -317,7 +317,7 @@ class ModelInstallerTest {
             minRamMb = 0, backend = ModelBackend.cpu, defaultLanguage = "en",
             files = listOf(
                 ModelFile(
-                    "espeak-ng-data.zip", url = "", sha256 = "", sizeBytes = zipBytes.size.toLong(),
+                    "espeak-ng-data.zip", url = "", sha256 = sha256(zipBytes), sizeBytes = zipBytes.size.toLong(),
                     archive = true, asset = "espeak-ng-data.zip"
                 )
             )
@@ -372,7 +372,7 @@ class ModelInstallerTest {
     }
 
     @Test
-    fun skipsAssetArchiveWhenAlreadyExtracted() {
+    fun refusesUnverifiedAssetArchiveEvenWhenDirectoryExists() {
         // Idempotent: a previously extracted archive directory means no asset copy is needed and the
         // asset reader is never invoked.
         File(modelDir, "tts/espeak-ng-data").mkdirs()
@@ -390,8 +390,8 @@ class ModelInstallerTest {
             )
         )
         val result = runBlocking { assetInstaller.install(descriptor) }
-        assertTrue(result is ModelInstaller.InstallResult.Success)
-        assertEquals(0, reads) // asset reader never invoked
+        assertTrue(result is ModelInstaller.InstallResult.Failure)
+        assertEquals(1, reads) // directory presence is not integrity proof
         assertEquals("already", File(modelDir, "tts/espeak-ng-data/phondata").readText())
     }
 
@@ -418,7 +418,7 @@ class ModelInstallerTest {
             files = listOf(
                 ModelFile(
                     name = "sherpa-onnx-whisper-tiny.tar.bz2",
-                    url = "", sha256 = "", sizeBytes = tarBytes.size.toLong(),
+                    url = "", sha256 = sha256(tarBytes), sizeBytes = tarBytes.size.toLong(),
                     archive = true, asset = "sherpa-onnx-whisper-tiny.tar.bz2",
                     extractsTo = "sherpa-onnx-whisper-tiny"
                 )
@@ -436,7 +436,7 @@ class ModelInstallerTest {
     }
 
     @Test
-    fun skipsTarBz2ArchiveWhenAlreadyExtractedViaExtractsTo() {
+    fun refusesUnverifiedTarArchiveEvenWhenDirectoryExists() {
         // Idempotent: when the extractsTo directory already exists with content, the installer must
         // skip without invoking the asset reader. This exercises archiveAlreadyExtracted with
         // extractsTo (the strip-last-extension fallback would look for "pkg.tar" and never match).
@@ -458,10 +458,75 @@ class ModelInstallerTest {
             )
         )
         val result = runBlocking { assetInstaller.install(descriptor) }
-        assertTrue(result is ModelInstaller.InstallResult.Success)
-        assertEquals(0, reads) // asset reader never invoked
+        assertTrue(result is ModelInstaller.InstallResult.Failure)
+        assertEquals(1, reads) // directory presence is not integrity proof
         assertEquals("already", File(top, "tiny-encoder.int8.onnx").readText())
     }
+
+    @Test
+    fun archiveReceiptRequiresExactInventoryAndRejectsEmptyOutput() {
+        val bytes = archiveZip("pkg/model" to "correct")
+        val file = ModelFile("pkg.zip", "", sha256(bytes), bytes.size.toLong(), true, "pkg.zip")
+        val folder = File(modelDir, "m").apply { mkdirs() }
+        File(folder, "pkg").mkdir()
+        File(folder, ".pkg.zip.extracted").writeText("${file.name}:${file.sizeBytes}:${file.sha256}")
+        assertFalse(installer.archiveAlreadyExtracted(file, folder))
+        val descriptor = ModelDescriptor("m", "m", ModelType.tts, "v", files = listOf(file))
+        var reads = 0
+        val assetInstaller = ModelInstaller(modelDir) { reads++; ByteArrayInputStream(bytes) }
+        assertTrue(runBlocking { assetInstaller.install(descriptor) } is ModelInstaller.InstallResult.Success)
+        assertTrue(assetInstaller.archiveAlreadyExtracted(file, folder))
+        assertTrue(runBlocking { assetInstaller.install(descriptor) } is ModelInstaller.InstallResult.Success)
+        assertEquals(1, reads)
+        val payload = File(folder, "pkg/model")
+        payload.writeText("CORRUPT") // same length, must still fail SHA256
+        assertFalse(assetInstaller.archiveAlreadyExtracted(file, folder))
+        payload.writeText("correct")
+        File(folder, "pkg/unexpected").writeText("extra")
+        assertFalse(assetInstaller.archiveAlreadyExtracted(file, folder))
+        File(folder, "pkg/unexpected").delete()
+        payload.delete()
+        assertFalse(assetInstaller.archiveAlreadyExtracted(file, folder))
+    }
+
+    @Test
+    fun invalidStagingPreservesPreviousLivePayload() {
+        for (entry in listOf("../escape", "other/foreign")) {
+            val bytes = archiveZip("pkg/model" to "replacement", entry to "bad")
+            val file = ModelFile("pkg.zip", "", sha256(bytes), bytes.size.toLong(), true, "pkg.zip")
+            val live = File(modelDir, "m/pkg").apply { mkdirs() }
+            File(live, "model").writeText("old")
+            val descriptor = ModelDescriptor("m", "m", ModelType.tts, "v", files = listOf(file))
+            val assetInstaller = ModelInstaller(modelDir) { ByteArrayInputStream(bytes) }
+            assertTrue(runBlocking { assetInstaller.install(descriptor) } is ModelInstaller.InstallResult.Failure)
+            assertEquals("old", File(live, "model").readText())
+            assertFalse(File(modelDir, "escape").exists())
+        }
+    }
+
+    @Test
+    fun rejectsSymlinkInInstalledInventory() {
+        val bytes = archiveZip("pkg/model" to "correct")
+        val file = ModelFile("pkg.zip", "", sha256(bytes), bytes.size.toLong(), true, "pkg.zip")
+        val descriptor = ModelDescriptor("m", "m", ModelType.tts, "v", files = listOf(file))
+        val assetInstaller = ModelInstaller(modelDir) { ByteArrayInputStream(bytes) }
+        assertTrue(runBlocking { assetInstaller.install(descriptor) } is ModelInstaller.InstallResult.Success)
+        val folder = File(modelDir, "m")
+        val payload = File(folder, "pkg/model")
+        val outside = File(baseDir, "outside").apply { writeText("correct") }
+        payload.delete()
+        Files.createSymbolicLink(payload.toPath(), outside.toPath())
+        assertFalse(assetInstaller.archiveAlreadyExtracted(file, folder))
+    }
+
+    private fun archiveZip(vararg entries: Pair<String, String>): ByteArray =
+        ByteArrayOutputStream().also { bytes ->
+            ZipOutputStream(bytes).use { zip ->
+                for ((name, text) in entries) {
+                    zip.putNextEntry(ZipEntry(name)); zip.write(text.toByteArray()); zip.closeEntry()
+                }
+            }
+        }.toByteArray()
 
     // ---- helpers ----
 

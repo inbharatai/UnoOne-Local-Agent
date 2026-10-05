@@ -1,0 +1,13 @@
+# Qwen host smoke evidence — 2026-10-05
+
+**HOST-TESTED ONLY. Not Android-qualified, a GUI benchmark, a model winner, or a release gate pass.**
+
+Pristine upstream MNN commit `024a946b0b8fcf87c8a418229fadd4cd7858ffba` compiled successfully on Linux x86_64 (GNU C/C++ 11.5.0, CMake 3.22.1, Release, CPU, two build jobs). Build exit 0, 553.77 s. These are host measurements, not phone performance. NDK arm64 compile is separately reported by integration; this archive is NOT an Android runtime test.
+
+All nine required model artifacts (1,386,691,327 bytes) were downloaded/verified outside the repository and independently rehashed on disk during this documentation pass. [Artifact receipts](artifact-verification.json) contain official revision-pinned URLs, exact bytes and SHA-256; no signed CDN URLs. No weights, executable, image binary or large graph dump is included here.
+
+Actual upstream llm_demo outputs: numeral `4`, JSON `{"sum":4}`, image answer `red`. The generated input was a 224×224 pure-red RGB PNG; image stdout records nonzero vision work (1.99 s). This three-case smoke test establishes execution only, not general accuracy. All seven verifier/tokenizer/inference subprocesses exited 0; semantic outputs were inspected independently of exit status. [Test results](test-results.json), [text stdout](text.stdout.txt), [JSON stdout](json.stdout.txt), [image stdout](image.stdout.txt) and individual stderr files are retained. Empty stderr files are intentional.
+
+[Source config](source-config.json) is unchanged. CPU derived configs use two threads, thinking=false, max_new_tokens 32/64, retaining upstream stochastic sampling. These are host test settings, not the production mobile budget. [Archive hashes](archive-hashes.json) distinguish ORIGINAL executed-file hashes from archived hashes: private workspace path prefixes are replaced with descriptive placeholders in logs/configs/commands. Redacted configs must have those placeholders resolved before reproduction; their hashes are not silently presented as executed bytes. [Binary hashes](binary-hashes.json) identify the host binaries, which are deliberately excluded. [Source pin](source-pin.json) identifies upstream revisions.
+
+Build caveats: MNN_CPU_WEIGHT_DEQUANT_GEMM was removed in the pinned source and is unused; LOW_MEMORY is the supported path. Actual HTTP option is singular LLM_SUPPORT_HTTP_RESOURCE=OFF. Vision is built through MNN_BUILD_OPENCV/MNN_IMGCODECS; standalone LLM_SUPPORT_VISION is not proof of enabling it. Initial unused-option warnings are preserved, not hidden. Host compilation uses pristine upstream rather than UnoOne JNI: Android loader, privacy receipt, shared ownership, cancellation, memory, thermal and real-app behavior remain independent gates.

@@ -84,7 +84,10 @@ object WakePhraseMatcher {
     )
 
     fun match(transcript: String): WakePhraseMatch? {
-        val normalized = WakePhraseNormalizer.normalize(transcript)
+        // Normalize only the leading wake boundary; preserve punctuation in the payload.
+        val boundary = Regex("""^(uno\s+one|unoone|uno|यूनो\s+वन|यूनोवन|यूनो)[.,!?;:।]+\s*""", RegexOption.IGNORE_CASE)
+        val input = transcript.trim().replaceFirst(boundary, "$1 ")
+        val normalized = WakePhraseNormalizer.normalize(input)
         if (normalized.isBlank()) return null
         val prefix = prefixes.firstOrNull {
             normalized == it.value || normalized.startsWith("${it.value} ")
@@ -92,8 +95,10 @@ object WakePhraseMatcher {
         if (prefix == null) return null
 
         var remainder = normalized.removePrefix(prefix.value).trim()
-        var originalRemainder = originalTokens(transcript)
-            .drop(prefix.value.split(' ').size)
+        val rawPrefix = Regex("^" + prefix.value.split(' ').joinToString("\\s+") { Regex.escape(it) } + "(?:\\s+|$)", RegexOption.IGNORE_CASE).find(input)
+        var originalRemainder = if (rawPrefix != null) {
+            listOf(input.substring(rawPrefix.range.last + 1).trim())
+        } else originalTokens(input).drop(prefix.value.split(' ').size)
         if (prefix.ambiguousAlias && remainder.isNotBlank()) {
             val first = remainder.substringBefore(' ')
             if (first !in safeAliasContinuations) return null
@@ -103,7 +108,7 @@ object WakePhraseMatcher {
         // "Uno start blind mode", where it is part of the actual command.
         if (remainder.startsWith("on ") && remainder.length > 3) {
             remainder = remainder.removePrefix("on ").trim()
-            originalRemainder = originalRemainder.drop(1)
+            originalRemainder = listOf(originalRemainder.joinToString(" ").substringAfter(' ', ""))
         } else if (remainder in activationOnlyTails) {
             remainder = ""
             originalRemainder = emptyList()

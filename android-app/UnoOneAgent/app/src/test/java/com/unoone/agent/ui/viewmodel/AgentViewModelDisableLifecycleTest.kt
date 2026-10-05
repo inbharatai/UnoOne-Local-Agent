@@ -132,7 +132,7 @@ class AgentViewModelDisableLifecycleTest {
         fixture.viewModel.enableAgent()
 
         assertTrue(fixture.viewModel.isAgentEnabled.value)
-        verify(fixture.orchestrator, never()).processCommand(any(), any<InputType>())
+        verify(fixture.orchestrator, never()).processCommand(any(), any<InputType>(), org.mockito.kotlin.anyOrNull<Long>())
     }
 
     private fun fixture(enabled: Boolean, processing: Boolean = false): Fixture {

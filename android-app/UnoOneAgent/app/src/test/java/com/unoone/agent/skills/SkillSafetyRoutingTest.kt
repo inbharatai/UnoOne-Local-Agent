@@ -148,6 +148,23 @@ class SkillSafetyRoutingTest {
     }
 
     @Test
+    fun permissionPauseNeverQueuesReplayOfCompletedSkillPrefix() = runBlocking {
+        orchestrator.skillsModule.saveSkill(
+            name = "Permission boundary",
+            triggerPhrases = listOf("run permission boundary"),
+            steps = listOf("create note exactly once", "read screen", "create note must not run")
+        )
+        orchestrator.processCommand("run permission boundary", InputType.TEXT)
+        assertEquals(listOf("exactly once"), db.noteDao().recent(100).map { it.title })
+        assertFalse(orchestrator.timelineSteps.value.any { it.label == "Skill Complete" })
+        val pendingField = AgentOrchestrator::class.java.getDeclaredField("pendingCommand").apply { isAccessible = true }
+        val pending = pendingField.get(orchestrator) as java.util.concurrent.atomic.AtomicReference<*>
+        org.junit.Assert.assertNull("A permission grant must not replay the completed note write", pending.get())
+        orchestrator.clearPendingAndReExecute()
+        assertEquals(1, db.noteDao().recent(100).size)
+    }
+
+    @Test
     fun repeatedSafeUseCreatesDisabledSuggestionOnly() = runBlocking {
         repeat(3) {
             orchestrator.skillsModule.recordSuccessfulUse("open calendar", "open_calendar")

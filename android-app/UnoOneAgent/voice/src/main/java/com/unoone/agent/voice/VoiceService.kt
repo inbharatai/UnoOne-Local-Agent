@@ -1,5 +1,7 @@
 package com.unoone.agent.voice
 
+import com.unoone.agent.core.runtime.GlobalTaskCancellation
+import com.unoone.agent.core.runtime.VoiceAdmissionTicket
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -15,6 +17,7 @@ import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.voice.recorder.AudioRecorder
 import com.unoone.agent.voice.stt.KeywordSpotterEngine
+import com.unoone.agent.voice.stt.NativeLifecycleGate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,9 +45,9 @@ class VoiceService : Service() {
     /** Serializes runtime STT/TTS rebuilds so rapid language switches never overlap on the IO pool. */
     private val reinitLock = Mutex()
 
-    private val recorder = AudioRecorder()
+    private val recorder = AudioRecorder(requestEchoCancellation = true)
     private val audioManager by lazy { getSystemService(AudioManager::class.java) }
-    private var keywordSpotter: KeywordSpotterEngine? = null
+    private val kwsLifecycle = NativeLifecycleGate<KeywordSpotterEngine> { it.release() }
     private val wakeActivationGate = WakeActivationGate()
     private val speechDetector = AdaptiveSpeechDetector()
 
@@ -60,6 +63,7 @@ class VoiceService : Service() {
         private const val KWS_SAFE_PCM_BYTES = 16_000 * 2
         const val ACTION_VOICE_COMMAND = "com.unoone.agent.VOICE_COMMAND"
         const val EXTRA_COMMAND = "command"
+        const val EXTRA_COMMAND_GENERATION = "command_generation"
         /**
          * Delivered via startService to an already-running service so it rebuilds STT/TTS for the
          * newly-selected voice language without restarting the wake-word loop. Sent by Settings.
@@ -72,6 +76,12 @@ class VoiceService : Service() {
          * Replaces the direct UnoOneApplication reference for modularity.
          */
         var voiceCommandCallback: ((String) -> Unit)? = null
+        var voiceTicketCallback: ((VoiceAdmissionTicket) -> Unit)? = null
+        private fun dispatchVoice(text: String, generation: Long) {
+            val ticket = VoiceAdmissionTicket(text, generation)
+            if (voiceTicketCallback != null) voiceTicketCallback?.invoke(ticket)
+            else if (ticket.isCurrent() || VoiceControlPolicy.isStop(text)) voiceCommandCallback?.invoke(text)
+        }
 
         /**
          * Eyes-free (WS2): static wake callback. Set by the Application layer to speak the
@@ -188,9 +198,11 @@ class VoiceService : Service() {
             // the same route a wake-word + STT transcript takes, so confirmation/narration/safety all
             // apply identically. Declared since launch but previously unhandled.
             val command = intent.getStringExtra(EXTRA_COMMAND)
-            if (!command.isNullOrBlank()) {
+            // Delivery can be delayed by Android; never attach fresh authority to queued text.
+            val capturedGeneration = intent.getLongExtra(EXTRA_COMMAND_GENERATION, Long.MIN_VALUE)
+            if (!command.isNullOrBlank() && (VoiceControlPolicy.isStop(command) || ordinarySpeechAllowed(capturedGeneration))) {
                 Logger.i("VoiceService: received injected voice command")
-                voiceCommandCallback?.invoke(command)
+                dispatchVoice(command, capturedGeneration)
             }
             return START_STICKY
         }
@@ -204,6 +216,7 @@ class VoiceService : Service() {
      * process for several seconds during a cold offline launch.
      */
     private fun ensureEnginesAndMonitoring() {
+        if (!kwsLifecycle.isOpen()) return
         if (enginesInitialized) {
             if (!monitoringStarted) {
                 monitoringStarted = true
@@ -217,10 +230,11 @@ class VoiceService : Service() {
             reinitLock.withLock {
                 if (!enginesInitialized) {
                     initEngines()
+                    if (!isActive || !kwsLifecycle.isOpen()) return@withLock
                     enginesInitialized = true
                 }
             }
-            if (!monitoringStarted) {
+            if (isActive && kwsLifecycle.isOpen() && !monitoringStarted) {
                 monitoringStarted = true
                 startMonitoring()
             }
@@ -238,45 +252,45 @@ class VoiceService : Service() {
 
     /** Wake-word (KWS) — always English (vad). No Indic keyword-spotter model exists. */
     private fun initKeywordSpotter(modelDir: String) {
-        for ((index, folder) in VoiceLanguage.kwsFolders().withIndex()) {
-            val kws = KeywordSpotterEngine(this, "$modelDir/$folder", cacheDir?.absolutePath)
-            if (kws.initialize(WakePhrases.KWS_ENTRIES) is Result.Success) {
-                keywordSpotter = kws
-                if (index > 0) {
-                    Logger.i("VoiceService: using installed English ASR files for wake-word fallback")
+        kwsLifecycle.initialize {
+            var candidate: KeywordSpotterEngine? = null
+            for (folder in VoiceLanguage.kwsFolders()) {
+                if (!kwsLifecycle.isOpen() || !serviceJob.isActive) break
+                val kws = KeywordSpotterEngine(applicationContext, "$modelDir/$folder", cacheDir?.absolutePath)
+                if (kws.initialize(WakePhrases.KWS_ENTRIES) is Result.Success) {
+                    candidate = kws
+                    break
                 }
-                Logger.i("VoiceService: Keyword spotter ready (English wake words: ${WakePhrases.LIST})")
-                return
+                kws.release()
             }
-            kws.release()
+            candidate
         }
-        keywordSpotter = null
-        Logger.w("VoiceService: Keyword spotter unavailable; wake phrases are disabled until a compatible English transducer is installed")
+        if (!kwsLifecycle.hasResource()) {
+            Logger.w("VoiceService: Keyword spotter unavailable or service stopped")
+        }
     }
 
     private fun startMonitoring() {
         monitoringJob?.cancel()
         monitoringJob = serviceScope.launch {
             try {
-                if (keywordSpotter != null ||
-                    sharedVoiceModuleProvider?.invoke()?.isSttInitialized() == true
-                ) {
-                    startKeywordSpottingLoop()
-                } else {
-                    Logger.i("VoiceService: No offline wake or speech model; manual activation only")
+                // Shared STT initializes asynchronously. Stay retryable without opening the mic.
+                while (serviceScope.isActive && AgentRuntimeGate.isEnabled() &&
+                    !kwsLifecycle.hasResource() && sharedVoiceModuleProvider?.invoke()?.isSttInitialized() != true) {
+                    delay(500)
                 }
+                if (isActive && kwsLifecycle.isOpen() && AgentRuntimeGate.isEnabled()) startKeywordSpottingLoop()
             } catch (e: Exception) {
                 Logger.e("VoiceService: Monitoring failed", e)
+            } finally {
+                monitoringStarted = false
             }
         }
     }
 
     private suspend fun startKeywordSpottingLoop() {
         Logger.i("VoiceService: Starting hybrid offline wake loop")
-        val kws = keywordSpotter
-        val sttWakeFallbackAvailable =
-            sharedVoiceModuleProvider?.invoke()?.isSttInitialized() == true
-        if (kws == null && !sttWakeFallbackAvailable) return
+        val hasKws = kwsLifecycle.hasResource()
         // The bundled Zipformer keyword model requires at least 45 feature frames per call.
         // A 250 ms PCM chunk produces only ~19 frames and sherpa-onnx aborts natively instead of
         // returning an error (`features.cc: 0 + 45 > 19`). Keep each KWS call at 500 ms or longer.
@@ -294,11 +308,17 @@ class VoiceService : Service() {
         var passiveSilenceChunks = 0
         var captureIncludesWakePhrase = false
         var pausedForCall = false
+        var previousStopOnly = false
+        val stopAudio = PcmChunkAccumulator(maxBytes = 16_000 * 2 * 3)
+        var stopSilence = 0
+        var stopBufferHadPlayback = false
+        var captureGeneration = GlobalTaskCancellation.generation
 
         // 0C-7: Keep recorder running continuously instead of start/stop every second.
         // Start recording ONCE and use readChunk() to drain accumulated audio incrementally.
         if (
             !VoiceCapturePolicy.isCallAudioActive(audioManager.mode) &&
+            !foregroundSessionActive &&
             !recorder.isRecording() &&
             recorder.hasPermission(this@VoiceService)
         ) {
@@ -314,10 +334,23 @@ class VoiceService : Service() {
 
         while (serviceScope.isActive && AgentRuntimeGate.isEnabled()) {
             try {
+                // Invalidate ALL retained PCM, including AudioRecord's pending chunk, before KWS/ASR.
+                if (captureGeneration != GlobalTaskCancellation.generation) {
+                    if (recorder.isRecording()) recorder.stop()
+                    stopAudio.clear(); commandAudio.clear(); passiveWakeAudio.clear(); kwsAudio.clear()
+                    stopSilence = 0; consecutiveSilenceChunks = 0; passiveSilenceChunks = 0
+                    passiveSpeechActive = false; isListeningForCommand = false
+                    captureIncludesWakePhrase = false; stopBufferHadPlayback = false
+                    speechDetector.reset()
+                    captureGeneration = GlobalTaskCancellation.generation
+                    continue
+                }
                 // Never capture a cellular or VoIP call. Besides being a privacy boundary, call
                 // audio was repeatedly decoded as wake speech and caused stale/garbled commands.
                 if (VoiceCapturePolicy.isCallAudioActive(audioManager.mode)) {
                     if (recorder.isRecording()) recorder.stop()
+                    stopAudio.clear()
+                    stopSilence = 0
                     commandAudio.clear()
                     passiveWakeAudio.clear()
                     kwsAudio.clear()
@@ -343,14 +376,13 @@ class VoiceService : Service() {
                 }
 
                 // Exactly one audio owner at a time. Release and discard buffered state while an
-                // in-app recording or UnoOne TTS owns audio, otherwise the wake service can hear the
-                // app's own reply and replay an old/partial command.
+                // in-app recording owns the microphone. TTS gets only the gated AEC stop path below.
                 if (
-                    (foregroundSessionActive && !awaitingVoiceConfirmation) ||
-                    isAgentSpeaking() ||
-                    (isForegroundTaskActive() && !awaitingVoiceConfirmation)
+                    foregroundSessionActive
                 ) {
                     if (recorder.isRecording()) recorder.stop()
+                    stopAudio.clear()
+                    stopSilence = 0
                     commandAudio.clear()
                     passiveWakeAudio.clear()
                     kwsAudio.clear()
@@ -378,15 +410,70 @@ class VoiceService : Service() {
                     }
                 }
 
+                if (isAgentSpeaking() && !emergencyCaptureAllowed()) {
+                    recorder.stop()
+                    stopAudio.clear()
+                    commandAudio.clear()
+                    passiveWakeAudio.clear()
+                    kwsAudio.clear()
+                    isListeningForCommand = false
+                    updateNotification("Speech barge-in unsupported — use UI Stop")
+                    delay(500)
+                    continue
+                }
+
                 // Wait to accumulate audio
                 delay(chunkSizeMs)
 
                 // Read accumulated chunk without stopping the recorder
+                if (captureGeneration != GlobalTaskCancellation.generation) continue
                 val pcmData = recorder.readChunk()
                 if (pcmData.isEmpty()) {
                     continue
                 }
 
+                // Recheck after the capture delay: never decode agent playback or call audio.
+                if (!emergencyCaptureAllowed()) {
+                    recorder.stop()
+                    stopAudio.clear()
+                    passiveWakeAudio.clear()
+                    commandAudio.clear()
+                    continue
+                }
+                val speakingDuringCapture = isAgentSpeaking()
+                val stopOnly = speakingDuringCapture || (isForegroundTaskActive() && !awaitingVoiceConfirmation)
+                if (stopOnly != previousStopOnly) {
+                    stopAudio.clear()
+                    passiveWakeAudio.clear()
+                    commandAudio.clear()
+                    kwsAudio.clear()
+                    isListeningForCommand = false
+                    passiveSpeechActive = false
+                    passiveSilenceChunks = 0
+                    stopSilence = 0
+                    previousStopOnly = stopOnly
+                    continue
+                }
+                if (stopOnly) {
+                    if (stopAudio.size == 0) stopBufferHadPlayback = false
+                    stopBufferHadPlayback = stopBufferHadPlayback || speakingDuringCapture
+                    val speech = hasSpeechActivity(pcmData)
+                    if (speech || stopAudio.size > 0) stopAudio.add(pcmData)
+                    stopSilence = if (speech) 0 else stopSilence + 1
+                    if (stopAudio.size > 0 && (stopSilence >= 2 || stopAudio.isFull)) {
+                        val pcm = stopAudio.toByteArray()
+                        stopAudio.clear()
+                        stopSilence = 0
+                        val capturedPlayback = stopBufferHadPlayback
+                        val text = (transcribeAudio(pcm) as? Result.Success)?.data
+                        if (AgentRuntimeGate.isEnabled() && text != null && EmergencyStopPolicy.accepts(text,
+                                capturedPlayback || isAgentSpeaking(), recorder.isEchoCancellationAvailable(),
+                                recorder.isEchoCancellationEnabled(), VoiceCapturePolicy.isCallAudioActive(audioManager.mode),
+                                foregroundSessionActive)) dispatchVoice(text, captureGeneration)
+                    }
+                    continue // No wake cues, approvals, ordinary command dispatch or KWS in this mode.
+                }
+                val sttWakeFallbackAvailable = sharedVoiceModuleProvider?.invoke()?.isSttInitialized() == true
                 if (!isListeningForCommand) {
                     val hasSpeech = hasSpeechActivity(pcmData)
                     if (sttWakeFallbackAvailable && (passiveSpeechActive || hasSpeech)) {
@@ -399,13 +486,15 @@ class VoiceService : Service() {
                     // native-safe amount of PCM. This also covers short reads during CPU/model-load
                     // pressure, not just the first read after recorder startup.
                     kwsAudio.add(pcmData)
-                    val keyword = if (kws != null && kwsAudio.size >= KWS_SAFE_PCM_BYTES) {
+                    val keyword = if (hasKws && kwsAudio.size >= KWS_SAFE_PCM_BYTES) {
                         val safeKwsPcm = kwsAudio.toByteArray()
                         kwsAudio.clear()
-                        kws.processChunk(safeKwsPcm)
+                        kwsLifecycle.use { it.processChunk(safeKwsPcm) }
                     } else {
                         null
                     }
+                    if (!serviceJob.isActive) break
+                    if (!ordinarySpeechAllowed(captureGeneration)) continue
                     if (keyword != null) {
                         if (!wakeActivationGate.tryActivate(SystemClock.elapsedRealtime())) {
                             Logger.i("VoiceService: duplicate wake detection suppressed")
@@ -418,7 +507,9 @@ class VoiceService : Service() {
                         Logger.i("VoiceService: wake phrase detected by keyword spotter")
                         // Keep this speech burst. The wake word and command often arrive in one
                         // utterance; stopping here used to discard "start blind mode".
-                        commandAudio.clear()
+                        stopAudio.clear()
+                    stopSilence = 0
+                    commandAudio.clear()
                         commandAudio.add(passiveWakeAudio.toByteArray())
                         if (commandAudio.size == 0) commandAudio.add(pcmData)
                         passiveWakeAudio.clear()
@@ -442,6 +533,11 @@ class VoiceService : Service() {
                         passiveSpeechActive = false
                         passiveSilenceChunks = 0
                         val transcript = transcribeAudio(wakePcm)
+                        if ((transcript as? Result.Success)?.data?.let(VoiceControlPolicy::isStop) == true && emergencyCaptureAllowed()) {
+                            dispatchVoice((transcript as Result.Success).data, captureGeneration)
+                            continue
+                        }
+                        if (!ordinarySpeechAllowed(captureGeneration)) continue
                         val rawTranscript = (transcript as? Result.Success)?.data
                         val match = rawTranscript?.let(WakePhraseMatcher::match)
                         if (
@@ -453,17 +549,21 @@ class VoiceService : Service() {
                             onWakeWordDetected?.invoke()
                             if (match.command.isBlank()) {
                                 if (recorder.isRecording()) recorder.stop()
+                                if (!ordinarySpeechAllowed(captureGeneration)) continue
                                 onWakeWord?.invoke()
+                                if (!ordinarySpeechAllowed(captureGeneration)) continue
                                 isListeningForCommand = true
                                 captureIncludesWakePhrase = false
                                 consecutiveSilenceChunks = 0
-                                commandAudio.clear()
+                                stopAudio.clear()
+                    stopSilence = 0
+                    commandAudio.clear()
                                 VoiceAgentRuntime.transition(VoiceAgentState.COMMAND_LISTENING, "wake-only utterance")
                                 updateNotification("Listening for command...")
                             } else {
                                 Logger.i("VoiceService: received one-breath wake command")
                                 if (recorder.isRecording()) recorder.stop()
-                            voiceCommandCallback?.invoke(match.command)
+                            dispatchVoice(match.command, captureGeneration)
                                 VoiceAgentRuntime.transition(VoiceAgentState.PROCESSING, "one-breath command routed")
                                 updateNotification("Processing command locally...")
                             }
@@ -490,9 +590,16 @@ class VoiceService : Service() {
                         isListeningForCommand = false
                         commandAudio.add(finalChunk)
                         val commandPcm = commandAudio.toByteArray()
-                        commandAudio.clear()
+                        stopAudio.clear()
+                    stopSilence = 0
+                    commandAudio.clear()
 
                         val transcript = transcribeAudio(commandPcm)
+                        if ((transcript as? Result.Success)?.data?.let(VoiceControlPolicy::isStop) == true && emergencyCaptureAllowed()) {
+                            dispatchVoice((transcript as Result.Success).data, captureGeneration)
+                            continue
+                        }
+                        if (!ordinarySpeechAllowed(captureGeneration)) continue
                         if (transcript is Result.Success && transcript.data.isNotBlank()) {
                             val match = if (captureIncludesWakePhrase) {
                                 WakePhraseMatcher.match(transcript.data)
@@ -518,7 +625,9 @@ class VoiceService : Service() {
                                 Logger.i("VoiceService: Wake phrase detected but no command followed")
                                 if (captureIncludesWakePhrase) {
                                     if (recorder.isRecording()) recorder.stop()
-                                    onWakeWord?.invoke()
+                                    if (!ordinarySpeechAllowed(captureGeneration)) continue
+                                onWakeWord?.invoke()
+                                if (!ordinarySpeechAllowed(captureGeneration)) continue
                                     isListeningForCommand = true
                                     captureIncludesWakePhrase = false
                                     consecutiveSilenceChunks = 0
@@ -542,7 +651,7 @@ class VoiceService : Service() {
                             // sendBroadcast() is visible in system logs even with setPackage(),
                             // exposing the user's transcribed speech. The callback is set by the
                             // Application layer, keeping commands in-process only.
-                            voiceCommandCallback?.invoke(command)
+                            dispatchVoice(command, captureGeneration)
                             VoiceAgentRuntime.transition(
                                 VoiceAgentState.PROCESSING,
                                 "voice command routed"
@@ -552,7 +661,7 @@ class VoiceService : Service() {
                                 ?: VoiceLanguage.DEFAULT
                             VoiceAgentRuntime.recordError("STT_UNCLEAR", "retry wake listening")
                             runCatching {
-                                sharedVoiceModuleProvider?.invoke()?.speakAwait(
+                                if (ordinarySpeechAllowed(captureGeneration)) sharedVoiceModuleProvider?.invoke()?.speakAwait(
                                     VoiceLanguage.retryCue(language)
                                 )
                             }
@@ -576,6 +685,15 @@ class VoiceService : Service() {
             }
         }
     }
+
+    private fun ordinarySpeechAllowed(generation: Long): Boolean = generation == GlobalTaskCancellation.generation && serviceJob.isActive && AgentRuntimeGate.isEnabled() &&
+        !isAgentSpeaking() && !foregroundSessionActive &&
+        !VoiceCapturePolicy.isCallAudioActive(audioManager.mode)
+
+    private fun emergencyCaptureAllowed(): Boolean = serviceJob.isActive && AgentRuntimeGate.isEnabled() &&
+        EmergencyStopPolicy.canListen(isAgentSpeaking(), recorder.isEchoCancellationAvailable(),
+            recorder.isEchoCancellationEnabled(), VoiceCapturePolicy.isCallAudioActive(audioManager.mode),
+            foregroundSessionActive)
 
     private fun hasSpeechActivity(pcmData: ByteArray): Boolean {
         return speechDetector.hasSpeech(pcmData)
@@ -619,16 +737,21 @@ class VoiceService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        kwsLifecycle.invalidate()
         engineInitJob?.cancel()
         monitoringJob?.cancel()
         // Cancel the SupervisorJob so any stray child coroutine on serviceScope can't outlive the service.
         serviceJob.cancel()
-        // 0C-11: Defensive stop — ensure recorder is always released even if
-        // an exception interrupted the monitoring loop before reaching recorder.stop()
-        if (recorder.isRecording()) {
-            recorder.stop()
+        // Independent scope: cancellation is only a request, JNI constructors/decodes may ignore
+        // it. Join all service children off Main before touching native or recorder ownership.
+        CoroutineScope(Dispatchers.IO).launch {
+            serviceJob.join()
+            try {
+                if (recorder.isRecording()) recorder.stop()
+            } finally {
+                kwsLifecycle.close()
+            }
         }
-        keywordSpotter?.release()
         wakeActivationGate.reset()
         VoiceAgentRuntime.transition(
             if (AgentRuntimeGate.isEnabled()) VoiceAgentState.PAUSED else VoiceAgentState.DISABLED,

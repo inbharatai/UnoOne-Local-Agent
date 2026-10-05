@@ -8,6 +8,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.core.runtime.AgentRuntimeGate
+import com.unoone.agent.core.device.sensitiveObservation
 
 class UnoOneAccessibilityService : AccessibilityService() {
 
@@ -16,7 +17,14 @@ class UnoOneAccessibilityService : AccessibilityService() {
     @Volatile var currentActivity: String? = null
         private set
 
+    private val sequence = java.util.concurrent.atomic.AtomicLong()
+    val eventSequence: Long get() = sequence.get()
+    @Volatile var lastEventAtMs: Long = 0
+        private set
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        sequence.incrementAndGet()
+        lastEventAtMs = android.os.SystemClock.elapsedRealtime()
         if (!AgentRuntimeGate.isEnabled()) return
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             currentPackage = event.packageName?.toString()
@@ -39,108 +47,27 @@ class UnoOneAccessibilityService : AccessibilityService() {
         instance = null
     }
 
-    fun clickAt(x: Float, y: Float): Boolean {
-        val path = Path()
-        path.moveTo(x, y)
-        val builder = GestureDescription.Builder()
-        builder.addStroke(GestureDescription.StrokeDescription(path, 0, 100))
-        return dispatchGesture(builder.build(), null, null)
-    }
+    fun clickAt(x: Float, y: Float): Boolean { return false /* Retired: use AndroidDeviceAdapter with issued snapshot and guard. */ }
 
-    fun clickNodeWithText(text: String): Boolean {
-        val rootNode = rootInActiveWindow ?: return false
-        try {
-            val nodes = rootNode.findAccessibilityNodeInfosByText(text)
-            try {
-                for (node in nodes) {
-                    if (node.isClickable) {
-                        return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    }
-                    var parent = node.parent
-                    while (parent != null) {
-                        if (parent.isClickable) {
-                            val clicked = parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                            parent.recycle()
-                            return clicked
-                        }
-                        val grandParent = parent.parent
-                        parent.recycle()
-                        parent = grandParent
-                    }
-                }
-                return false
-            } finally {
-                nodes.forEach { it.recycle() }
-            }
-        } finally {
-            rootNode.recycle()
-        }
-    }
+    fun clickNodeWithText(text: String): Boolean { return false /* Retired: use AndroidDeviceAdapter with issued snapshot and guard. */ }
 
-    fun typeTextIntoFocused(text: String): Boolean {
-        val rootNode = rootInActiveWindow ?: return false
-        try {
-            val focusedNode = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
-            try {
-                val arguments = Bundle()
-                arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-                return focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-            } finally {
-                focusedNode.recycle()
-            }
-        } finally {
-            rootNode.recycle()
-        }
-    }
+    fun typeTextIntoFocused(text: String): Boolean { return false /* Retired: use AndroidDeviceAdapter with issued snapshot and guard. */ }
 
-    fun fillFieldWithText(hint: String, text: String): Boolean {
-        val rootNode = rootInActiveWindow ?: return false
-        try {
-            val nodes = rootNode.findAccessibilityNodeInfosByText(hint)
-            try {
-                for (node in nodes) {
-                    if (node.isEditable) {
-                        val arguments = Bundle()
-                        arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-                        return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                    }
-                }
-                return false
-            } finally {
-                nodes.forEach { it.recycle() }
-            }
-        } finally {
-            rootNode.recycle()
-        }
-    }
+    fun fillFieldWithText(hint: String, text: String): Boolean { return false /* Retired: use AndroidDeviceAdapter with issued snapshot and guard. */ }
 
     @Suppress("DEPRECATION")
     fun captureVisibleText(): List<String> {
-        val rootNode = rootInActiveWindow ?: return emptyList()
-        val texts = mutableListOf<String>()
-        try {
-            fun traverse(node: AccessibilityNodeInfo) {
-                if (node.isVisibleToUser) {
-                    val text = node.text?.toString() ?: node.contentDescription?.toString()
-                    if (!text.isNullOrBlank()) {
-                        texts.add(text)
-                    }
-                }
-                for (i in 0 until node.childCount) {
-                    node.getChild(i)?.let { child ->
-                        traverse(child)
-                        child.recycle() // Always recycle child nodes to prevent memory leaks
-                    }
-                }
-            }
-            traverse(rootNode)
-        } finally {
-            rootNode.recycle()
-        }
-        return texts.distinct()
+        if (!AgentRuntimeGate.isEnabled()) return emptyList()
+        return runCatching {
+            val safeNodes = com.unoone.agent.core.device.SensitiveReadRedaction.redactNodes(AndroidDeviceAdapter(this).captureSnapshot().nodes)
+            val text = safeNodes.filter { !it.password && !it.semantic.sensitiveObservation() }
+                .map { it.text.ifEmpty { it.description } }.filter { it.isNotBlank() }.distinct().joinToString("\n")
+            com.unoone.agent.core.device.SensitiveReadRedaction.redactText(text).lines().filter { it.isNotBlank() }
+        }.getOrDefault(emptyList())
     }
 
     fun scrollDown(): Boolean {
+        if (!AgentRuntimeGate.isEnabled()) return false
         val rootNode = rootInActiveWindow ?: return false
         try {
             val bounds = android.graphics.Rect()
@@ -155,6 +82,7 @@ class UnoOneAccessibilityService : AccessibilityService() {
     }
 
     fun scrollUp(): Boolean {
+        if (!AgentRuntimeGate.isEnabled()) return false
         val rootNode = rootInActiveWindow ?: return false
         try {
             val bounds = android.graphics.Rect()
@@ -168,29 +96,21 @@ class UnoOneAccessibilityService : AccessibilityService() {
         }
     }
 
-    fun swipe(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long = 300): Boolean {
-        val path = Path()
-        path.moveTo(startX, startY)
-        path.lineTo(endX, endY)
-        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
-        return dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
-    }
+    fun swipe(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long = 300): Boolean { return false /* Retired: use AndroidDeviceAdapter with issued snapshot and guard. */ }
 
-    fun longPress(x: Float, y: Float): Boolean {
-        val path = Path()
-        path.moveTo(x, y)
-        val stroke = GestureDescription.StrokeDescription(path, 0, 1000L)
-        return dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
-    }
+    fun longPress(x: Float, y: Float): Boolean { return false /* Retired: use AndroidDeviceAdapter with issued snapshot and guard. */ }
 
-    fun goBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
-    fun goHome(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
-    fun openRecents(): Boolean = performGlobalAction(GLOBAL_ACTION_RECENTS)
-    fun openNotifications(): Boolean = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
-    fun openQuickSettings(): Boolean = performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+    fun goBack(): Boolean = AgentRuntimeGate.isEnabled() && performGlobalAction(GLOBAL_ACTION_BACK)
+    fun goHome(): Boolean = AgentRuntimeGate.isEnabled() && performGlobalAction(GLOBAL_ACTION_HOME)
+    fun openRecents(): Boolean = AgentRuntimeGate.isEnabled() && performGlobalAction(GLOBAL_ACTION_RECENTS)
+    fun openNotifications(): Boolean = AgentRuntimeGate.isEnabled() && performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+    fun openQuickSettings(): Boolean = AgentRuntimeGate.isEnabled() && performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
 
     private fun performSwipe(sx: Float, sy: Float, ex: Float, ey: Float, duration: Long): Boolean {
-        return swipe(sx, sy, ex, ey, duration)
+        if (!AgentRuntimeGate.isEnabled()) return false
+        val path = Path().apply { moveTo(sx, sy); lineTo(ex, ey) }
+        val stroke = GestureDescription.StrokeDescription(path, 0, duration)
+        return AgentRuntimeGate.isEnabled() && dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
     }
 
     companion object {

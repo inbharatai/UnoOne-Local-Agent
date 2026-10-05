@@ -1,0 +1,15 @@
+{"id":"en-pankaj","status":"pending","language":"en","transcript":"Call Pankaj.","intent":"call","slots":{"recipient_name":"Pankaj"},"recipient_id":"corpus:pankaj","wake_expected":false,"stop_expected":false}
+{"id":"hi-madhav","status":"pending","language":"hi","transcript":"माधव को कॉल करो।","intent":"call","slots":{"recipient_name":"माधव"},"recipient_id":"corpus:madhav","wake_expected":false,"stop_expected":false}
+{"id":"mix-pankaj","status":"pending","language":"hi-en","transcript":"Pankaj ko call karo.","intent":"call","slots":{"recipient_name":"Pankaj"},"recipient_id":"corpus:pankaj","wake_expected":false,"stop_expected":false}
+{"id":"en-negate","status":"pending","language":"en","transcript":"Do not call Pankaj; call Madhav.","intent":"call","slots":{"recipient_name":"Madhav"},"recipient_id":"corpus:madhav","wake_expected":false,"stop_expected":false}
+{"id":"hi-negate","status":"pending","language":"hi","transcript":"पंकज को कॉल मत करो, माधव को कॉल करो।","intent":"call","slots":{"recipient_name":"माधव"},"recipient_id":"corpus:madhav","wake_expected":false,"stop_expected":false}
+{"id":"mix-negate","status":"pending","language":"hi-en","transcript":"Pankaj ko nahi, Madhav ko call karo.","intent":"call","slots":{"recipient_name":"Madhav"},"recipient_id":"corpus:madhav","wake_expected":false,"stop_expected":false}
+{"id":"en-confirm","status":"pending","transcript":"Yes, call Pankaj.","intent":"confirm","slots":{"decision":"approve"},"recipient_id":"corpus:pankaj","wake_expected":false,"stop_expected":false}
+{"id":"hi-deny","status":"pending","transcript":"नहीं, कॉल मत करो।","intent":"confirm","slots":{"decision":"deny"},"recipient_id":null,"wake_expected":false,"stop_expected":false}
+{"id":"mix-deny","status":"pending","transcript":"Nahi, cancel karo.","intent":"confirm","slots":{"decision":"deny"},"recipient_id":null,"wake_expected":false,"stop_expected":false}
+{"id":"noise","status":"pending","transcript":"","intent":"none","slots":{},"recipient_id":null,"wake_expected":false,"stop_expected":false}
+{"id":"en-interrupt","status":"pending","transcript":"Stop.","intent":"stop","slots":{},"recipient_id":null,"wake_expected":false,"stop_expected":true}
+{"id":"hi-interrupt","status":"pending","transcript":"रुको।","intent":"stop","slots":{},"recipient_id":null,"wake_expected":false,"stop_expected":true}
+{"id":"mix-interrupt","status":"pending","transcript":"Bas, stop karo.","intent":"stop","slots":{},"recipient_id":null,"wake_expected":false,"stop_expected":true}
+{"id":"wake","status":"pending","transcript":"Hey Uno.","intent":"wake","slots":{},"recipient_id":null,"wake_expected":true,"stop_expected":false}
+{"id":"near-wake","status":"pending","transcript":"Hey, you know.","intent":"none","slots":{},"recipient_id":null,"wake_expected":false,"stop_expected":false}
