@@ -1,0 +1,6 @@
+java.lang.IllegalStateException: Stale request permit
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.generate(OwlLlamaRuntime.kt:80)
+	at ProbeKt.main$lambda$0(Probe.kt:24)
+	at ProbeKt.test(Probe.kt:10)
+	at ProbeKt.main(Probe.kt:24)
+	at ProbeKt.main(Probe.kt)

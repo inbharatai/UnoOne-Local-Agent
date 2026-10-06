@@ -93,8 +93,11 @@ class UnoOneApplication : Application(), AgentRuntimeController {
     }
 
     /** Explicit user action only; installation and load failures never choose another profile. */
-    suspend fun selectBrainProfile(profile: BrainModelSpec): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun selectBrainProfile(profile: BrainModelSpec, experimentalConsent: Boolean = false): Result<Unit> = withContext(Dispatchers.IO) {
         selectionMutex.withLock {
+            if (!brainProviderPreferences.hasConsent(profile) && !experimentalConsent) {
+                return@withLock Result.Error("Explicit experimental consent is required for ${profile.displayName}.")
+            }
             if (ExclusiveBrainLeaseState.isActive() || secureBrowserModelLease.isActive() ||
                 orchestrator.isBlindAidActive.value) {
                 return@withLock Result.Error("Close the active exclusive mode before changing the brain.")
@@ -106,9 +109,7 @@ class UnoOneApplication : Application(), AgentRuntimeController {
                     return@withLock Result.Error("Previous model did not acknowledge unload; selection is unchanged.")
                 }
                 preferences.setSelectedBrainManifestId(profile.manifestId)
-                if (profile.runtime == com.unoone.agent.core.model.BrainRuntime.MNN) {
-                    brainProviderPreferences.qwenOptIn = true
-                }
+                if (experimentalConsent) brainProviderPreferences.grantConsent(profile)
                 selectedProfile = profile
                 Result.Success(Unit)
             } catch (error: Exception) {
@@ -404,6 +405,7 @@ class UnoOneApplication : Application(), AgentRuntimeController {
         reason: String
     ) {
         if (!AgentRuntimeGate.isEnabled()) return
+        if (!brainProviderPreferences.hasConsent(spec)) return
         if (!modelLoadGate.tryAcquire()) {
             Logger.i("UnoOneApplication: skipped duplicate $reason ${spec.displayName} load; one is already in flight")
             return
@@ -427,6 +429,8 @@ class UnoOneApplication : Application(), AgentRuntimeController {
                     Logger.i("UnoOneApplication: skipped $reason brain load; model became ready")
                     return@launch
                 }
+                if (!brainProviderPreferences.hasConsent(spec)) return@launch
+                owlLoadAdmissionError(spec)?.let { Logger.w(it); return@launch }
                 val result = orchestrator.loadLlmModel(path, spec)
                 if (result is Result.Success) {
                     if (!AgentRuntimeGate.isEnabled() || orchestrator.isBlindAidActive.value ||

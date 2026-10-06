@@ -1,0 +1,22 @@
+[
+  "/agent/workspace/toolchains/android-sdk/cmake/3.22.1/bin/cmake",
+  "-S",
+  "/agent/workspace/owl-native-prep/llama.cpp-4f5406761517648c23dbd60ea5ade37f77a316c9",
+  "-B",
+  "/agent/workspace/owl-native-prep/build",
+  "-DCMAKE_BUILD_TYPE=Release",
+  "-DBUILD_SHARED_LIBS=ON",
+  "-DGGML_NATIVE=OFF",
+  "-DGGML_CUDA=OFF",
+  "-DGGML_METAL=OFF",
+  "-DGGML_VULKAN=OFF",
+  "-DGGML_OPENCL=OFF",
+  "-DGGML_SYCL=OFF",
+  "-DGGML_BLAS=OFF",
+  "-DGGML_OPENMP=OFF",
+  "-DLLAMA_CURL=OFF",
+  "-DLLAMA_BUILD_TESTS=OFF",
+  "-DLLAMA_BUILD_SERVER=OFF",
+  "-DLLAMA_BUILD_EXAMPLES=ON",
+  "-DLLAMA_BUILD_TOOLS=ON"
+]

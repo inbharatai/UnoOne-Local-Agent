@@ -1,0 +1,6 @@
+{
+  "file": "owl-browser.log.txt",
+  "rawSha256": "21bdce0809f430a6999b611522c5818fc51965c5449a58188b3e143b5c75ac18",
+  "gitTextSha256": "1935334c338de6f63c49967aab784f40870e128e7cda87f722577516fb19b808",
+  "change": "Console carriage returns normalized to LF; original retained outside Git in build-evidence/owl-browser.log. No executable source changed."
+}

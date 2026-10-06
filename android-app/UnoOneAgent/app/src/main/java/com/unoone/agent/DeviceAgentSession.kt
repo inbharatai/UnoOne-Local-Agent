@@ -330,6 +330,18 @@ class DeviceAgentSession(
         }
     }
 
+    /** Screenshot controller is separate from generic LocalUnoBrain text planning. */
+    suspend fun runOwl(context: android.content.Context, consent: com.unoone.agent.owl.OwlTaskConsent,
+        goals: List<NativeDeviceGoal>, model: suspend (String, String, ByteArray) -> String): DeviceOutcome {
+        val epoch = epochs.current()
+        val generation = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation
+        return mutex.withLock {
+            checkRun(epoch, generation)
+            val adapter = ResourceEffects.adapter(adapterProvider() ?: return@withLock needsUser("Accessibility unavailable"))
+            com.unoone.agent.owl.OwlPhoneSession(context, adapter, model, { checkRun(epoch, generation) }, clockMs).run(consent, goals)
+        }
+    }
+
     private fun checkRun(epoch: Long, globalGeneration: Long) {
         epochs.check(epoch)
         if (!enabled() || com.unoone.agent.core.runtime.GlobalTaskCancellation.generation != globalGeneration)

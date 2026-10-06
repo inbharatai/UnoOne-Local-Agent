@@ -1,0 +1,26 @@
+[
+  {
+    "path": "/agent/workspace/owl-model/GUI-Owl-1.5-4B-Instruct.Q4_K_M.gguf",
+    "bytes": 2497282208,
+    "sha256": "8e1793b69bb4064671ab6529b43f5b943850f73a9244ad139c16e93a44709232",
+    "download_receipt": {
+      "url": "https://huggingface.co/mradermacher/GUI-Owl-1.5-4B-Instruct-GGUF/resolve/9a79d301329062eb02e46f7ccad82c99075bfaaa/GUI-Owl-1.5-4B-Instruct.Q4_K_M.gguf",
+      "file": "/agent/workspace/owl-model/GUI-Owl-1.5-4B-Instruct.Q4_K_M.gguf",
+      "bytes": 2497282208,
+      "sha256": "8e1793b69bb4064671ab6529b43f5b943850f73a9244ad139c16e93a44709232",
+      "verified_utc": "2026-10-06T13:24:29.635248+00:00"
+    }
+  },
+  {
+    "path": "/agent/workspace/owl-model/GUI-Owl-1.5-4B-Instruct.mmproj-Q8_0.gguf",
+    "bytes": 453974336,
+    "sha256": "b705d940e9b7f212235a16c9c4b8cc9dd9053a1ccf549b99fc069a0ae694b073",
+    "download_receipt": {
+      "url": "https://huggingface.co/mradermacher/GUI-Owl-1.5-4B-Instruct-GGUF/resolve/9a79d301329062eb02e46f7ccad82c99075bfaaa/GUI-Owl-1.5-4B-Instruct.mmproj-Q8_0.gguf",
+      "file": "/agent/workspace/owl-model/GUI-Owl-1.5-4B-Instruct.mmproj-Q8_0.gguf",
+      "bytes": 453974336,
+      "sha256": "b705d940e9b7f212235a16c9c4b8cc9dd9053a1ccf549b99fc069a0ae694b073",
+      "verified_utc": "2026-10-06T13:24:40.707805+00:00"
+    }
+  }
+]

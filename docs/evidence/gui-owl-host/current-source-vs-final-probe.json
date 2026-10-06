@@ -1,0 +1,36 @@
+{
+  "checked_utc": "2026-10-06T16:24:32.083273+00:00",
+  "all_match": true,
+  "files": [
+    {
+      "source": "android-app/UnoOneAgent/core/src/main/java/com/unoone/agent/core/guiowl/OwlPromptBuilder.kt",
+      "probe_sha256": "00805183fc20f714a9e2dffd775e7be395e06ff90a749e4374729c0876320dcd",
+      "current_sha256": "00805183fc20f714a9e2dffd775e7be395e06ff90a749e4374729c0876320dcd",
+      "matches": true
+    },
+    {
+      "source": "android-app/UnoOneAgent/core/src/main/java/com/unoone/agent/core/guiowl/OwlOutputCodec.kt",
+      "probe_sha256": "2a6a0b985b054d732f8452912b9c25b9db4b538ddc964e7587be57076b31ff47",
+      "current_sha256": "2a6a0b985b054d732f8452912b9c25b9db4b538ddc964e7587be57076b31ff47",
+      "matches": true
+    },
+    {
+      "source": "android-app/UnoOneAgent/localbrain/src/main/cpp/owl_jni.cpp",
+      "probe_sha256": "f00ab2c5f16b0f85e72dfe49be0863e9d41be6b8ff1c2309629c82071471eeda",
+      "current_sha256": "f00ab2c5f16b0f85e72dfe49be0863e9d41be6b8ff1c2309629c82071471eeda",
+      "matches": true
+    },
+    {
+      "source": "android-app/UnoOneAgent/localbrain/src/main/java/com/unoone/agent/localbrain/owl/OwlLlamaRuntime.kt",
+      "probe_sha256": "477405120b04d29f76b14f980822da2519eeea6aa1d66220ce3a5df005f567c4",
+      "current_sha256": "477405120b04d29f76b14f980822da2519eeea6aa1d66220ce3a5df005f567c4",
+      "matches": true
+    },
+    {
+      "source": "android-app/UnoOneAgent/localbrain/src/main/java/com/unoone/agent/localbrain/owl/OwlLlamaPlanner.kt",
+      "probe_sha256": "7ae3c87b79781f5086cb14afd361b6ae2fb3921bb2b09b0439dfcc1c2a5d417c",
+      "current_sha256": "7ae3c87b79781f5086cb14afd361b6ae2fb3921bb2b09b0439dfcc1c2a5d417c",
+      "matches": true
+    }
+  ]
+}

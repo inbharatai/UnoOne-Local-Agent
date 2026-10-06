@@ -1,0 +1,50 @@
+{
+  "synthetic": true,
+  "real_phone_proof": false,
+  "buttons": [
+    [
+      "Home",
+      [
+        12,
+        45,
+        112,
+        97
+      ],
+      "#255b96"
+    ],
+    [
+      "Settings",
+      [
+        12,
+        145,
+        112,
+        205
+      ],
+      "#747474"
+    ],
+    [
+      "Search",
+      [
+        134,
+        145,
+        246,
+        205
+      ],
+      "#bc153f"
+    ]
+  ],
+  "search_center_pixels": [
+    190,
+    175
+  ],
+  "search_center_normalized": [
+    742.1875,
+    683.59375
+  ],
+  "search_bounds_normalized": [
+    523.4375,
+    566.40625,
+    960.9375,
+    800.78125
+  ]
+}

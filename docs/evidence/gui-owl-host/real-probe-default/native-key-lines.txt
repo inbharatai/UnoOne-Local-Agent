@@ -1,0 +1,27 @@
+load: control token: 151653 '<|vision_end|>' is not marked as EOG
+load: control token: 151652 '<|vision_start|>' is not marked as EOG
+load: control token: 151654 '<|vision_pad|>' is not marked as EOG
+set_abort_callback: call
+llama_kv_cache:        CPU KV buffer size =   288.00 MiB
+sched_reserve:        CPU compute buffer size =    50.47 MiB
+clip_model_loader: has vision encoder
+--- vision hparams ---
+add_text: <|vision_start|>
+add_text: <|vision_end|>
+Owl admission: text_tokens=1049 text_plus_vision=1113 image_tokens=64 reserved_output=256 context=2048 image_edge=512
+reserve_compute_meta:        CPU compute buffer size =     9.75 MiB
+add_text: <|vision_start|>
+add_text: <|vision_end|>
+Owl admission: text_tokens=1049 text_plus_vision=1113 image_tokens=64 reserved_output=256 context=2048 image_edge=512
+Owl admission: text_tokens=23 text_plus_vision=23 image_tokens=0 reserved_output=16 context=2048 image_edge=512
+add_text: <|vision_start|>
+add_text: <|vision_end|>
+Owl admission: text_tokens=27 text_plus_vision=91 image_tokens=64 reserved_output=16 context=2048 image_edge=512
+Owl admission: text_tokens=41 text_plus_vision=41 image_tokens=0 reserved_output=16 context=2048 image_edge=512
+Owl admission: text_tokens=22 text_plus_vision=22 image_tokens=0 reserved_output=1 context=2048 image_edge=512
+Owl admission: text_tokens=28 text_plus_vision=28 image_tokens=0 reserved_output=256 context=2048 image_edge=512
+graph_compute: ggml_backend_sched_graph_compute_async failed with error 1
+process_ubatch: failed to compute graph, compute status: 1
+failed to decode text
+failed to eval chunk 0
+~llama_context:        CPU compute buffer size is  50.4719 MiB, matches expectation of  50.4719 MiB

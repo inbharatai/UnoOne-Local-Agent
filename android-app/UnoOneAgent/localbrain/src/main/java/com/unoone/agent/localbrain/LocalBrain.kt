@@ -17,36 +17,76 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * Local LLM facade for UnoOne.
  *
- * This is a thin wrapper around [GemmaPlanner], which loads the selected integrity-verified Gemma 4
- * `.litertlm` model via LiteRT-LM and performs manual, schema-validated tool calling. Deterministic
- * Android commands continue to use the rule-based route before model inference.
+ * Exhaustive dispatch over LiteRT-LM, MNN and llama.cpp with one selected allocation owner.
+ * GUI-Owl exposes only its dedicated controller protocol, never generic Gemma/Qwen tool lanes.
+ * Deterministic Android commands retain the rule-based route before model inference.
  */
 class LocalBrain {
 
     private val json = Json { ignoreUnknownKeys = true }
-    internal val planner = GemmaPlanner()
+    internal val planner by lazy { GemmaPlanner() }
     private val qwen by lazy { QwenMnnPlanner() }
+    private val owl by lazy { com.unoone.agent.localbrain.owl.OwlLlamaPlanner() }
     @Volatile private var selectedRuntime = BrainRuntime.LITERT_LM
     private val lifecycle = Mutex()
-    private fun mnn() = selectedRuntime == BrainRuntime.MNN
-    fun supportsImages() = isModelLoaded() &&
-        (if (mnn()) qwen.supportsImages() else loadedProfile()?.id == BrainModelId.GEMMA_4_E2B)
-    fun nativeConfigReceipt(): String? = if (mnn()) qwen.configReceipt() else null
+    private fun allocationOwner(): Any = when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner
+        BrainRuntime.MNN -> qwen
+        BrainRuntime.LLAMA_CPP -> owl
+    }
+    private suspend fun closeSelected(): Boolean = when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner.close()
+        BrainRuntime.MNN -> qwen.close()
+        BrainRuntime.LLAMA_CPP -> owl.close()
+    }
+    private fun unsupportedOwl(operation: String): Result.Error =
+        Result.Error("GUI-Owl does not support $operation; use the dedicated screen-session controller protocol")
+
+    fun supportsImages(): Boolean = isModelLoaded() && when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> loadedProfile()?.id == BrainModelId.GEMMA_4_E2B
+        BrainRuntime.MNN -> qwen.supportsImages()
+        BrainRuntime.LLAMA_CPP -> owl.supportsImages()
+    }
+    fun nativeConfigReceipt(): String? = when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> null
+        BrainRuntime.MNN -> qwen.configReceipt()
+        BrainRuntime.LLAMA_CPP -> owl.configReceipt()
+    }
     suspend fun controllerRequest(system: String, prompt: String, image: ByteArray? = null): Result<String> =
-        if (mnn()) qwen.controllerRequest(system, prompt, image) else planner.controllerRequest(system, prompt, image)
+        when (selectedRuntime) {
+            BrainRuntime.LITERT_LM -> planner.controllerRequest(system, prompt, image)
+            BrainRuntime.MNN -> qwen.controllerRequest(system, prompt, image)
+            BrainRuntime.LLAMA_CPP -> owl.controllerRequest(system, prompt, image)
+        }
     fun asUnoBrain(screenshotProvider: SnapshotImageProvider? = null,
         clockMs: () -> Long = android.os.SystemClock::elapsedRealtime): UnoBrain = LocalUnoBrain(this, screenshotProvider, clockMs)
 
-    fun isModelLoaded(): Boolean = if (mnn()) qwen.isLoaded() else planner.isLoaded()
+    fun isModelLoaded(): Boolean = when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner.isLoaded()
+        BrainRuntime.MNN -> qwen.isLoaded()
+        BrainRuntime.LLAMA_CPP -> owl.isLoaded()
+    }
 
     /** Backend the model loaded on (`GPU` or `CPU`), or blank when not loaded. */
-    fun activeBackend(): String = if (mnn()) qwen.activeBackend() else planner.activeBackend()
+    fun activeBackend(): String = when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner.activeBackend()
+        BrainRuntime.MNN -> qwen.activeBackend()
+        BrainRuntime.LLAMA_CPP -> owl.activeBackend()
+    }
 
     /** Last load error, blank after a successful load. */
-    fun lastLoadError(): String = if (mnn()) qwen.lastLoadError() else planner.lastLoadError()
+    fun lastLoadError(): String = when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner.lastLoadError()
+        BrainRuntime.MNN -> qwen.lastLoadError()
+        BrainRuntime.LLAMA_CPP -> owl.lastLoadError()
+    }
 
     /** The profile currently loaded, or null when no model is loaded. */
-    fun loadedProfile(): BrainModelSpec? = if (mnn()) qwen.loadedProfile() else planner.loadedProfile()
+    fun loadedProfile(): BrainModelSpec? = when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner.loadedProfile()
+        BrainRuntime.MNN -> qwen.loadedProfile()
+        BrainRuntime.LLAMA_CPP -> owl.loadedProfile()
+    }
 
     /** Convenience load using the registry default profile. */
     suspend fun loadModel(modelPath: String): Result<Unit> = loadModel(modelPath, BrainModelRegistry.defaultProfile)
@@ -56,26 +96,38 @@ class LocalBrain {
         lifecycle.withLock {
             if (selectedRuntime != spec.runtime) {
                 val authorized = E4bRuntimeCoordinator.operationMutex.withLock {
-                    E4bRuntimeCoordinator.canReplaceAllocation(if (mnn()) qwen else planner, ownerToken)
+                    E4bRuntimeCoordinator.canReplaceAllocation(allocationOwner(), ownerToken)
                 }
                 if (!authorized) return@withLock Result.Error("Native allocation owned or reserved by another runtime")
-                val closed = if (mnn()) qwen.close() else planner.close()
+                val closed = closeSelected()
                 if (!closed) return@withLock Result.Error("Previous native allocation has not closed")
                 selectedRuntime = spec.runtime
             }
-            if (mnn()) qwen.load(modelPath, spec, ownerToken) else planner.load(modelPath, spec, ownerToken)
+            when (selectedRuntime) {
+                BrainRuntime.LITERT_LM -> planner.load(modelPath, spec, ownerToken)
+                BrainRuntime.MNN -> qwen.load(modelPath, spec, ownerToken)
+                BrainRuntime.LLAMA_CPP -> owl.load(modelPath, spec, ownerToken)
+            }
         }
 
     suspend fun unloadModel(): Boolean {
-        Logger.i("LocalBrain: unloading Gemma model")
-        return lifecycle.withLock { if (mnn()) qwen.close() else planner.close() }
+        Logger.i("LocalBrain: unloading selected model")
+        return lifecycle.withLock { closeSelected() }
     }
 
-    fun cancelInference(reason: String = "external stop") = if (mnn()) qwen.requestCancel(reason) else planner.requestCancel(reason)
+    fun cancelInference(reason: String = "external stop") = when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner.requestCancel(reason)
+        BrainRuntime.MNN -> qwen.requestCancel(reason)
+        BrainRuntime.LLAMA_CPP -> owl.requestCancel(reason)
+    }
 
     /** Runs one planning turn with a bounded context snapshot. */
     suspend fun runInference(prompt: String, context: ContextSnapshot): Result<ToolCall> =
-        if (mnn()) qwen.plan(prompt, context) else planner.plan(prompt, context)
+        when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner.plan(prompt, context)
+        BrainRuntime.MNN -> qwen.plan(prompt, context)
+        BrainRuntime.LLAMA_CPP -> unsupportedOwl("generic tool planning")
+    }
 
     /**
      * Streaming variant of [runInference]. It returns the same validated single [ToolCall] while
@@ -85,14 +137,22 @@ class LocalBrain {
         prompt: String,
         context: ContextSnapshot,
         onDelta: (String) -> Unit
-    ): Result<ToolCall> = if (mnn()) qwen.plan(prompt, context) else planner.planStreaming(prompt, context, onDelta)
+    ): Result<ToolCall> = when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner.planStreaming(prompt, context, onDelta)
+        BrainRuntime.MNN -> qwen.plan(prompt, context)
+        BrainRuntime.LLAMA_CPP -> unsupportedOwl("streaming tool planning")
+    }
 
     /**
      * Bounded observe step for an agent task. The previous verified tool result is returned to the
      * current planning conversation and the next canonical call is validated before execution.
      */
     suspend fun planNext(prevTool: String, observation: String): Result<ToolCall> =
-        if (mnn()) qwen.planNext(prevTool, observation) else planner.planNext(prevTool, observation)
+        when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner.planNext(prevTool, observation)
+        BrainRuntime.MNN -> qwen.planNext(prevTool, observation)
+        BrainRuntime.LLAMA_CPP -> unsupportedOwl("generic follow-up planning")
+    }
 
     /**
      * On-device safety-judge pass. The orchestrator uses the verdict only to escalate the native
@@ -102,14 +162,23 @@ class LocalBrain {
         toolName: String,
         argsJson: String,
         inputText: String
-    ): Result<SafetyVerdict> = if (mnn()) qwen.judgeSafety(toolName, argsJson, inputText) else planner.judgeSafety(toolName, argsJson, inputText)
+    ): Result<SafetyVerdict> = when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner.judgeSafety(toolName, argsJson, inputText)
+        BrainRuntime.MNN -> qwen.judgeSafety(toolName, argsJson, inputText)
+        BrainRuntime.LLAMA_CPP -> unsupportedOwl("safety judging")
+    }
 
     /** Tool-less conversational lane for action-free questions. */
     suspend fun chat(command: String, responseLanguage: String = ""): Result<String> =
-        if (mnn()) qwen.chat(command, responseLanguage) else planner.chat(command, responseLanguage)
+        when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner.chat(command, responseLanguage)
+        BrainRuntime.MNN -> qwen.chat(command, responseLanguage)
+        BrainRuntime.LLAMA_CPP -> unsupportedOwl("generic chat")
+    }
 
     /** Separate bounded drafting lane: text preparation only, never execution or sending. */
     suspend fun draftText(request: String, requiredPhrases: List<String> = emptyList()): Result<String> {
+        if (selectedRuntime == BrainRuntime.LLAMA_CPP) return unsupportedOwl("generic drafting")
         if (request.isBlank() || request.length > 4000) return Result.Error("Draft request must be 1..4000 characters")
         return when (val output = controllerRequest(
             "Prepare only the requested draft text, in the user's language. Do not operate apps, call tools, send anything, " +
@@ -128,11 +197,18 @@ class LocalBrain {
      * production scene descriptions retain the Accessibility/OCR fallback pending device qualification.
      */
     suspend fun describeSceneWithVision(imageBytes: ByteArray, aspect: String): Result<String> =
-        if (mnn()) qwen.describeSceneWithVision(imageBytes, aspect) else planner.describeSceneWithVision(imageBytes, aspect)
+        when (selectedRuntime) {
+        BrainRuntime.LITERT_LM -> planner.describeSceneWithVision(imageBytes, aspect)
+        BrainRuntime.MNN -> qwen.describeSceneWithVision(imageBytes, aspect)
+        BrainRuntime.LLAMA_CPP -> unsupportedOwl("generic scene description")
+    }
 
     /**
      * Parses a raw JSON tool-call envelope. Retained only as a defensive fallback for a future model
      * path; the active LiteRT-LM route uses native structured tool calls and canonical validation.
      */
-    fun parseToolCall(output: String): Result<ToolCall> = QwenOutputCodec.tool(output)
+    fun parseToolCall(output: String): Result<ToolCall> = when (selectedRuntime) {
+        BrainRuntime.LITERT_LM, BrainRuntime.MNN -> QwenOutputCodec.tool(output)
+        BrainRuntime.LLAMA_CPP -> unsupportedOwl("generic tool-call parsing")
+    }
 }

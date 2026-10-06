@@ -1,13 +1,13 @@
 package com.unoone.agent.core.model
 
 /** Selectable on-device planning profiles; existing E4B selections are preserved. */
-enum class BrainModelId { GEMMA_4_E4B, GEMMA_4_E2B, QWEN3_5_2B }
+enum class BrainModelId { GEMMA_4_E4B, GEMMA_4_E2B, QWEN3_5_2B, GUI_OWL_1_5_4B_INSTRUCT }
 
 /** Model family used by prompt construction. */
-enum class ModelFamily { GEMMA_4, QWEN3_5 }
+enum class ModelFamily { GEMMA_4, QWEN3_5, GUI_OWL_1_5 }
 
 /** Runtime format; never dispatch an MNN config to LiteRT-LM. */
-enum class BrainRuntime { LITERT_LM, MNN }
+enum class BrainRuntime { LITERT_LM, MNN, LLAMA_CPP }
 
 /** Hardware backend preference. LiteRT-LM backend mapping lives in `:localbrain`. */
 enum class BackendPreference { GPU_FIRST, CPU_ONLY, ANY }
@@ -40,7 +40,8 @@ data class BrainModelSpec(
     val isDeviceVerified: Boolean,
     val experimentalLabel: String?,
     val description: String,
-    val runtime: BrainRuntime = BrainRuntime.LITERT_LM
+    val runtime: BrainRuntime = BrainRuntime.LITERT_LM,
+    val supportsBrowserProtocol: Boolean = true
 )
 
 /** Single source of truth for the selectable Gemma 4 runtime contracts. */
@@ -97,7 +98,24 @@ object BrainModelRegistry {
         runtime = BrainRuntime.MNN
     )
 
-    val all: List<BrainModelSpec> = listOf(GEMMA_4_E2B, GEMMA_4_E4B, QWEN3_5_2B)
+    val GUI_OWL_1_5_4B_INSTRUCT = BrainModelSpec(
+        id = BrainModelId.GUI_OWL_1_5_4B_INSTRUCT,
+        manifestId = GuiOwlArtifact.MANIFEST_ID,
+        displayName = "GUI-Owl 1.5 4B Instruct (EXPERIMENTAL)",
+        modelFamily = ModelFamily.GUI_OWL_1_5,
+        modelFolder = GuiOwlArtifact.FOLDER,
+        fileName = GuiOwlArtifact.DECODER,
+        fileExtension = ".gguf",
+        preferredBackend = BackendPreference.CPU_ONLY,
+        minimumRamMb = 8_192, recommendedRamMb = 8_192,
+        maximumContextTokens = 2_048, defaultContextTokens = 2_048,
+        supportsNativeSystemRole = true, isLegacy = false, isDeviceVerified = false,
+        experimentalLabel = "EXPERIMENTAL — phone qualification pending",
+        description = "Third-party Q4_K_M GGUF plus required Q8_0 projector. 8 GB device RAM is conservative policy, not measured suitability. Load admission also reserves model + KV/vision/runtime overhead. Browser DOM protocol unsupported; no fallback. " + GuiOwlArtifact.PROVENANCE_DISCLOSURE,
+        runtime = BrainRuntime.LLAMA_CPP, supportsBrowserProtocol = false
+    )
+
+    val all: List<BrainModelSpec> = listOf(GEMMA_4_E2B, GEMMA_4_E4B, QWEN3_5_2B, GUI_OWL_1_5_4B_INSTRUCT)
     val defaultProfile: BrainModelSpec = GEMMA_4_E2B
 
     fun byId(id: BrainModelId): BrainModelSpec = all.first { it.id == id }

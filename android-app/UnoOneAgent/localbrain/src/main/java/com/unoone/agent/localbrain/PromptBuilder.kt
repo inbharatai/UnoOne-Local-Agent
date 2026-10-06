@@ -61,6 +61,7 @@ object PromptBuilder {
     /** Shared policy; each runtime owns its exact output schema and parser. */
     fun buildSystemInstruction(family: ModelFamily): String = when (family) {
         ModelFamily.GEMMA_4 -> gemma4Instruction
+        ModelFamily.GUI_OWL_1_5 -> error("GUI-Owl requires OwlPromptBuilder and the approved screenshot-task protocol")
         ModelFamily.QWEN3_5 -> gemma4Instruction +
             "\nPropose one strict JSON object with exactly tool and args; never execute or claim unverified success."
     }

@@ -1,0 +1,129 @@
+{
+  "retrieved_utc": "2026-10-06T13:19:58.362537+00:00",
+  "primary": {
+    "repo": "mPLUG/GUI-Owl-1.5-4B-Instruct",
+    "commit": "3f061c2c562cc860c42bf32542a70e07a7ff4840",
+    "files": [
+      {
+        "rfilename": ".gitattributes",
+        "blobId": "a6344aac8c09253b3b630fb776ae94478aa0275b",
+        "size": 1519
+      },
+      {
+        "rfilename": "README.md",
+        "blobId": "930a550a060ed634b96b3c1395269bfbb17b9126",
+        "size": 3540
+      },
+      {
+        "rfilename": "chat_template.json",
+        "blobId": "1081bacf1af7c7c6de4a585ce02cd0fd34e382da",
+        "size": 5499
+      },
+      {
+        "rfilename": "config.json",
+        "blobId": "1e4f82d18909133a7a84a118b7ff756061cf74e6",
+        "size": 1499
+      },
+      {
+        "rfilename": "generation_config.json",
+        "blobId": "3c8523257004002e8fbab1f5fb822802ba1bf46e",
+        "size": 214
+      },
+      {
+        "rfilename": "merges.txt",
+        "blobId": "20024bfe7c83998e9aeaf98a0cd6a2ce6306c2f0",
+        "size": 1671839
+      },
+      {
+        "rfilename": "model-00001-of-00002.safetensors",
+        "blobId": "9f31c834633050946cd4cf13f17fcb4e23bca780",
+        "size": 4967229296,
+        "lfs": {
+          "sha256": "03c36699f9437d781a6d4d418afe69ce2e198947c234819b41a10e8c29cf7ea4",
+          "size": 4967229296,
+          "pointerSize": 135
+        }
+      },
+      {
+        "rfilename": "model-00002-of-00002.safetensors",
+        "blobId": "780fdfe91777ec238cc4a03476c987c5dc4899e6",
+        "size": 3908490048,
+        "lfs": {
+          "sha256": "31e6c27c212658b5faea4a72442047a5ce8d4fbd409b775fa18752fb5a20ea09",
+          "size": 3908490048,
+          "pointerSize": 135
+        }
+      },
+      {
+        "rfilename": "model.safetensors.index.json",
+        "blobId": "3b52de97496e2f4501dfa92a87642f60db3e22a1",
+        "size": 64742
+      },
+      {
+        "rfilename": "preprocessor_config.json",
+        "blobId": "2ea84a437d448ff71b08df68fdd949d5cc4ebb64",
+        "size": 390
+      },
+      {
+        "rfilename": "tokenizer.json",
+        "blobId": "c6cc1014128b19d1fc46b1d30a23e3b1d35db421",
+        "size": 7032403
+      },
+      {
+        "rfilename": "tokenizer_config.json",
+        "blobId": "d3d3763207692c78780f4bf42d4dadf49a5c8012",
+        "size": 10868
+      },
+      {
+        "rfilename": "video_preprocessor_config.json",
+        "blobId": "d8dc2a4c15c7a2c9d00d411d0dfe46557b74fead",
+        "size": 386
+      },
+      {
+        "rfilename": "vocab.json",
+        "blobId": "4783fe10ac3adce15ac8f358ef5462739852c569",
+        "size": 2776833
+      }
+    ]
+  },
+  "gguf": {
+    "repo": "mradermacher/GUI-Owl-1.5-4B-Instruct-GGUF",
+    "commit": "9a79d301329062eb02e46f7ccad82c99075bfaaa",
+    "selected_files": [
+      {
+        "rfilename": "GUI-Owl-1.5-4B-Instruct.Q4_K_M.gguf",
+        "blobId": "522684599f21b6ab2cfcc2671baa8a9380044596",
+        "size": 2497282208,
+        "lfs": {
+          "sha256": "8e1793b69bb4064671ab6529b43f5b943850f73a9244ad139c16e93a44709232",
+          "size": 2497282208,
+          "pointerSize": 135
+        }
+      },
+      {
+        "rfilename": "GUI-Owl-1.5-4B-Instruct.mmproj-Q8_0.gguf",
+        "blobId": "6b212f3c2e221ee47d56a463d3b91c4c1b8ed921",
+        "size": 453974336,
+        "lfs": {
+          "sha256": "b705d940e9b7f212235a16c9c4b8cc9dd9053a1ccf549b99fc069a0ae694b073",
+          "size": 453974336,
+          "pointerSize": 134
+        }
+      }
+    ]
+  },
+  "mnn": {
+    "repo": "taobao-mnn/GUI-Owl-1.5-4B-Instruct-MNN",
+    "commit": "e01a49742e3dcb0ff201d88bca32bdc05ac49589",
+    "files": [
+      {
+        "rfilename": ".gitattributes",
+        "blobId": "a6344aac8c09253b3b630fb776ae94478aa0275b",
+        "size": 1519
+      }
+    ]
+  },
+  "MobileAgent_commit": "11cea575561fb7800b5fb6b6cafa56f7a91de11f",
+  "llama_cpp_commit": "4f5406761517648c23dbd60ea5ade37f77a316c9",
+  "download_verified": false
+}

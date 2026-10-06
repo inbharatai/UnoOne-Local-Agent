@@ -15,7 +15,10 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
 import com.unoone.agent.resolveBrainLoadPath
+import com.unoone.agent.owlLoadAdmissionError
 import com.unoone.agent.core.model.BrainRuntime
+import com.unoone.agent.core.model.BrainExperimentalConsent
+import com.unoone.agent.core.model.experimentalConsent
 import com.unoone.agent.UnoOneApplication
 import com.unoone.agent.core.model.BrainModelSpec
 import com.unoone.agent.AgentOrchestrator
@@ -254,13 +257,13 @@ class ModelStatusViewModel(
     fun selectBrain(manifestId: String, experimentalConsent: Boolean = false) {
         if (_brainBusy.value || _verifying.value) return
         val spec = BrainModelRegistry.byManifestId(manifestId) ?: return
-        if (spec.runtime == BrainRuntime.MNN && !experimentalConsent) {
+        if (spec.experimentalConsent() != BrainExperimentalConsent.NONE && !experimentalConsent) {
             _pendingExperimentalSelection.value = manifestId
             return
         }
         _brainBusy.value = true
         viewModelScope.launch {
-            val result = application.selectBrainProfile(spec)
+            val result = application.selectBrainProfile(spec, experimentalConsent)
             _brainBusy.value = false
             _selfTest.value = null
             _resultMessage.value = when (result) {
@@ -274,6 +277,10 @@ class ModelStatusViewModel(
     fun loadBrain() {
         if (_brainBusy.value) return
         val spec = _brainStatus.value?.manifestId?.let(BrainModelRegistry::byManifestId) ?: return
+        if (!application.brainProviderPreferences.hasConsent(spec)) {
+            _pendingExperimentalSelection.value = spec.manifestId
+            return
+        }
         if (orchestrator == null) {
             _resultMessage.value = "${spec.displayName} will load automatically when the app starts and the artifact is healthy."
             return
@@ -288,6 +295,11 @@ class ModelStatusViewModel(
                 refresh()
                 return@launch
             }
+            appContext.owlLoadAdmissionError(spec)?.let {
+                _brainBusy.value = false
+                _resultMessage.value = it
+                return@launch
+            }
             val result = withContext(Dispatchers.IO) { orchestrator.loadLlmModel(path, spec) }
             _brainBusy.value = false
             _resultMessage.value = if (result is Result.Success) {
@@ -300,6 +312,11 @@ class ModelStatusViewModel(
     }
 
     fun runBrainSelfTest() {
+        val selected = _brainStatus.value?.manifestId?.let(BrainModelRegistry::byManifestId) ?: return
+        if (!application.brainProviderPreferences.hasConsent(selected)) {
+            _pendingExperimentalSelection.value = selected.manifestId
+            return
+        }
         val test = brainSelfTest
         if (test == null || _brainBusy.value) return
         val spec = _brainStatus.value?.manifestId?.let(BrainModelRegistry::byManifestId) ?: return
@@ -307,7 +324,15 @@ class ModelStatusViewModel(
         _resultMessage.value = null
         _selfTest.value = null
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { test.run(spec) }
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    if (spec.id == com.unoone.agent.core.model.BrainModelId.GUI_OWL_1_5_4B_INSTRUCT)
+                        checkNotNull(orchestrator) { "Owl runtime unavailable" }.runOwlSelfTest(spec)
+                    else test.run(spec)
+                }
+            } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (_: Exception) { _resultMessage.value = "Self-test unavailable: load the selected brain and ensure no exclusive mode is active."; return@launch }
+            finally { _brainBusy.value = false }
             _selfTest.value = result
             _brainBusy.value = false
             _resultMessage.value = result.message
@@ -384,7 +409,11 @@ class ModelStatusViewModel(
             backend = if (isLoaded) orchestrator?.loadedBrainBackend().orEmpty() else "",
             lastLoadError = orchestrator?.lastBrainLoadError().orEmpty(),
             description = spec.description,
-            runtime = if (spec.runtime == BrainRuntime.MNN) "MNN (experimental CPU)" else "LiteRT-LM",
+            runtime = when (spec.runtime) {
+                BrainRuntime.MNN -> "MNN (experimental CPU)"
+                BrainRuntime.LITERT_LM -> "LiteRT-LM"
+                BrainRuntime.LLAMA_CPP -> "llama.cpp (experimental CPU; browser unsupported)"
+            },
             artifactSummary = "${descriptor?.files?.size ?: 0} files · $bytes bytes (${bytes / 1_000_000} MB download)",
             runtimeStatus = if (isLoaded) "Loaded: ${orchestrator?.loadedBrainBackend().orEmpty()}. Load success is not physical-device qualification."
                 else "Not loaded; no runtime execution receipt."

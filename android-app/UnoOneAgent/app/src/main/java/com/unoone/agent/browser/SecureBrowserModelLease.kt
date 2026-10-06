@@ -54,9 +54,21 @@ class SecureBrowserModelLease(
     }
 
     fun isActive(): Boolean = active
-    fun activeBackend(): String = if (runtime == BrainRuntime.MNN) qwen.activeBackend() else gemma.activeBackend()
-    fun configReceipt(): String? = if (runtime == BrainRuntime.MNN) qwen.configReceipt() else null
-    fun lastLoadError(): String = if (runtime == BrainRuntime.MNN) qwen.lastLoadError() else gemma.lastLoadError()
+    fun activeBackend(): String = when (runtime) {
+        BrainRuntime.LITERT_LM -> gemma.activeBackend()
+        BrainRuntime.MNN -> qwen.activeBackend()
+        BrainRuntime.LLAMA_CPP -> ""
+    }
+    fun configReceipt(): String? = when (runtime) {
+        BrainRuntime.LITERT_LM -> null
+        BrainRuntime.MNN -> qwen.configReceipt()
+        BrainRuntime.LLAMA_CPP -> null
+    }
+    fun lastLoadError(): String = when (runtime) {
+        BrainRuntime.LITERT_LM -> gemma.lastLoadError()
+        BrainRuntime.MNN -> qwen.lastLoadError()
+        BrainRuntime.LLAMA_CPP -> "GUI-Owl browser protocol unsupported"
+    }
 
     suspend fun acquire(): Result<BrowserModelPort> = com.unoone.agent.task.ModelTransitions.run { acquireUnderScheduler() }
 
@@ -77,6 +89,10 @@ class SecureBrowserModelLease(
         catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { return@withLock Result.Error("Brain selection is not ready; try again after initialization") }
         val spec = selected ?: BrowserLeasePolicy.browserProfile(prior, null)
+        // Capability admission MUST precede artifact resolution, reservation and phone unload.
+        if (!spec.supportsBrowserProtocol || spec.runtime == BrainRuntime.LLAMA_CPP) {
+            return@withLock Result.Error("${spec.displayName} does not support the Secure Browser protocol")
+        }
         val path = withContext(Dispatchers.IO) { modelManager.resolveBrainLoadPath(spec) }
             ?: return@withLock Result.Error("${spec.displayName} is not installed or failed integrity verification")
         if (!ExclusiveBrainLeaseState.acquire(OWNER_ID)) {
@@ -217,27 +233,43 @@ class SecureBrowserModelLease(
     }
 
     private fun requestCancel(reason: String) {
-        if (runtime == BrainRuntime.MNN) qwen.requestCancel(reason) else gemma.requestCancel(reason)
+        when (runtime) {
+        BrainRuntime.LITERT_LM -> gemma.requestCancel(reason)
+        BrainRuntime.MNN -> qwen.requestCancel(reason)
+        BrainRuntime.LLAMA_CPP -> Unit
+    }
     }
 
     private suspend fun cancelAndAwaitIdle(): Boolean =
-        if (runtime == BrainRuntime.MNN) qwen.cancelAndAwaitIdle() else gemma.cancelAndAwaitIdle()
+        when (runtime) {
+        BrainRuntime.LITERT_LM -> gemma.cancelAndAwaitIdle()
+        BrainRuntime.MNN -> qwen.cancelAndAwaitIdle()
+        BrainRuntime.LLAMA_CPP -> false
+    }
 
     private suspend fun closeBrowser(): Boolean =
-        if (runtime == BrainRuntime.MNN) qwen.close() else gemma.close()
+        when (runtime) {
+        BrainRuntime.LITERT_LM -> gemma.close()
+        BrainRuntime.MNN -> qwen.close()
+        BrainRuntime.LLAMA_CPP -> false
+    }
 
     private suspend fun loadBrowser(path: String, spec: BrainModelSpec): Result<Unit> =
-        if (runtime == BrainRuntime.MNN) qwen.load(path, spec, OWNER_ID) else gemma.load(path, spec, OWNER_ID)
+        when (runtime) {
+        BrainRuntime.LITERT_LM -> gemma.load(path, spec, OWNER_ID)
+        BrainRuntime.MNN -> qwen.load(path, spec, OWNER_ID)
+        BrainRuntime.LLAMA_CPP -> Result.Error("GUI-Owl browser protocol unsupported")
+    }
 
     private suspend fun planBrowser(
         pageAgentSystemPrompt: String,
         pageAgentUserPrompt: String,
         macroToolSchemaJson: String,
         maxOutputTokens: Int
-    ): Result<PageAgentPlan> = if (runtime == BrainRuntime.MNN) {
-        qwen.plan(pageAgentSystemPrompt, pageAgentUserPrompt, macroToolSchemaJson, maxOutputTokens)
-    } else {
-        gemma.plan(pageAgentSystemPrompt, pageAgentUserPrompt, macroToolSchemaJson, maxOutputTokens)
+    ): Result<PageAgentPlan> = when (runtime) {
+        BrainRuntime.MNN -> qwen.plan(pageAgentSystemPrompt, pageAgentUserPrompt, macroToolSchemaJson, maxOutputTokens)
+        BrainRuntime.LITERT_LM -> gemma.plan(pageAgentSystemPrompt, pageAgentUserPrompt, macroToolSchemaJson, maxOutputTokens)
+        BrainRuntime.LLAMA_CPP -> Result.Error("GUI-Owl browser protocol unsupported")
     }
 
     companion object {

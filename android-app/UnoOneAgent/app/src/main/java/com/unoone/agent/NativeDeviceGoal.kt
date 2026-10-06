@@ -178,6 +178,11 @@ class NativeOpenAppBrain(private val packageName: String) : UnoBrain {
 /** Source-reviewed candidates, not device-qualified. No unknown field receives semantic authority. */
 object NativeReviewedTargets {
     fun semantic(pkg: String, id: String, cls: String): TargetSemantic {
+        // Only this app's exact owned practice IDs and framework classes receive authority.
+        if (pkg == "com.unoone.agent") {
+            if (id == "$pkg:id/owl_practice_search_field" && cls == "android.widget.EditText") return TargetSemantic.FORM_FIELD
+            if (id == "$pkg:id/owl_practice_search_button" && cls == "android.widget.TextView") return TargetSemantic.NAVIGATION
+        }
         val search = id == "android:id/search_src_text" ||
             (pkg == "com.google.android.gm" && id == "$pkg:id/search_view") ||
             (pkg == "com.whatsapp" && id == "$pkg:id/search_src_text")

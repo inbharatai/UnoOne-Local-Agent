@@ -1,0 +1,55 @@
+{
+  "pillow": "11.3.0",
+  "resolved_font": "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+  "font_sha256": "4383d51405d8ed99ff404fe546182aee4438781d16d6580e4a2e4eac95ba0db6",
+  "reproduction": [
+    {
+      "original": "/agent/workspace/owl-native-prep/real-probe/synthetic-gui-256.png",
+      "sha256": "1d28d7c4de089f71fada869bb35d0e1b23b1b95f9493afb6a5e4ebb2cb8bbd0e",
+      "reproduced_sha256": "1d28d7c4de089f71fada869bb35d0e1b23b1b95f9493afb6a5e4ebb2cb8bbd0e",
+      "matches": true
+    },
+    {
+      "original": "/agent/workspace/owl-native-prep/real-probe/synthetic-red-256.png",
+      "sha256": "ba7fc9794d3db90790d76cdf0b4faf0a1b66ff8acc685667ffb318c06e6d66b6",
+      "reproduced_sha256": "ba7fc9794d3db90790d76cdf0b4faf0a1b66ff8acc685667ffb318c06e6d66b6",
+      "matches": true
+    },
+    {
+      "original": "/agent/workspace/owl-native-prep/real-probe-default/synthetic-gui-A-256.png",
+      "sha256": "16d0c0f4546832874de0230616b8d7431c01764690d5258f32009126a087ad83",
+      "reproduced_sha256": "16d0c0f4546832874de0230616b8d7431c01764690d5258f32009126a087ad83",
+      "matches": true
+    },
+    {
+      "original": "/agent/workspace/owl-native-prep/real-probe-default/synthetic-gui-B-256.png",
+      "sha256": "29b252ee1ff492a2e3a51e9d77b45cde5a9dd0791bacb25819904afc802d4f29",
+      "reproduced_sha256": "29b252ee1ff492a2e3a51e9d77b45cde5a9dd0791bacb25819904afc802d4f29",
+      "matches": true
+    },
+    {
+      "original": "/agent/workspace/owl-native-prep/real-probe-default/synthetic-red-256.png",
+      "sha256": "ba7fc9794d3db90790d76cdf0b4faf0a1b66ff8acc685667ffb318c06e6d66b6",
+      "reproduced_sha256": "ba7fc9794d3db90790d76cdf0b4faf0a1b66ff8acc685667ffb318c06e6d66b6",
+      "matches": true
+    },
+    {
+      "original": "/agent/workspace/owl-native-prep/real-probe-final/synthetic-gui-A-256.png",
+      "sha256": "16d0c0f4546832874de0230616b8d7431c01764690d5258f32009126a087ad83",
+      "reproduced_sha256": "16d0c0f4546832874de0230616b8d7431c01764690d5258f32009126a087ad83",
+      "matches": true
+    },
+    {
+      "original": "/agent/workspace/owl-native-prep/real-probe-final/synthetic-gui-B-256.png",
+      "sha256": "29b252ee1ff492a2e3a51e9d77b45cde5a9dd0791bacb25819904afc802d4f29",
+      "reproduced_sha256": "29b252ee1ff492a2e3a51e9d77b45cde5a9dd0791bacb25819904afc802d4f29",
+      "matches": true
+    },
+    {
+      "original": "/agent/workspace/owl-native-prep/real-probe-final/synthetic-red-256.png",
+      "sha256": "ba7fc9794d3db90790d76cdf0b4faf0a1b66ff8acc685667ffb318c06e6d66b6",
+      "reproduced_sha256": "ba7fc9794d3db90790d76cdf0b4faf0a1b66ff8acc685667ffb318c06e6d66b6",
+      "matches": true
+    }
+  ]
+}

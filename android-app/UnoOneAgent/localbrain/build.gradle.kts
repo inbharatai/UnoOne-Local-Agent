@@ -16,11 +16,11 @@ android {
         minSdk = 28
         targetSdk = 35
         ndk { abiFilters += "arm64-v8a" }
-        consumerProguardFiles("src/main/cpp/qwen-consumer-rules.pro")
+        consumerProguardFiles("src/main/cpp/qwen-consumer-rules.pro", "src/main/cpp/owl-consumer-rules.pro")
         externalNativeBuild {
             cmake {
                 arguments += listOf("-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON")
-                targets += "unoone_qwen"
+                targets += listOf("unoone_qwen", "unoone_owl", "mtmd", "llama", "ggml", "ggml-base", "ggml-cpu")
             }
         }
     }

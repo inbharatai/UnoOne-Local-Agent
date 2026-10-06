@@ -1,0 +1,1 @@
+-keep class com.unoone.agent.localbrain.owl.OwlLlamaRuntime { *; }

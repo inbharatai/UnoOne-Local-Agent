@@ -1,0 +1,270 @@
+{
+  "/agent/workspace/owl-native-prep/real-probe/Probe.kt": {
+    "bytes": 3314,
+    "sha256": "07d3f6de55b6642bef8deea26a8310d5f76e82bfd60e1abe5b7aa6ac855191ce"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/prepare.py": {
+    "bytes": 2627,
+    "sha256": "0dc825cb978a3272873c10094dc5e64f6f902d522d9034d67c68a1f6819a4716"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/synthetic-gui-256.png": {
+    "bytes": 5298,
+    "sha256": "1d28d7c4de089f71fada869bb35d0e1b23b1b95f9493afb6a5e4ebb2cb8bbd0e"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/synthetic-red-256.png": {
+    "bytes": 757,
+    "sha256": "ba7fc9794d3db90790d76cdf0b4faf0a1b66ff8acc685667ffb318c06e6d66b6"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/fixture.json": {
+    "bytes": 615,
+    "sha256": "7cb728d065b7a0b57ab05cb75b4b73b3e62e1408a336027afc585bf7e84cc730"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/compile-command.json": {
+    "bytes": 4027,
+    "sha256": "a7d2438e42a20b59ba8a2e9f42d09593309081f82be16cc163016af472f7780d"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/compile.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/source-binary-fixture-hashes.json": {
+    "bytes": 1124,
+    "sha256": "963b8ab2ef820182ed82fe88e9d7f18fa969c4a2de276cab61ced56ecb8d6a86"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/monitor.py": {
+    "bytes": 3733,
+    "sha256": "7dc12b7a72e23e7e01fe11b5eeb04ecc16f174d81bf5380ae7533dfd7f03caa4"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/monitor.log": {
+    "bytes": 182,
+    "sha256": "caba5ac1c0af4d0b18b3234b0576200b08b5f23a42b1fdbde855a91d66beb319"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/exclusive.lock": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/preflight-processes.txt": {
+    "bytes": 1170,
+    "sha256": "d1b6dafeb4e5b5f00cafb5f70ab5bebd41e62902b15ae32d4081e6662944603b"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/model-hash-reverification.json": {
+    "bytes": 1295,
+    "sha256": "82a715b629821c8d3828527f350ceb4be50b1f598cb4172689308b3ee991a7e4"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/invocation.json": {
+    "bytes": 1916,
+    "sha256": "1ed2e4f67ea6f04bc04a56afa0dd6f03e1676582536b2a9006eb0ce74ffd9f84"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/stdout.log": {
+    "bytes": 1579,
+    "sha256": "75b0e574045827f300373c1a7bdcb5674443b9e45a403e65f2d68acd44d20c85"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/stderr.log": {
+    "bytes": 334178,
+    "sha256": "af93b03ef4a67af83d5b936cfc9c638191c0290ddb4143b71601006c23baccd3"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/memory.jsonl": {
+    "bytes": 34056,
+    "sha256": "22b7e5516c74f62d2260131c6a64d061522d57fb3e58ab269eaae064fe51e960"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/child.pid": {
+    "bytes": 5,
+    "sha256": "2cf685f717d74d08f4ff6e263e4e03fa2dbc60a0fe3f9e5344624f97b9f5a81e"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/official-system.txt": {
+    "bytes": 4074,
+    "sha256": "daafbac2a291e6d66eb21ecbda62bd54038bf5b902e3639f5b111e83a6a4bf67"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/official-user.txt": {
+    "bytes": 270,
+    "sha256": "3fe85c96098919301be9089ae7312170c665b2b3d3eb601084ff58c1c8cda547"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/stale-queued-permit.error.txt": {
+    "bytes": 264,
+    "sha256": "dd5be961415d114c47eae149b12d6b772639e560e683cac2f1dbd995e66618e2"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/official-gui-1024.error.txt": {
+    "bytes": 389,
+    "sha256": "c51954be901928f09957e99ecbd5f09604a8e057484757c9d4457462c93d53f2"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/text-sanity.output.txt": {
+    "bytes": 1,
+    "sha256": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/red-image-sanity.output.txt": {
+    "bytes": 3,
+    "sha256": "ba19e9c3d5f49882ddaafed4f286a8a81491150426d321179270e27e74a89097"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/output-truncation.error.txt": {
+    "bytes": 391,
+    "sha256": "d593de7850e650470241fe44ff83c3cc023c700d425526d3bf7c9b7263f054aa"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/invalid-utf8-native-input.error.txt": {
+    "bytes": 663,
+    "sha256": "836faaceec4bae7dbfecf1f17ce72ed6bd7e05440f577df3ad7f5ebd4f260b51"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/summary.json": {
+    "bytes": 195,
+    "sha256": "9c8af767ce1bdaa156fdf984743c07939a0144c58aaeacb35b6bebc9feebd826"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/native-key-lines.txt": {
+    "bytes": 1288,
+    "sha256": "bcdfd989eb28c7db2c128e6a12038d6219ab676c6feca0b7827136f7853e0aaf"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/classes/ProbeKt.class": {
+    "bytes": 10189,
+    "sha256": "c320a14420819a8aa5098a76ac0a5e4c98f76b2ad7707d4b48fa47a527086659"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/classes/com/unoone/agent/core/guiowl/OwlPrompt.class": {
+    "bytes": 2859,
+    "sha256": "1bab8e6d2173f3180fcb08a1cb76fd7d72342ab910b7f09993e1ed7bc941b03a"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/classes/com/unoone/agent/core/guiowl/OwlPromptBuilder.class": {
+    "bytes": 6781,
+    "sha256": "bc9333f1208495d4c8c664be2d9e61d04be1e3c359de052328b738555830a62e"
+  },
+  "/agent/workspace/owl-native-prep/real-probe/classes/META-INF/main.kotlin_module": {
+    "bytes": 37,
+    "sha256": "f6124cd5950d9dc426ecc61468e4fb6dc19bd3124c62578d1bf30be6af612bc4"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/BrainModelId.class": {
+    "bytes": 1948,
+    "sha256": "5b52107b333cf40c5510a12a76fd0bccc3c5e48a8208d6fc3e9c7551401cba92"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/ModelFamily.class": {
+    "bytes": 1861,
+    "sha256": "a49de8a9d4a47ef43f539793df7eea59d03aa61a153aa5525961f0822f8bda2e"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/BrainRuntime.class": {
+    "bytes": 1864,
+    "sha256": "8d5e9ddbf444c93a06963e40a9129fb751ab12e4a06201cbd29692890a24a7be"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/BackendPreference.class": {
+    "bytes": 1898,
+    "sha256": "6e545cd8c43d1ff16f2248fc7158d6b5b033ceb071ef6845ca2ed047687b1897"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/BackendQualificationChoice.class": {
+    "bytes": 1951,
+    "sha256": "12b98343c8d3265bd51b2a2ba34c5993e0ce7b6650679add07bccd8564fd72ef"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/BrainModelSpec.class": {
+    "bytes": 11620,
+    "sha256": "94fb185eca1f972e55ef629a512e331961c3c510875ed3a73aaad61bbea4e816"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/BrainModelRegistry.class": {
+    "bytes": 9249,
+    "sha256": "95aacc0d7d7b161c549235cbd9b591566f6801a6c4b6dcda3363c77f3e2696c2"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/E4bRuntimeState.class": {
+    "bytes": 2606,
+    "sha256": "0b2e1e73ca9b2a34cc9a235e14433a8717c4e9551c176c7ccf947757c2f3a738"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/E4bRuntimeSnapshot.class": {
+    "bytes": 4023,
+    "sha256": "9b74047b0eec2882e3751321ca0a43ee70b80313952c1c68d7e017aece597250"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/E4bRuntimeCoordinator.class": {
+    "bytes": 899,
+    "sha256": "7f071bb18aed26aa5b5bf148bba692c8a84e45c89a79dc120e4741e815415013"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/E4bRuntimeGate.class": {
+    "bytes": 8936,
+    "sha256": "96a8f5610bf827e1b1d24059bdc49c581ee1ea73f1a0f3c4cc2409a8af65d669"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/E4bRuntimeGate$reserve$1.class": {
+    "bytes": 1836,
+    "sha256": "5ca4de99aeebc55b9e716e361d5a4c1a68acd0749d0684d2c74b9bd5d24b8bc8"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/E4bRuntimeGate$releaseReservation$1.class": {
+    "bytes": 1880,
+    "sha256": "88c53cebf237cefdcd5dae84fdf409a5b02b035225bb7b2748233ea88bdfa540"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/GuiOwlArtifact.class": {
+    "bytes": 3043,
+    "sha256": "040828206e8931ad67bd776ced796b2bfffaf6b553617ec65abe411dbfba6607"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/BrainExperimentalConsent.class": {
+    "bytes": 1946,
+    "sha256": "20579a6ed8e8af7cc5fc70d81406ebe37437bd593b85859f93e1f38b6f43c73e"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/GuiOwlArtifactKt.class": {
+    "bytes": 1474,
+    "sha256": "e4bca70045cee65c1585c618503619937722114a2e661834c79bee78c2683906"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/GuiOwlArtifactKt$WhenMappings.class": {
+    "bytes": 837,
+    "sha256": "d22ea950fe4b0fdb91a0ba7a0f8a2c2ed540882d3f21706b4ea4d0a95aa5e0c2"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/Result.class": {
+    "bytes": 1279,
+    "sha256": "6d47005f06fc1f37118c42c323844dddc1b3a02e8b7dc0c74dd9846e561b0ead"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/Result$Success.class": {
+    "bytes": 2677,
+    "sha256": "093f53f51ee2d195f03c11e0aa073301d8f816c794385a59494236722f1fa872"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/Result$Error.class": {
+    "bytes": 3324,
+    "sha256": "a9caa7705e0c941d9b30261b51a00b0bcad22c3cb2ab2cb1558b37882570a1a3"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/core/model/ResultKt.class": {
+    "bytes": 5920,
+    "sha256": "6c4b7a6ae11e743d1cad06d1fb0be6495dfb1302f730b3a479c620c614257a25"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/localbrain/owl/OwlLlamaPlanner.class": {
+    "bytes": 13150,
+    "sha256": "244a474f3d9a08ef4e3ea9966ade544bd1af7c71e57aaebbf5c4517e733f073e"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/localbrain/owl/OwlLlamaPlanner$load$2.class": {
+    "bytes": 10590,
+    "sha256": "fb9b2600f3aeb2498ff219dd9ce1c8ac7fb89134ceaf684a5814b95c6af09f19"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/localbrain/owl/OwlLlamaPlanner$cancelAndAwaitIdle$2.class": {
+    "bytes": 5560,
+    "sha256": "aa140664bc4abe7fbafe11278bcd39ffd1fd88867a5502a36771d7b2732035f8"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/localbrain/owl/OwlLlamaPlanner$cancelAndAwaitIdle$1.class": {
+    "bytes": 1771,
+    "sha256": "5c8f8b3fac7dcd238ed681f575a1c57cfe719b60e87532f97d897e30f73d5b7d"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/localbrain/owl/OwlLlamaPlanner$close$2.class": {
+    "bytes": 4125,
+    "sha256": "66e73cc4c7f3b515cc318b31073ec2e9ceea79886c8d42d6cd86015c4d284a53"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/localbrain/owl/OwlLlamaPlanner$controllerRequest$2.class": {
+    "bytes": 10608,
+    "sha256": "36af83029abff5c40721ada774222d8f7a6f288869ee3386e1aac7e69c4c3c7e"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/localbrain/owl/OwlLlamaPlanner$controllerRequest$2$1$output$1.class": {
+    "bytes": 5632,
+    "sha256": "9e1412f44600d1bfc59d5b60f8e5e788b8396be66f7feab68fc244cbe30195f9"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/localbrain/owl/OwlLlamaPlanner$controllerRequest$2$1$output$1$monitor$1.class": {
+    "bytes": 4102,
+    "sha256": "a6a041a5037bcce80be51a3cfc4224a554395adeca81837436e510f627ecd47e"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/localbrain/owl/OwlLlamaRuntime.class": {
+    "bytes": 15190,
+    "sha256": "af2e129be4193a8e90b6834e098721941719d01eabb8ccfdc17e56a07aadab16"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/localbrain/owl/OwlLlamaRuntime$RequestPermit.class": {
+    "bytes": 1560,
+    "sha256": "b3a655bd3f931ea6e117d845e593a736f9edb3fad2da3d969c6de43ecc545770"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/localbrain/owl/OwlLlamaPlanner$load$2$1$receipt$1.class": {
+    "bytes": 5014,
+    "sha256": "347aad9a050d7141139fd95d23218b88ca6e8534110315c1bb48bbc7ff465939"
+  },
+  "/agent/workspace/owl-native-prep/production-host/classes/com/unoone/agent/localbrain/owl/OwlLlamaPlanner$load$2$1$receipt$1$monitor$1.class": {
+    "bytes": 4029,
+    "sha256": "a0ade851284ddb78906d11da315e3a8bd5af69158b0954a6a05bb63805bdb564"
+  },
+  "/agent/workspace/owl-native-prep/production-host/libunoone_owl.so": {
+    "bytes": 59192,
+    "sha256": "ddc6fda56a24d15ad078240f0cbf645081c26f0e223041ecbae21bfc3b8939c4"
+  },
+  "/agent/workspace/owl-real-probe-handoff.md": {
+    "bytes": 9332,
+    "sha256": "f959c8850bd0a5227ac38925827e9f66f09b92135b2d4662458f2fcd591e5657"
+  }
+}

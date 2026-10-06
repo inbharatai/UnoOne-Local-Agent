@@ -1,0 +1,8 @@
+java.lang.IllegalStateException: Output token limit reached without EOS; partial proposal rejected
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.nativeGenerate(Native Method)
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.generate(OwlLlamaRuntime.kt:89)
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.generate$default(OwlLlamaRuntime.kt:73)
+	at ProbeKt.main$lambda$8(Probe.kt:37)
+	at ProbeKt.test(Probe.kt:10)
+	at ProbeKt.main(Probe.kt:37)
+	at ProbeKt.main(Probe.kt)

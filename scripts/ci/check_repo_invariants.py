@@ -29,7 +29,7 @@ ACTIVE_ROOTS = (
 )
 
 TEXT_SUFFIXES = {".kt", ".kts", ".java", ".ts", ".tsx", ".js", ".mjs", ".json", ".xml", ".toml"}
-SKIP_DIRS = {"build", "dist", "node_modules", ".gradle", ".git", "playwright-report", "test-results"}
+SKIP_DIRS = {"build", "dist", "node_modules", ".gradle", ".cxx", ".externalNativeBuild", ".git", "playwright-report", "test-results"}
 SKIP_RELATIVE_PATHS = {
     "android-app/UnoOneAgent/app/lint-baseline.xml",
 }
@@ -56,6 +56,16 @@ LEGACY_GEMMA_ID = "gemma-4-e2b"
 LEGACY_GEMMA_FILE = "gemma-4-E2B-it.litertlm"
 LEGACY_GEMMA_SHA256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c"
 
+
+# Audited immutable GuiOwlArtifact values; never derived from the manifest under test.
+OWL_ID = "gui-owl-1.5-4b-instruct-gguf"
+OWL_REVISION = "9a79d301329062eb02e46f7ccad82c99075bfaaa"
+OWL_REPOSITORY = "mradermacher/GUI-Owl-1.5-4B-Instruct-GGUF"
+OWL_FILES = {
+    "GUI-Owl-1.5-4B-Instruct.Q4_K_M.gguf": (2497282208, "8e1793b69bb4064671ab6529b43f5b943850f73a9244ad139c16e93a44709232"),
+    "GUI-Owl-1.5-4B-Instruct.mmproj-Q8_0.gguf": (453974336, "b705d940e9b7f212235a16c9c4b8cc9dd9053a1ccf549b99fc069a0ae694b073"),
+}
+OWL_DISCLOSURE = "Third-party quantization; canonical source-conversion commit unknown. Model card: MIT; embedded GGUF metadata: Apache-2.0. Retain both notices; no commercial clearance claimed."
 
 QWEN_ID = "qwen3.5-2b-mnn"
 QWEN_REVISION = "35781816d7b6a9dcb273a6765ac9563401951c3c"
@@ -119,8 +129,8 @@ def validate_model_manifest(errors: list[str]) -> set[str]:
     if not isinstance(value, dict) or set(value) != {"manifestVersion", "models"}:
         errors.append(f"{relative}: expected only manifestVersion and models top-level fields")
         return set()
-    if value.get("manifestVersion") != 5:
-        errors.append(f"{relative}: manifestVersion must be 5 for exactly three known profiles")
+    if value.get("manifestVersion") != 6:
+        errors.append(f"{relative}: manifestVersion must be 6 for exactly four known profiles")
     models = value.get("models")
     if not isinstance(models, list) or not models:
         errors.append(f"{relative}: models must be a non-empty array")
@@ -182,10 +192,31 @@ def validate_model_manifest(errors: list[str]) -> set[str]:
         "gemma-4-e2b": ("gemma-4-E2B-it.litertlm", 2588147712, "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c", "b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1"),
         GEMMA_ID: (GEMMA_FILE, GEMMA_SIZE, GEMMA_SHA256, GEMMA_REVISION),
     }
-    if len(llm_models) != 3 or {m.get("id") for m in llm_models} != set(expected) | {QWEN_ID}:
-        errors.append(f"{relative}: expected exactly E2B, E4B and Qwen MNN LLM profiles")
+    if len(llm_models) != 4 or {m.get("id") for m in llm_models} != set(expected) | {QWEN_ID, OWL_ID}:
+        errors.append(f"{relative}: expected exactly E2B, E4B, Qwen MNN and Owl LLAMA_CPP LLM profiles")
     for model in llm_models:
         mid = model.get("id")
+        if mid == OWL_ID:
+            for key, expected_value in {
+                "folder": "brain/" + OWL_ID, "backend": "cpu",
+                "version": "GUI-Owl-1.5-4B-Instruct-GGUF-" + OWL_REVISION,
+            }.items():
+                if model.get(key) != expected_value:
+                    errors.append(f"Owl exact {key} mismatch")
+            if type(model.get("minRamMb")) is not int or model["minRamMb"] < 8192:
+                errors.append("Owl minimum RAM must be at least 8192 MB")
+            files = model.get("files", [])
+            if not isinstance(files, list):
+                errors.append("Owl requires decoder and projector artifacts")
+                continue
+            exact_files = [
+                {"name": name, "sizeBytes": size, "sha256": sha, "archive": False,
+                 "url": f"https://huggingface.co/{OWL_REPOSITORY}/resolve/{OWL_REVISION}/{name}"}
+                for name, (size, sha) in OWL_FILES.items()
+            ]
+            if len(files) != 2 or any(f not in exact_files for f in files) or any(f not in files for f in exact_files):
+                errors.append("Owl requires exactly the pinned decoder and projector artifacts")
+            continue
         if mid == QWEN_ID:
             if model.get("folder") != "brain/" + QWEN_ID or model.get("backend") != "cpu":
                 errors.append("Qwen requires exact folder and CPU backend")
@@ -227,6 +258,43 @@ def validate_model_manifest(errors: list[str]) -> set[str]:
         if artifact.get("asset") is not None:
             errors.append(f"{mid}: bundled artifact cannot override pinned download")
     return ids
+
+
+def validate_owl_source_contract(errors: list[str]) -> None:
+    """Check runtime and provenance independently of catalogue metadata."""
+    base = ROOT / "android-app/UnoOneAgent/core/src/main/java/com/unoone/agent/core/model"
+    try:
+        artifact = (base / "GuiOwlArtifact.kt").read_text(encoding="utf-8")
+        registry = (base / "BrainModel.kt").read_text(encoding="utf-8")
+    except OSError as exc:
+        errors.append(f"Owl source contract missing: {exc}")
+        return
+    constants = dict(re.findall(r'const val (\w+) = "([^"\n]*)"', artifact))
+    names = list(OWL_FILES)
+    for key, expected in {
+        "MANIFEST_ID": OWL_ID, "FOLDER": "brain/" + OWL_ID,
+        "REPOSITORY": OWL_REPOSITORY, "REVISION": OWL_REVISION,
+        "PRIMARY_REFERENCE_REVISION": "3f061c2c562cc860c42bf32542a70e07a7ff4840",
+        "DECODER": names[0], "PROJECTOR": names[1],
+        "DECODER_SHA256": OWL_FILES[names[0]][1], "PROJECTOR_SHA256": OWL_FILES[names[1]][1],
+        "PROVENANCE_DISCLOSURE": OWL_DISCLOSURE,
+    }.items():
+        if constants.get(key) != expected:
+            errors.append(f"Owl source constant mismatch: {key}")
+    for key, expected in {"DECODER_BYTES": OWL_FILES[names[0]][0], "PROJECTOR_BYTES": OWL_FILES[names[1]][0]}.items():
+        if not re.search(rf"const val {key} = {expected}L\b", artifact):
+            errors.append(f"Owl source constant mismatch: {key}")
+    match = re.search(r"val GUI_OWL_1_5_4B_INSTRUCT = BrainModelSpec\((.*?)\n    \)", registry, re.S)
+    block = match.group(1) if match else ""
+    for key, expected in {
+        "runtime": "BrainRuntime.LLAMA_CPP", "supportsBrowserProtocol": "false",
+        "isDeviceVerified": "false", "preferredBackend": "BackendPreference.CPU_ONLY",
+        "manifestId": "GuiOwlArtifact.MANIFEST_ID", "fileName": "GuiOwlArtifact.DECODER",
+    }.items():
+        if not re.search(rf"\b{key}\s*=\s*{re.escape(expected)}(?=\s*(?:[,\n]|$))", block):
+            errors.append(f"Owl runtime contract mismatch: {key}")
+    if 'experimentalLabel = "EXPERIMENTAL' not in block or "GuiOwlArtifact.PROVENANCE_DISCLOSURE" not in block:
+        errors.append("Owl experimental provenance disclosure is required")
 
 
 def validate_language_manifest(errors: list[str], model_ids: set[str]) -> None:
@@ -328,6 +396,7 @@ def main() -> int:
     errors: list[str] = []
     scan_prohibited_text(errors)
     model_ids = validate_model_manifest(errors)
+    validate_owl_source_contract(errors)
     validate_language_manifest(errors, model_ids)
     validate_secure_browser(errors)
     validate_v3_corpus(errors)

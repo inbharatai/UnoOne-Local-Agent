@@ -86,8 +86,8 @@ class ModelManifestTest {
     @Test
     fun shippedManifestPinsBothPlanningArtifacts() {
         val manifest = loader.parse(java.io.File("src/main/assets/models_manifest.json").readText())
-        assertEquals(5, manifest.manifestVersion)
-        assertEquals(3, manifest.models.count { it.type == ModelType.llm })
+        assertEquals(6, manifest.manifestVersion)
+        assertEquals(4, manifest.models.count { it.type == ModelType.llm })
         val e2b = manifest.find("gemma-4-e2b")!!
         assertEquals("brain/gemma-4-e2b", e2b.folder)
         assertEquals("gemma-4-E2B-it.litertlm", e2b.files.single().name)

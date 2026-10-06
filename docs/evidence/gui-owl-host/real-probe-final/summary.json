@@ -1,0 +1,10 @@
+{
+  "exit_code": 0,
+  "termination": "NORMAL_PROCESS_EXIT",
+  "elapsed_seconds": 166.06286349400034,
+  "peak_RSS_KiB": 3319156,
+  "peak_VmHWM_KiB": 3319820,
+  "peak_memory_current_bytes": 4134780928,
+  "min_MemAvailable_KiB": 2484920,
+  "native_close_ack_seen": true
+}

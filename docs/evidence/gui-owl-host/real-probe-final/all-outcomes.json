@@ -1,0 +1,154 @@
+[
+  {
+    "timestampMs": 1791303375790,
+    "outcome": "ERROR",
+    "name": "stale-load-permit",
+    "elapsedMs": 3,
+    "headline": "java.lang.IllegalStateException: Stale load permit",
+    "raw_file": "stale-load-permit.error.txt"
+  },
+  {
+    "timestampMs": 1791303378002,
+    "outcome": "ERROR",
+    "name": "invalid-C328-text-image-false",
+    "elapsedMs": 1,
+    "headline": "java.lang.IllegalStateException: Malformed UTF-8 input",
+    "raw_file": "invalid-C328-text-image-false.error.txt"
+  },
+  {
+    "timestampMs": 1791303378003,
+    "outcome": "ERROR",
+    "name": "invalid-C328-text-image-true",
+    "elapsedMs": 0,
+    "headline": "java.lang.IllegalStateException: Malformed UTF-8 input",
+    "raw_file": "invalid-C328-text-image-true.error.txt"
+  },
+  {
+    "timestampMs": 1791303378003,
+    "outcome": "ERROR",
+    "name": "invalid-C328-system-image-false",
+    "elapsedMs": 0,
+    "headline": "java.lang.IllegalStateException: Malformed UTF-8 input",
+    "raw_file": "invalid-C328-system-image-false.error.txt"
+  },
+  {
+    "timestampMs": 1791303378003,
+    "outcome": "ERROR",
+    "name": "invalid-C328-system-image-true",
+    "elapsedMs": 0,
+    "headline": "java.lang.IllegalStateException: Malformed UTF-8 input",
+    "raw_file": "invalid-C328-system-image-true.error.txt"
+  },
+  {
+    "timestampMs": 1791303378004,
+    "outcome": "ERROR",
+    "name": "unpaired-surrogate-text",
+    "elapsedMs": 0,
+    "headline": "java.lang.IllegalArgumentException: Malformed UTF-16 input; cannot encode UTF-8",
+    "raw_file": "unpaired-surrogate-text.error.txt"
+  },
+  {
+    "timestampMs": 1791303378005,
+    "outcome": "ERROR",
+    "name": "unpaired-surrogate-system",
+    "elapsedMs": 0,
+    "headline": "java.lang.IllegalArgumentException: Malformed UTF-16 input; cannot encode UTF-8",
+    "raw_file": "unpaired-surrogate-system.error.txt"
+  },
+  {
+    "timestampMs": 1791303378005,
+    "outcome": "ERROR",
+    "name": "stale-queued-permit",
+    "elapsedMs": 0,
+    "headline": "java.lang.IllegalStateException: Stale request permit",
+    "raw_file": "stale-queued-permit.error.txt"
+  },
+  {
+    "timestampMs": 1791303452098,
+    "outcome": "SUCCESS",
+    "name": "official-gui-A",
+    "elapsedMs": 74082,
+    "headline": "output=Action: Click on the \"Search\" button to proceed with the search function.",
+    "raw_file": "official-gui-A.output.txt"
+  },
+  {
+    "timestampMs": 1791303452131,
+    "outcome": "SUCCESS",
+    "name": "production-codec-A",
+    "elapsedMs": 31,
+    "headline": "output=action=click;x=743.0;y=673.0;proposal=OwlProposal(action=click, coordinate=OwlPoint(x=743.0, y=673.0), coordinate2=null, text=null, time=null, button=null, status=null)",
+    "raw_file": "production-codec-A.output.txt"
+  },
+  {
+    "timestampMs": 1791303524009,
+    "outcome": "SUCCESS",
+    "name": "official-gui-B",
+    "elapsedMs": 71878,
+    "headline": "output=Action: Click on the \"Search\" button to initiate the search function.",
+    "raw_file": "official-gui-B.output.txt"
+  },
+  {
+    "timestampMs": 1791303524011,
+    "outcome": "SUCCESS",
+    "name": "production-codec-B",
+    "elapsedMs": 1,
+    "headline": "output=action=click;x=257.0;y=293.0;proposal=OwlProposal(action=click, coordinate=OwlPoint(x=257.0, y=293.0), coordinate2=null, text=null, time=null, button=null, status=null)",
+    "raw_file": "production-codec-B.output.txt"
+  },
+  {
+    "timestampMs": 1791303526195,
+    "outcome": "SUCCESS",
+    "name": "text-sanity",
+    "elapsedMs": 2182,
+    "headline": "output=4",
+    "raw_file": "text-sanity.output.txt"
+  },
+  {
+    "timestampMs": 1791303533060,
+    "outcome": "SUCCESS",
+    "name": "red-image-sanity",
+    "elapsedMs": 6863,
+    "headline": "output=Red",
+    "raw_file": "red-image-sanity.output.txt"
+  },
+  {
+    "timestampMs": 1791303535555,
+    "outcome": "SUCCESS",
+    "name": "unicode-positive",
+    "elapsedMs": 2494,
+    "headline": "output=4",
+    "raw_file": "unicode-positive.output.txt"
+  },
+  {
+    "timestampMs": 1791303537507,
+    "outcome": "ERROR",
+    "name": "output-truncation",
+    "elapsedMs": 1951,
+    "headline": "java.lang.IllegalStateException: Output token limit reached without EOS; partial proposal rejected",
+    "raw_file": "output-truncation.error.txt"
+  },
+  {
+    "timestampMs": 1791303538153,
+    "outcome": "ERROR",
+    "name": "active-cancel",
+    "elapsedMs": 519,
+    "headline": "java.lang.IllegalStateException: Vision/prefill failed",
+    "raw_file": "active-cancel.error.txt"
+  },
+  {
+    "timestampMs": 1791303539224,
+    "outcome": "SUCCESS",
+    "name": "reload-default",
+    "elapsedMs": 819,
+    "headline": "output=llama.cpp=4f5406761517648c23dbd60ea5ade37f77a316c9;cpu=2;mmap=true;repack=false;gpu=false;ctx=2048;output=256;imageEdge=512;visionTokens=256;mrope=mtmd;deepstack=mtmd;hostReduced=false;deviceQualified=false",
+    "raw_file": "reload-default.output.txt"
+  },
+  {
+    "timestampMs": 1791303541528,
+    "outcome": "SUCCESS",
+    "name": "reload-text-sanity",
+    "elapsedMs": 2302,
+    "headline": "output=4",
+    "raw_file": "reload-text-sanity.output.txt"
+  }
+]

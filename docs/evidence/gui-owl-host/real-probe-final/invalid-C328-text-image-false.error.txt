@@ -1,0 +1,10 @@
+java.lang.IllegalStateException: Malformed UTF-8 input
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.nativeGenerate(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at ProbeKt.main$lambda$1(Probe.kt:27)
+	at ProbeKt.test(Probe.kt:10)
+	at ProbeKt.main(Probe.kt:25)
+	at ProbeKt.main(Probe.kt)

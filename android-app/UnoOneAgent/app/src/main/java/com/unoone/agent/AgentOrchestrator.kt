@@ -456,15 +456,7 @@ class AgentOrchestrator(
      * Should be called from a coroutine (engine init is slow).
      */
     suspend fun loadLlmModel(modelPath: String): com.unoone.agent.core.model.Result<Unit> = modelTransition {
-        if (ExclusiveBrainLeaseState.isActive()) {
-            return@modelTransition Result.Error("Gemma is reserved by ${ExclusiveBrainLeaseState.currentOwner()}")
-        }
-        val result = commandParser.loadModel(modelPath)
-        if (result is Result.Success) {
-            lastLoadedPath = modelPath
-            consecutiveInferenceFailures = 0
-        }
-        result
+        loadLlmModel(modelPath, com.unoone.agent.core.model.BrainModelRegistry.defaultProfile, leaseOwner = null)
     }
 
     /**
@@ -496,6 +488,13 @@ class AgentOrchestrator(
         val activeOwner = ExclusiveBrainLeaseState.currentOwner()
         if (activeOwner != null && activeOwner != leaseOwner) {
             return Result.Error("Gemma is reserved by $activeOwner")
+        }
+        // Central admission includes recovery and lease restoration, not only UI selection.
+        if (spec.runtime == com.unoone.agent.core.model.BrainRuntime.LLAMA_CPP) {
+            if (!BrainProviderPreferences(context).owlOptIn) {
+                return Result.Error("GUI-Owl experimental consent is required before loading")
+            }
+            context.owlLoadAdmissionError(spec)?.let { return Result.Error(it) }
         }
         val result = commandParser.loadModel(modelPath, spec,
             leaseOwner ?: com.unoone.agent.core.model.E4bRuntimeCoordinator.PHONE_OWNER)
@@ -599,6 +598,47 @@ class AgentOrchestrator(
             }
         } finally { bytes.fill(0); stop.close() }
     } }
+
+    /** Native approved screenshot task bridge; no new resident model or text-planner fallback. */
+    suspend fun runOwlTask(consent: com.unoone.agent.owl.OwlTaskConsent, goals: List<NativeDeviceGoal>): com.unoone.agent.core.device.DeviceOutcome =
+        deviceSession.runOwl(context, consent, goals) { system, prompt, image ->
+            check(localBrain.loadedProfile()?.id == com.unoone.agent.core.model.BrainModelId.GUI_OWL_1_5_4B_INSTRUCT && localBrain.supportsImages()) { "Load GUI-Owl image runtime first" }
+            when (val result = localBrain.controllerRequest(system, prompt, image)) {
+                is Result.Success -> result.data
+                is Result.Error -> error("Owl image inference unavailable")
+            }
+        }
+
+    /** Dedicated synthetic diagnostic: selected existing engine, scheduler lease, no screen/UI lock. */
+    suspend fun runOwlSelfTest(spec: com.unoone.agent.core.model.BrainModelSpec): com.unoone.agent.brain.BrainSelfTestResult = coroutineScope {
+        val generation = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation
+        val job = requireNotNull(currentCoroutineContext()[kotlinx.coroutines.Job])
+        val stop = com.unoone.agent.core.runtime.GlobalTaskCancellation.register(this@AgentOrchestrator) {
+            job.cancel()
+            it.cancelLlmInference("Owl self-test stopped")
+        }
+        try {
+            advisoryModelCall {
+                fun checkCurrent() {
+                    check(AgentRuntimeGate.isEnabled() && generation == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation)
+                    check(spec.id == com.unoone.agent.core.model.BrainModelId.GUI_OWL_1_5_4B_INSTRUCT)
+                    check(com.unoone.agent.storage.PreferencesManager(context).selectedBrainManifestId == spec.manifestId)
+                    check(localBrain.loadedProfile()?.manifestId == spec.manifestId && localBrain.supportsImages()) { "Load selected Owl brain first" }
+                }
+                checkCurrent()
+                com.unoone.agent.owl.OwlSelfTest.run(spec, loadedBrainBackend()) { system, prompt, bytes ->
+                    checkCurrent()
+                    val result = localBrain.controllerRequest(system, prompt, bytes)
+                    currentCoroutineContext().ensureActive()
+                    checkCurrent()
+                    when (result) {
+                        is Result.Success -> result.data
+                        is Result.Error -> error("Owl runtime probe failed")
+                    }
+                }
+            }
+        } finally { stop.close() }
+    }
 
     /** Last load error (empty on success) — surfaces device-compatibility status to the UI. */
     fun lastBrainLoadError(): String = commandParser.lastLoadError()

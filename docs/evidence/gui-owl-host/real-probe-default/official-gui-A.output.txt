@@ -1,0 +1,4 @@
+Action: Click on the "Search" button to proceed with the search function.
+<tool_call>
+{"name": "mobile_use", "arguments": {"action": "click", "coordinate": [743, 673]}}
+</tool_call>

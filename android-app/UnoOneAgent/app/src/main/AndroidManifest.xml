@@ -84,6 +84,8 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.UnoOne">
 
+        <activity android:name=".owl.OwlPracticeActivity" android:exported="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:windowSoftInputMode="stateAlwaysHidden" />
+
         <!-- LiteRT-LM GPU acceleration. Both libraries are optional so unsupported devices cleanly
              fall back to the existing CPU backend instead of failing application startup. -->
         <uses-native-library

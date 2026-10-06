@@ -1,5 +1,7 @@
 # UnoOne V3 — build on your laptop, install and record phone results
 
+> **GUI-Owl users:** the current 0.7.0-alpha-owl build has a dedicated [GUI-Owl 4B setup guide](GUI_OWL_4B_PHONE_SETUP.md). The 0.6 receipts below are historical; general laptop/ADB instructions remain useful.
+
 ## Status and scope: read before pasting
 
 This guide targets **0.6.0-alpha-v3 / versionCode 6**, including Task Board. Current host gates passed: **842 JVM tests, zero failures/errors/skips**, app lint and both APK assemblies; [matching artifact identities and receipts](evidence/multitask-delivery/results.json). No phone qualification is claimed. Lint retains 15 historical baseline-suppressed errors. The [historical 770-test 0.5 receipts](evidence/phone-delivery/results.json) and older repair4 receipts remain separate. Use the exact main revision confirmed in the delivery message and record `git rev-parse HEAD`; do not infer a future revision.

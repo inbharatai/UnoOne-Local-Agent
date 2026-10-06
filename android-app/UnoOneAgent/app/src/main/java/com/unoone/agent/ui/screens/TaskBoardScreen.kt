@@ -18,7 +18,8 @@ import com.unoone.agent.ui.viewmodel.*
 @Composable
 fun TaskBoardScreen(onBack: () -> Unit, agentViewModel: AgentViewModel,
     viewModel: TaskBoardViewModel = viewModel(),
-    onPrepareResearchDraft: ((String, String) -> Admission)? = null) {
+    onPrepareResearchDraft: ((String, String) -> Admission)? = null,
+    onOwlTask: (() -> Unit)? = null) {
     val recoveredTasks by viewModel.recoveredTasks.collectAsState()
     val journalHealth by viewModel.journalHealth.collectAsState()
     var confirmClear by remember { mutableStateOf(false) }
@@ -51,6 +52,7 @@ fun TaskBoardScreen(onBack: () -> Unit, agentViewModel: AgentViewModel,
                     .semantics { contentDescription = "Stop all tasks across the app" }) { Text("Stop all") }
             }
             Text("Tasks", style = MaterialTheme.typography.headlineMedium)
+            onOwlTask?.let { Button(onClick = it) { Text("GUI-Owl approved screen task") } }
             Text("One phone executor. One model call at a time. Up to two non-UI preparation workers. No parallel robot taps.")
             Text("Enqueue while the phone is busy. Drafts generate text only; they never send it.")
             if (confirmation != null) Text("Paused for your confirmation — use the dialog. This is not a loading state.")

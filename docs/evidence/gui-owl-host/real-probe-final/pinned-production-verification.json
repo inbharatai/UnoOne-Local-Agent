@@ -1,0 +1,8 @@
+{
+  "source": "/agent/workspace/owl-native-prep/race-production-host",
+  "expected_and_verified": {
+    "libunoone_owl.so": "f3c85dac4703d17211a539c6649b6894fc4884068f13ab0f524e0b0e25610a22",
+    "classes/com/unoone/agent/localbrain/owl/OwlLlamaRuntime.class": "8884b30e8a7886bcd4e84fb448e0ea9b1220c38742852036f62af8b2c26068d3",
+    "classes/com/unoone/agent/localbrain/owl/OwlLlamaPlanner.class": "33f4dd45f0c94c9a7732613b0abdb7751261e3dbb6b98c90f38ec73c09668ed0"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "stale-load-permit": true,
+  "stale-queued-permit": true,
+  "output-truncation": true,
+  "unpaired-surrogate-text": true,
+  "invalid-C328-text-image-false": true,
+  "invalid-C328-text-image-true": true,
+  "unpaired-surrogate-system": true,
+  "invalid-C328-system-image-false": true,
+  "invalid-C328-system-image-true": true,
+  "text-sanity": true,
+  "red-image-sanity": true,
+  "unicode-positive": true,
+  "reload-text-sanity": true,
+  "gui-A": true,
+  "gui-B": true,
+  "close-acks": true,
+  "normal-exit": true,
+  "source-binary-unchanged": true,
+  "historical-evidence-unchanged": true,
+  "actual-pinned-JNI-mapped": true
+}

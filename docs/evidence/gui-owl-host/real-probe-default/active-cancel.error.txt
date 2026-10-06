@@ -1,0 +1,7 @@
+java.lang.IllegalStateException: Vision/prefill failed
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.nativeGenerate(Native Method)
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.generate(OwlLlamaRuntime.kt:89)
+	at ProbeKt.main$lambda$9$0(Probe.kt:40)
+	at ProbeKt.test(Probe.kt:10)
+	at ProbeKt.main$lambda$9(Probe.kt:40)
+	at java.base/java.lang.Thread.run(Thread.java:840)

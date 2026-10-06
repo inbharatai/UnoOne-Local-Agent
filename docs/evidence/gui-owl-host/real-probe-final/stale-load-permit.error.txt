@@ -1,0 +1,8 @@
+java.lang.IllegalStateException: Stale load permit
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.validateLoad(OwlLlamaRuntime.kt:16)
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.load(OwlLlamaRuntime.kt:49)
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.load$default(OwlLlamaRuntime.kt:41)
+	at ProbeKt.main$lambda$0(Probe.kt:19)
+	at ProbeKt.test(Probe.kt:10)
+	at ProbeKt.main(Probe.kt:19)
+	at ProbeKt.main(Probe.kt)

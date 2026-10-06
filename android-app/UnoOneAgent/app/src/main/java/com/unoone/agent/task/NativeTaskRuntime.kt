@@ -48,7 +48,42 @@ class NativeTaskRuntime(context: Context, private val orchestrator: AgentOrchest
     private val search = WorkerKind("notes-search")
     private val draft = WorkerKind("draft")
     private val preparation = WorkerKind("preparation")
+    private val owl = WorkerKind("owl-screen")
+    private val owlRequests = java.util.concurrent.ConcurrentHashMap<String, Pair<com.unoone.agent.owl.OwlTaskConsent, List<com.unoone.agent.NativeDeviceGoal>>>()
     val coordinator = TaskCoordinator(listOf(
+        WorkerRegistration(owl, WorkerLane.INTERACTIVE, NativeTaskWorker { ctx ->
+            val request = owlRequests.remove(ctx.instruction)
+                ?: return@NativeTaskWorker finish(ctx, TaskResult(TaskOutcome.NEEDS_USER), "Consent expired")
+            com.unoone.agent.voice.VoiceService.beginForegroundTask()
+            try {
+                journal.record(ctx.taskId, ReceiptStage.PREPARED)
+                val outcome = withContext(NativeTaskExecution(ctx, journal)) {
+                    val execution = requireNotNull(currentCoroutineContext()[NativeTaskExecution])
+                    fun checkApproval() { request.first.checkApproval(); ctx.checkActive() }
+                    ProcessTaskResources.ui.withLease(ctx.taskId, ::checkApproval) {
+                        fun checkOwned() {
+                            checkApproval()
+                            check(ProcessTaskResources.ui.owner() == ctx.taskId) { "Owl UI ownership revoked" }
+                            check(com.unoone.agent.phonecontrol.ScreenshotCapture.hasPermission()) { "Owl capture permission revoked" }
+                            check(com.unoone.agent.accessibilitycontrol.UnoOneAccessibilityService.getInstance() != null) { "Owl accessibility unavailable" }
+                            check(orchestrator.isLlmLoaded() && orchestrator.loadedBrainProfile()?.id == com.unoone.agent.core.model.BrainModelId.GUI_OWL_1_5_4B_INSTRUCT) { "Resident Owl profile required before navigation" }
+                        }
+                        com.unoone.agent.owl.runApprovedOwlStart(
+                            ownPractice = request.first.packageName == context.packageName,
+                            checkActive = ::checkOwned,
+                            beforeLaunch = { execution.beforeEffect(TaskCapability.UI_WRITE) },
+                            launch = {
+                                context.startActivity(android.content.Intent(context, com.unoone.agent.owl.OwlPracticeActivity::class.java)
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                            }
+                        ) { orchestrator.runOwlTask(request.first, request.second) }
+                    }
+                }
+                finish(ctx, TaskResult(if (outcome.status == com.unoone.agent.core.device.DeviceOutcomeStatus.VERIFIED) TaskOutcome.VERIFIED else TaskOutcome.NEEDS_USER), outcome.reason)
+            } catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) { finish(ctx, TaskResult(TaskOutcome.NEEDS_USER), "Owl stopped: capture/model/scope check failed; no replay") }
+            finally { com.unoone.agent.voice.VoiceService.endForegroundTask() }
+        }),
         WorkerRegistration(preparation, WorkerLane.BACKGROUND, NativeTaskWorker { ctx ->
             val payload = org.json.JSONObject(ctx.instruction)
             val children = listOf(
@@ -181,6 +216,42 @@ class NativeTaskRuntime(context: Context, private val orchestrator: AgentOrchest
         return submit(if (inputType == InputType.VOICE) voice else command, text, authorized,
             if (inputType == InputType.VOICE) TaskSource.VOICE else TaskSource.TEXT, generation)
     }
+    /** Called only after displaying this exact task's package/goal/limits and receiving consent. */
+    fun submitOwl(consent: com.unoone.agent.owl.OwlTaskConsent, registry: com.unoone.agent.phonecontrol.AppRegistry): Admission {
+        val generation = coordinator.captureGeneration()
+        // Never replace the review's global epoch with a fresh one at Approve/IO completion.
+        if (consent.approvalEpoch != GlobalTaskCancellation.generation ||
+            !AgentRuntimeGate.isEnabled() || journal.health != "HEALTHY") return Admission.Rejected(RejectionReason.CLOSED)
+        val parsed = com.unoone.agent.NativeDeviceCommands.parse(consent.instruction) { name ->
+            (registry.resolve(name) as? com.unoone.agent.phonecontrol.AppRegistry.Resolution.Found)?.app?.packageName
+        } ?: return Admission.Rejected(RejectionReason.INVALID_REQUEST)
+        val goals = if (parsed is com.unoone.agent.NativeDeviceGoal.Sequence) parsed.goals else listOf(parsed)
+        val supported = goals.withIndex().all { (index, goal) -> when (goal) {
+            is com.unoone.agent.NativeDeviceGoal.OpenApp -> index == 0
+            is com.unoone.agent.NativeDeviceGoal.ReadScreen, is com.unoone.agent.NativeDeviceGoal.Find,
+            is com.unoone.agent.NativeDeviceGoal.Click, is com.unoone.agent.NativeDeviceGoal.Interact -> true
+            is com.unoone.agent.NativeDeviceGoal.Current -> goal.command == "read"
+            else -> false
+        } }
+        if (!supported || goals.size > consent.maxSteps || goals.any { it is com.unoone.agent.NativeDeviceGoal.NeedsUser } ||
+            com.unoone.agent.NativeDeviceCommands.scopePackages(parsed) { consent.packageName } != setOf(consent.packageName))
+            return Admission.Rejected(RejectionReason.INVALID_REQUEST)
+        if (consent.approvalEpoch != GlobalTaskCancellation.generation)
+            return Admission.Rejected(RejectionReason.CLOSED)
+        val key = UUID.randomUUID().toString()
+        owlRequests[key] = consent to goals
+        val admitted = coordinator.submit(TaskRequest(RequestId(key), owl, key,
+            TaskScope(setOf(TaskCapability.UI_READ, TaskCapability.UI_WRITE, TaskCapability.MODEL), setOf(consent.packageName)),
+            generation, TaskSource.NATIVE, TaskPriority.INTERACTIVE,
+            TaskBudget(consent.maxSeconds * 1000L, actions = 128, modelCalls = consent.maxSteps)))
+        if (admitted is Admission.Rejected) owlRequests.remove(key)
+        if (admitted is Admission.Accepted) {
+            // await is terminal even when cancelled before the worker removes its request.
+            scope.launch { try { coordinator.await(admitted.taskId) } finally { owlRequests.remove(key) } }
+        }
+        return admitted
+    }
+
     fun submitNotesSearch(query: String): Admission = submit(search, query,
         TaskScope(setOf(TaskCapability.LOCAL_READ)), TaskSource.NATIVE, coordinator.captureGeneration())
     fun submitDraft(prompt: String, requiredPhrases: List<String> = emptyList()): Admission {

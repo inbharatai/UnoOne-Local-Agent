@@ -58,11 +58,12 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
     val brainBusy by viewModel.brainBusy.collectAsState()
     val verifying by viewModel.verifying.collectAsState()
     val pendingExperimentalSelection by viewModel.pendingExperimentalSelection.collectAsState()
-    pendingExperimentalSelection?.let {
+    pendingExperimentalSelection?.let { selectedId ->
+        val owl = selectedId == com.unoone.agent.core.model.GuiOwlArtifact.MANIFEST_ID
         AlertDialog(
             onDismissRequest = viewModel::dismissExperimentalSelection,
-            title = { Text("Opt in to experimental Qwen?") },
-            text = { Text("Qwen 3.5 2B uses MNN and a complete nine-file artifact set. Native/device, vision and performance qualification are pending. This changes only your selected profile; E2B/E4B remain available. No automatic fallback or screenshot capture is enabled.") },
+            title = { Text(if (owl) "Opt in to experimental GUI-Owl?" else "Opt in to experimental Qwen?") },
+            text = { Text(if (owl) "GUI-Owl 1.5 4B uses llama.cpp with a required GGUF decoder + projector (about 2.95 GB). 8 GB RAM is conservative policy, not a measured guarantee; model + KV/vision overhead must fit available RAM. Phone qualification is pending. Browser DOM protocol is unsupported. No fallback or screenshot consent is granted. Other profiles remain installed. " + com.unoone.agent.core.model.GuiOwlArtifact.PROVENANCE_DISCLOSURE else "Qwen 3.5 2B uses MNN and a complete nine-file artifact set. Native/device, vision and performance qualification are pending. This changes only your selected profile; E2B/E4B remain available. No automatic fallback or screenshot capture is enabled.") },
             confirmButton = { Button(onClick = viewModel::confirmExperimentalSelection) { Text("Opt in and select") } },
             dismissButton = { TextButton(onClick = viewModel::dismissExperimentalSelection) { Text("Cancel") } }
         )
@@ -145,7 +146,7 @@ fun ModelStatusScreen(viewModel: ModelStatusViewModel, onBack: () -> Unit) {
         }
 
         Text("Planning profile", style = MaterialTheme.typography.titleMedium)
-        Text("E2B is the new-install default. Existing verified E4B installations are retained. Qwen is experimental and opt-in only. Selecting or downloading never deletes other profiles.",
+        Text("E2B is the new-install default. Existing verified E4B installations are retained. Qwen and GUI-Owl are independently experimental and opt-in only. Selecting or downloading never deletes other profiles.",
             style = MaterialTheme.typography.bodySmall)
         profiles.forEach { profile ->
             val selected = profile.manifestId == brainStatus?.manifestId
@@ -230,7 +231,7 @@ private fun BrainCard(
             )
             DetailLine(
                 "Memory gate",
-                "${row.minimumRamMb} MB minimum · ${row.recommendedRamMb} MB recommended"
+                "${row.minimumRamMb} MB minimum · ${row.recommendedRamMb} MB recommended (policy, not measured qualification)"
             )
             DetailLine(
                 "Loaded",
@@ -249,6 +250,7 @@ private fun BrainCard(
                 DetailLine(
                     "Self-test",
                     when {
+                        result.manifestId == com.unoone.agent.core.model.GuiOwlArtifact.MANIFEST_ID -> result.message
                         !result.installed -> "Artifact not installed"
                         !result.loaded -> "Load failed: ${result.loadError}"
                         result.proposedTool == null -> "Loaded on ${result.backend}; no tool proposed"
@@ -266,7 +268,7 @@ private fun BrainCard(
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = onLoad, enabled = row.installed) { Text("Load Brain") }
-                        Button(onClick = onSelfTest, enabled = row.installed) { Text("Run Self-Test") }
+                        Button(onClick = onSelfTest, enabled = row.installed) { Text(if (row.manifestId == com.unoone.agent.core.model.GuiOwlArtifact.MANIFEST_ID) "Run Owl Self-Test" else "Run Self-Test") }
                     }
                     OutlinedButton(onClick = onVerify, enabled = row.installed) {
                         Text("Verify complete SHA-256")

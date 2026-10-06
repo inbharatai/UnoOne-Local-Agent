@@ -125,8 +125,12 @@ fun UnoOneNavHost(
                 val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.unoone.agent.UnoOneApplication
                 com.unoone.agent.ui.screens.TaskBoardScreen(
                     onBack = { navController.popBackStack() }, agentViewModel = agentViewModel,
-                    onPrepareResearchDraft = { query, prompt -> application.taskRuntime.submitPreparation(query, prompt) }
+                    onPrepareResearchDraft = { query, prompt -> application.taskRuntime.submitPreparation(query, prompt) },
+                    onOwlTask = { navController.navigate("owl-task") }
                 )
+            }
+            composable("owl-task") {
+                com.unoone.agent.owl.OwlTaskScreen(onBack = { navController.popBackStack() })
             }
             composable("skills-v2") {
                 com.unoone.agent.ui.screens.SkillsV2Screen(onBack = { navController.popBackStack() })

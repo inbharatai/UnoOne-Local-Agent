@@ -1,0 +1,17 @@
+80: print_info: n_ctx_train           = 32768
+115: print_info: n_ctx_orig_yarn       = 32768
+143: load_tensors: loading model tensors, this can take a while... (load_mode = mmap)
+1230: load_tensors:   CPU_Mapped model buffer size =  2375.91 MiB
+1233: llama_context: n_ctx                 = 1024
+1234: llama_context: n_ctx_seq             = 1024
+1245: llama_context: n_ctx_seq (1024) < n_ctx_train (32768) -- the full capacity of the model will not be utilized
+1247: llama_context:        CPU  output buffer size =     0.58 MiB
+1284: llama_kv_cache:        CPU KV buffer size =   144.00 MiB
+2608: sched_reserve:        CPU compute buffer size =    50.35 MiB
+3029: Owl admission: text_plus_vision=23 image_tokens=0 reserved_output=16 context=1024 image_edge=256
+3044: Owl admission: text_plus_vision=91 image_tokens=64 reserved_output=16 context=1024 image_edge=256
+3046: reserve_compute_meta:        CPU compute buffer size =     9.75 MiB
+3048: warmup: flash attention is enabled
+3060: Owl admission: text_plus_vision=22 image_tokens=0 reserved_output=1 context=1024 image_edge=256
+3067: Owl admission: text_plus_vision=15 image_tokens=0 reserved_output=1 context=1024 image_edge=256
+3068: ~llama_context:        CPU compute buffer size is  50.3469 MiB, matches expectation of  50.3469 MiB

@@ -8,15 +8,15 @@ class BrainModelRegistryTest {
         assertEquals(BrainModelRegistry.GEMMA_4_E2B, BrainModelRegistry.resolveOrDefault(null))
         assertEquals(BrainModelRegistry.GEMMA_4_E2B, BrainModelRegistry.resolveOrDefault("unknown"))
         assertEquals(BrainModelRegistry.GEMMA_4_E4B, BrainModelRegistry.resolveOrDefault("gemma-4-e4b"))
-        assertEquals(3, BrainModelRegistry.all.size)
-        assertEquals(setOf("gemma-4-e2b", "gemma-4-e4b", "qwen3.5-2b-mnn"), BrainModelRegistry.all.map { it.manifestId }.toSet())
+        assertEquals(4, BrainModelRegistry.all.size)
+        assertEquals(setOf("gemma-4-e2b", "gemma-4-e4b", "qwen3.5-2b-mnn", GuiOwlArtifact.MANIFEST_ID), BrainModelRegistry.all.map { it.manifestId }.toSet())
         BrainModelRegistry.all.forEach {
             assertEquals(it, BrainModelRegistry.byId(it.id))
             assertEquals(it, BrainModelRegistry.byFolder(it.modelFolder))
             assertEquals(it, BrainModelRegistry.byManifestId(it.manifestId))
             assertFalse(it.isDeviceVerified)
             assertFalse(it.isLegacy)
-            if (it.runtime == BrainRuntime.MNN) return@forEach
+            if (it.runtime != BrainRuntime.LITERT_LM) return@forEach
             assertEquals(2048, E4bRuntimeBudgets.phone(it).contextTokens)
             assertEquals(96, E4bRuntimeBudgets.chat(it).outputTokens)
             assertEquals(384, E4bRuntimeBudgets.pageAgent(it).outputTokens)

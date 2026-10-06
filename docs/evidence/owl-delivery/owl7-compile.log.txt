@@ -1,0 +1,269 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.11.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+Configuration on demand is an incubating feature.
+> Task :accessibilitycontrol:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :accessibilitycontrol:preBuild UP-TO-DATE
+> Task :accessibilitycontrol:preDebugBuild UP-TO-DATE
+> Task :accessibilitycontrol:generateDebugResValues UP-TO-DATE
+> Task :accessibilitycontrol:generateDebugResources UP-TO-DATE
+> Task :accessibilitycontrol:packageDebugResources UP-TO-DATE
+> Task :accessibilitycontrol:parseDebugLocalResources UP-TO-DATE
+> Task :accessibilitycontrol:generateDebugRFile UP-TO-DATE
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:preBuild UP-TO-DATE
+> Task :core:preDebugBuild UP-TO-DATE
+> Task :core:generateDebugResValues UP-TO-DATE
+> Task :core:generateDebugResources UP-TO-DATE
+> Task :core:packageDebugResources UP-TO-DATE
+> Task :core:parseDebugLocalResources UP-TO-DATE
+> Task :core:generateDebugRFile UP-TO-DATE
+> Task :core:compileDebugKotlin UP-TO-DATE
+> Task :core:javaPreCompileDebug UP-TO-DATE
+> Task :core:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :accessibilitycontrol:compileDebugKotlin UP-TO-DATE
+> Task :accessibilitycontrol:javaPreCompileDebug UP-TO-DATE
+> Task :accessibilitycontrol:compileDebugJavaWithJavac NO-SOURCE
+> Task :accessibilitycontrol:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :agentrouter:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :agentrouter:preBuild UP-TO-DATE
+> Task :agentrouter:preDebugBuild UP-TO-DATE
+> Task :agentrouter:generateDebugResValues UP-TO-DATE
+> Task :agentrouter:generateDebugResources UP-TO-DATE
+> Task :agentrouter:packageDebugResources UP-TO-DATE
+> Task :agentrouter:parseDebugLocalResources UP-TO-DATE
+> Task :agentrouter:generateDebugRFile UP-TO-DATE
+> Task :phonecontrol:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :phonecontrol:preBuild UP-TO-DATE
+> Task :phonecontrol:preDebugBuild UP-TO-DATE
+> Task :phonecontrol:generateDebugResValues UP-TO-DATE
+> Task :phonecontrol:generateDebugResources UP-TO-DATE
+> Task :phonecontrol:packageDebugResources UP-TO-DATE
+> Task :phonecontrol:parseDebugLocalResources UP-TO-DATE
+> Task :phonecontrol:generateDebugRFile UP-TO-DATE
+> Task :phonecontrol:compileDebugKotlin UP-TO-DATE
+> Task :phonecontrol:javaPreCompileDebug UP-TO-DATE
+> Task :phonecontrol:compileDebugJavaWithJavac NO-SOURCE
+> Task :phonecontrol:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :safetyguard:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :safetyguard:preBuild UP-TO-DATE
+> Task :safetyguard:preDebugBuild UP-TO-DATE
+> Task :safetyguard:generateDebugResValues UP-TO-DATE
+> Task :safetyguard:generateDebugResources UP-TO-DATE
+> Task :safetyguard:packageDebugResources UP-TO-DATE
+> Task :safetyguard:parseDebugLocalResources UP-TO-DATE
+> Task :safetyguard:generateDebugRFile UP-TO-DATE
+> Task :safetyguard:compileDebugKotlin UP-TO-DATE
+> Task :safetyguard:javaPreCompileDebug UP-TO-DATE
+> Task :safetyguard:compileDebugJavaWithJavac NO-SOURCE
+> Task :safetyguard:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :storage:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :storage:preBuild UP-TO-DATE
+> Task :storage:preDebugBuild UP-TO-DATE
+> Task :storage:generateDebugResValues UP-TO-DATE
+> Task :storage:generateDebugResources UP-TO-DATE
+> Task :storage:packageDebugResources UP-TO-DATE
+> Task :storage:parseDebugLocalResources UP-TO-DATE
+> Task :storage:generateDebugRFile UP-TO-DATE
+> Task :storage:kspDebugKotlin UP-TO-DATE
+> Task :storage:compileDebugKotlin UP-TO-DATE
+> Task :storage:javaPreCompileDebug UP-TO-DATE
+> Task :storage:compileDebugJavaWithJavac NO-SOURCE
+> Task :storage:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :agentrouter:compileDebugKotlin UP-TO-DATE
+> Task :agentrouter:javaPreCompileDebug UP-TO-DATE
+> Task :agentrouter:compileDebugJavaWithJavac NO-SOURCE
+> Task :agentrouter:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :accessibilitycontrol:compileDebugLibraryResources UP-TO-DATE
+> Task :agentrouter:compileDebugLibraryResources UP-TO-DATE
+> Task :accessibilitycontrol:writeDebugAarMetadata UP-TO-DATE
+> Task :agentrouter:writeDebugAarMetadata UP-TO-DATE
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :core:writeDebugAarMetadata UP-TO-DATE
+> Task :languagepacks:preBuild UP-TO-DATE
+> Task :languagepacks:preDebugBuild UP-TO-DATE
+> Task :languagepacks:writeDebugAarMetadata UP-TO-DATE
+> Task :localbrain:preBuild UP-TO-DATE
+> Task :localbrain:preDebugBuild UP-TO-DATE
+> Task :localbrain:writeDebugAarMetadata UP-TO-DATE
+> Task :memory:preBuild UP-TO-DATE
+> Task :memory:preDebugBuild UP-TO-DATE
+> Task :memory:writeDebugAarMetadata UP-TO-DATE
+> Task :modelmanager:preBuild UP-TO-DATE
+> Task :modelmanager:preDebugBuild UP-TO-DATE
+> Task :modelmanager:writeDebugAarMetadata UP-TO-DATE
+> Task :observability:preBuild UP-TO-DATE
+> Task :observability:preDebugBuild UP-TO-DATE
+> Task :observability:writeDebugAarMetadata UP-TO-DATE
+> Task :phonecontrol:writeDebugAarMetadata UP-TO-DATE
+> Task :safetyguard:writeDebugAarMetadata UP-TO-DATE
+> Task :securebrowser:verifyBrowserRuntime
+> Task :securebrowser:preBuild
+> Task :securebrowser:preDebugBuild
+> Task :securebrowser:writeDebugAarMetadata UP-TO-DATE
+> Task :skills:preBuild UP-TO-DATE
+> Task :skills:preDebugBuild UP-TO-DATE
+> Task :skills:writeDebugAarMetadata UP-TO-DATE
+> Task :storage:writeDebugAarMetadata UP-TO-DATE
+> Task :voice:preBuild UP-TO-DATE
+> Task :voice:preDebugBuild UP-TO-DATE
+> Task :voice:writeDebugAarMetadata UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :languagepacks:generateDebugResValues UP-TO-DATE
+> Task :languagepacks:generateDebugResources UP-TO-DATE
+> Task :languagepacks:packageDebugResources UP-TO-DATE
+> Task :localbrain:generateDebugResValues UP-TO-DATE
+> Task :localbrain:generateDebugResources UP-TO-DATE
+> Task :localbrain:packageDebugResources UP-TO-DATE
+> Task :memory:generateDebugResValues UP-TO-DATE
+> Task :memory:generateDebugResources UP-TO-DATE
+> Task :memory:packageDebugResources UP-TO-DATE
+> Task :modelmanager:generateDebugResValues UP-TO-DATE
+> Task :modelmanager:generateDebugResources UP-TO-DATE
+> Task :modelmanager:packageDebugResources UP-TO-DATE
+> Task :observability:generateDebugResValues UP-TO-DATE
+> Task :observability:generateDebugResources UP-TO-DATE
+> Task :observability:packageDebugResources UP-TO-DATE
+> Task :securebrowser:generateDebugResValues UP-TO-DATE
+> Task :securebrowser:generateDebugResources UP-TO-DATE
+> Task :securebrowser:packageDebugResources UP-TO-DATE
+> Task :skills:generateDebugResValues UP-TO-DATE
+> Task :skills:generateDebugResources UP-TO-DATE
+> Task :skills:packageDebugResources UP-TO-DATE
+> Task :voice:generateDebugResValues UP-TO-DATE
+> Task :voice:generateDebugResources UP-TO-DATE
+> Task :voice:packageDebugResources UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :accessibilitycontrol:extractDeepLinksDebug UP-TO-DATE
+> Task :accessibilitycontrol:processDebugManifest UP-TO-DATE
+> Task :agentrouter:extractDeepLinksDebug UP-TO-DATE
+> Task :agentrouter:processDebugManifest UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :core:extractDeepLinksDebug UP-TO-DATE
+> Task :core:processDebugManifest UP-TO-DATE
+> Task :languagepacks:extractDeepLinksDebug UP-TO-DATE
+> Task :languagepacks:processDebugManifest UP-TO-DATE
+> Task :localbrain:extractDeepLinksDebug UP-TO-DATE
+> Task :localbrain:processDebugManifest UP-TO-DATE
+> Task :memory:extractDeepLinksDebug UP-TO-DATE
+> Task :memory:processDebugManifest UP-TO-DATE
+> Task :modelmanager:extractDeepLinksDebug UP-TO-DATE
+> Task :modelmanager:processDebugManifest UP-TO-DATE
+> Task :observability:extractDeepLinksDebug UP-TO-DATE
+> Task :observability:processDebugManifest UP-TO-DATE
+> Task :phonecontrol:extractDeepLinksDebug UP-TO-DATE
+> Task :phonecontrol:processDebugManifest UP-TO-DATE
+> Task :safetyguard:extractDeepLinksDebug UP-TO-DATE
+> Task :safetyguard:processDebugManifest UP-TO-DATE
+> Task :securebrowser:extractDeepLinksDebug UP-TO-DATE
+> Task :securebrowser:processDebugManifest UP-TO-DATE
+> Task :skills:extractDeepLinksDebug UP-TO-DATE
+> Task :skills:processDebugManifest UP-TO-DATE
+> Task :storage:extractDeepLinksDebug UP-TO-DATE
+> Task :storage:processDebugManifest UP-TO-DATE
+> Task :voice:extractDeepLinksDebug UP-TO-DATE
+> Task :voice:processDebugManifest UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :core:compileDebugLibraryResources UP-TO-DATE
+> Task :languagepacks:compileDebugLibraryResources UP-TO-DATE
+> Task :languagepacks:parseDebugLocalResources UP-TO-DATE
+> Task :languagepacks:generateDebugRFile UP-TO-DATE
+> Task :localbrain:compileDebugLibraryResources UP-TO-DATE
+> Task :localbrain:parseDebugLocalResources UP-TO-DATE
+> Task :localbrain:generateDebugRFile UP-TO-DATE
+> Task :memory:compileDebugLibraryResources UP-TO-DATE
+> Task :memory:parseDebugLocalResources UP-TO-DATE
+> Task :memory:generateDebugRFile UP-TO-DATE
+> Task :modelmanager:compileDebugLibraryResources UP-TO-DATE
+> Task :modelmanager:parseDebugLocalResources UP-TO-DATE
+> Task :modelmanager:generateDebugRFile UP-TO-DATE
+> Task :observability:compileDebugLibraryResources UP-TO-DATE
+> Task :observability:parseDebugLocalResources UP-TO-DATE
+> Task :observability:generateDebugRFile UP-TO-DATE
+> Task :phonecontrol:compileDebugLibraryResources UP-TO-DATE
+> Task :safetyguard:compileDebugLibraryResources UP-TO-DATE
+> Task :securebrowser:compileDebugLibraryResources UP-TO-DATE
+> Task :securebrowser:parseDebugLocalResources UP-TO-DATE
+> Task :securebrowser:generateDebugRFile UP-TO-DATE
+> Task :skills:compileDebugLibraryResources UP-TO-DATE
+> Task :skills:parseDebugLocalResources UP-TO-DATE
+> Task :skills:generateDebugRFile UP-TO-DATE
+> Task :storage:compileDebugLibraryResources UP-TO-DATE
+> Task :voice:compileDebugLibraryResources UP-TO-DATE
+> Task :voice:parseDebugLocalResources UP-TO-DATE
+> Task :voice:generateDebugRFile UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :languagepacks:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :modelmanager:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :modelmanager:compileDebugKotlin UP-TO-DATE
+> Task :modelmanager:javaPreCompileDebug UP-TO-DATE
+> Task :modelmanager:compileDebugJavaWithJavac NO-SOURCE
+> Task :modelmanager:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :languagepacks:compileDebugKotlin UP-TO-DATE
+> Task :languagepacks:javaPreCompileDebug UP-TO-DATE
+> Task :languagepacks:compileDebugJavaWithJavac NO-SOURCE
+> Task :languagepacks:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :localbrain:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :observability:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :observability:compileDebugKotlin UP-TO-DATE
+> Task :observability:javaPreCompileDebug UP-TO-DATE
+> Task :observability:compileDebugJavaWithJavac NO-SOURCE
+> Task :observability:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :localbrain:compileDebugKotlin UP-TO-DATE
+> Task :localbrain:javaPreCompileDebug UP-TO-DATE
+> Task :localbrain:compileDebugJavaWithJavac NO-SOURCE
+> Task :localbrain:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :memory:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :memory:compileDebugKotlin UP-TO-DATE
+> Task :memory:javaPreCompileDebug UP-TO-DATE
+> Task :memory:compileDebugJavaWithJavac NO-SOURCE
+> Task :memory:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :securebrowser:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :securebrowser:compileDebugKotlin UP-TO-DATE
+> Task :securebrowser:javaPreCompileDebug UP-TO-DATE
+> Task :securebrowser:compileDebugJavaWithJavac NO-SOURCE
+> Task :securebrowser:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :skills:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :skills:compileDebugKotlin UP-TO-DATE
+> Task :skills:javaPreCompileDebug UP-TO-DATE
+> Task :skills:compileDebugJavaWithJavac NO-SOURCE
+> Task :skills:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :voice:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :voice:compileDebugKotlin UP-TO-DATE
+> Task :voice:javaPreCompileDebug UP-TO-DATE
+> Task :voice:compileDebugJavaWithJavac NO-SOURCE
+> Task :voice:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :app:kspDebugKotlin
+> Task :app:compileDebugKotlin
+w: file:///agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/UnoOneApplication.kt:361:42 'static field TRIM_MEMORY_RUNNING_LOW: Int' is deprecated. Deprecated in Java.
+w: file:///agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/UnoOneApplication.kt:362:46 'static field TRIM_MEMORY_RUNNING_CRITICAL: Int' is deprecated. Deprecated in Java.
+w: file:///agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/browser/BrowserAsyncOwnership.kt:5:23 Non-public primary constructor is exposed via the generated 'copy()' method of the 'data' class.
+
+The generated 'copy()' will change its visibility in future releases.
+
+To suppress the warning do one of the following:
+- Annotate the data class with the '@ConsistentCopyVisibility' annotation.
+- Use the '-Xconsistent-data-class-copy-visibility' compiler flag.
+- Annotate the data class with the '@ExposedCopyVisibility' annotation 
+  (Discouraged, but can be used to keep binary compatibility).
+
+To learn more, see the documentation of the '@ConsistentCopyVisibility' and '@ExposedCopyVisibility' annotations.
+
+This will become an error in language version 2.5. See https://youtrack.jetbrains.com/issue/KT-11914.
+w: file:///agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/execution/ActionExecutor.kt:432:26 'fun recycle(): Unit' is deprecated. Deprecated in Java.
+w: file:///agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/owl/OwlPracticeActivity.kt:15:52 'static field FLAG_FULLSCREEN: Int' is deprecated. Deprecated in Java.
+w: file:///agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/owl/OwlPracticeActivity.kt:15:96 'static field FLAG_FULLSCREEN: Int' is deprecated. Deprecated in Java.
+w: file:///agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/app/src/main/java/com/unoone/agent/ui/theme/Theme.kt:66:24 'var statusBarColor: Int' is deprecated. Deprecated in Java.
+
+BUILD SUCCESSFUL in 1m 11s
+185 actionable tasks: 3 executed, 182 up-to-date

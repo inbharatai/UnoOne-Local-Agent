@@ -1,0 +1,116 @@
+{
+  "version": "0.7.0-alpha-owl",
+  "versionCode": 7,
+  "baseCommit": "054f9eb926456501f7edbd32800cdb764ff500bf",
+  "gates": {
+    "compile": "0",
+    "jvm": "0",
+    "lint": "0",
+    "apk": "0"
+  },
+  "jvm": {
+    "tests": 884,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "modules": {
+    "app": {
+      "tests": 321,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "core": {
+      "tests": 297,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "languagepacks": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "localbrain": {
+      "tests": 75,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "modelmanager": {
+      "tests": 39,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "observability": {
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "phonecontrol": {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "securebrowser": {
+      "tests": 40,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "skills": {
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "voice": {
+      "tests": 78,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "browser": {
+    "typecheck": "passed",
+    "unit": 10,
+    "playwright": 15
+  },
+  "pythonInvariantTests": 11,
+  "artifacts": {
+    "debug": {
+      "bytes": 425626895,
+      "sha256": "db72df46bc4f583bd9b5b62cd51addc814889e28ade976ba655bec1d4a3c244b",
+      "package": "package: name='com.unoone.agent' versionCode='7' versionName='0.7.0-alpha-owl' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'",
+      "domSourceMatch": true,
+      "owlLibraries": [
+        "libunoone_owl.so",
+        "libmtmd.so",
+        "libllama.so",
+        "libggml.so",
+        "libggml-base.so",
+        "libggml-cpu.so",
+        "libc++_shared.so"
+      ]
+    },
+    "instrumentation": {
+      "bytes": 2737971,
+      "sha256": "54490464eba7545c7c783301a01b6eaa276f979d225e72963e6bf6e6634ac311",
+      "package": "package: name='com.unoone.agent.test' versionCode='' versionName='' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'"
+    }
+  },
+  "lint": "No new issues;15 historical baseline-filtered errors remain",
+  "owlNativeDependencyClosure": "all required Owl DSOs packaged and unversioned dependencies resolved",
+  "owlElf16k": true,
+  "legacyArm64LibrariesNotElf16k": [
+    "lib/arm64-v8a/libimage_processing_util_jni.so"
+  ],
+  "zipalign16k": "passed",
+  "realModelEvidence": "../gui-owl-host/SUMMARY.md; real synthetic host inference, not Android qualification",
+  "physicalQualification": "PENDING; no attached phone or emulator"
+}

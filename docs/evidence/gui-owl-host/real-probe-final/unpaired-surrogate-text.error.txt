@@ -1,0 +1,13 @@
+java.lang.IllegalArgumentException: Malformed UTF-16 input; cannot encode UTF-8
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.strictUtf8(OwlLlamaRuntime.kt:145)
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.generate(OwlLlamaRuntime.kt:101)
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.generate$default(OwlLlamaRuntime.kt:85)
+	at ProbeKt.main$lambda$2(Probe.kt:30)
+	at ProbeKt.test(Probe.kt:10)
+	at ProbeKt.main(Probe.kt:30)
+	at ProbeKt.main(Probe.kt)
+Caused by: java.nio.charset.MalformedInputException: Input length = 1
+	at java.base/java.nio.charset.CoderResult.throwException(CoderResult.java:274)
+	at java.base/java.nio.charset.CharsetEncoder.encode(CharsetEncoder.java:820)
+	at com.unoone.agent.localbrain.owl.OwlLlamaRuntime.strictUtf8(OwlLlamaRuntime.kt:143)
+	... 6 more

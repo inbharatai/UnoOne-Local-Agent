@@ -51,6 +51,26 @@ class ModelInstallerTest {
     }
 
     @Test
+    fun twoFileBundleRejectsCorruptProjectorAndResumesWithoutReplacingDecoder() {
+        val content = "tiny GGUF fixture".toByteArray()
+        val server = MiniHttpServer(content, supportRange = true).apply { start() }
+        try {
+            val decoder = ModelFile("decoder.gguf", server.url("decoder.gguf"), sha256(content), content.size.toLong())
+            val projector = ModelFile("mmproj.gguf", server.url("mmproj.gguf"), "0".repeat(64), content.size.toLong())
+            val pair = descriptor("owl", decoder.name, decoder.url, decoder.sha256, decoder.sizeBytes)
+                .copy(files = listOf(decoder, projector))
+            assertTrue(runBlocking { installer.install(pair) } is ModelInstaller.InstallResult.Failure)
+            val decoderFile = File(modelDir, "owl/decoder.gguf")
+            assertArrayEquals(content, decoderFile.readBytes())
+            assertFalse(File(modelDir, "owl/mmproj.gguf").exists())
+            val repaired = pair.copy(files = listOf(decoder, projector.copy(sha256 = sha256(content))))
+            assertTrue(runBlocking { installer.install(repaired) } is ModelInstaller.InstallResult.Success)
+            assertArrayEquals(content, decoderFile.readBytes())
+            assertArrayEquals(content, File(modelDir, "owl/mmproj.gguf").readBytes())
+        } finally { server.stop() }
+    }
+
+    @Test
     fun downloadsAndVerifiesChecksum() {
         val content = "hello world\n".toByteArray()
         val sha = sha256(content)

@@ -1,0 +1,11 @@
+<resources>
+    <item type="id" name="owl_practice_search_field" />
+    <item type="id" name="owl_practice_search_button" />
+    <item type="id" name="owl_practice_result" />
+    <string name="owl_practice_title">Owl practice screen — non-sensitive native demo only</string>
+    <string name="owl_practice_hint">Search query</string>
+    <string name="owl_practice_empty">Practice: no search yet</string>
+    <string name="owl_practice_search">Search</string>
+    <string name="owl_practice_results">Search results</string>
+    <string name="owl_practice_notice">Use demo values only. Back returns to task controls. No capture occurs merely by opening this screen.</string>
+</resources>

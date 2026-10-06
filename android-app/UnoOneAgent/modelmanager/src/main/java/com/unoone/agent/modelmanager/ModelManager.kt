@@ -408,6 +408,32 @@ class ModelManager(
         return File(appPrivateModelPath, descriptor.folder).absolutePath
     }
 
+    data class VerifiedGgufArtifacts(val root: String, val decoderPath: String, val projectorPath: String)
+
+    /** Exact pinned pair only; no glob discovery, partial activation or single-file readiness. */
+    suspend fun getGgufModelArtifacts(spec: BrainModelSpec, forceVerify: Boolean = false): VerifiedGgufArtifacts? {
+        if (spec != BrainModelRegistry.GUI_OWL_1_5_4B_INSTRUCT) return null
+        val identity = com.unoone.agent.core.model.GuiOwlArtifact
+        val descriptor = findModel(spec.manifestId) ?: return null
+        if (descriptor.folder != identity.FOLDER || descriptor.files.size != 2) return null
+        val expected = listOf(
+            Triple(identity.DECODER, identity.DECODER_BYTES, identity.DECODER_SHA256),
+            Triple(identity.PROJECTOR, identity.PROJECTOR_BYTES, identity.PROJECTOR_SHA256)
+        )
+        val root = File(appPrivateModelPath, descriptor.folder)
+        if (!isSafeChild(File(appPrivateModelPath), root)) return null
+        for ((name, size, hash) in expected) {
+            val entry = descriptor.files.singleOrNull { it.name == name } ?: return null
+            if (entry.archive || entry.asset != null || entry.sizeBytes != size || entry.sha256 != hash ||
+                entry.url != identity.url(name)) return null
+            val file = File(root, name)
+            if (!isSafeChild(root, file) || !file.isFile || file.length() != size) return null
+        }
+        if (!modelHealth(spec.manifestId, forceVerify = forceVerify).verified) return null
+        return VerifiedGgufArtifacts(root.absolutePath, File(root, identity.DECODER).absolutePath,
+            File(root, identity.PROJECTOR).absolutePath)
+    }
+
     /** User/developer explicit verification always performs a complete SHA-256 pass. */
     suspend fun verifyLlmArtifact(spec: BrainModelSpec = BrainModelRegistry.defaultProfile): HealthResult {
         return modelHealth(spec.manifestId, forceVerify = true)

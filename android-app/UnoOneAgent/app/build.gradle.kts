@@ -17,8 +17,8 @@ android {
         applicationId = "com.unoone.agent"
         minSdk = 28
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.0-alpha-v3"
+        versionCode = 7
+        versionName = "0.7.0-alpha-owl"
         // Required so instrumented androidTest classes (JUnit4 @Test, ApplicationProvider,
         // androidx.test.ext.junit) are discovered on-device. Without this AGP falls back to the
         // legacy android.test.InstrumentationTestRunner, which cannot load the androidx test

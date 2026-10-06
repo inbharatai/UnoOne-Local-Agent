@@ -1,0 +1,40 @@
+{
+  "A": {
+    "synthetic": true,
+    "phone_proof": false,
+    "eos_complete_raw_return": true,
+    "production_codec_accepted": true,
+    "search_bbox_normalized": [
+      523.4375,
+      566.40625,
+      960.9375,
+      800.78125
+    ],
+    "exact_raw_model_output": "Action: Click on the \"Search\" button to proceed with the search function.\n<tool_call>\n{\"name\": \"mobile_use\", \"arguments\": {\"action\": \"click\", \"coordinate\": [743, 673]}}\n</tool_call>",
+    "production_codec_result": "action=click;x=743.0;y=673.0;proposal=OwlProposal(action=click, coordinate=OwlPoint(x=743.0, y=673.0), coordinate2=null, text=null, time=null, button=null, status=null)",
+    "point": [
+      743.0,
+      673.0
+    ],
+    "point_inside_search_bbox": true
+  },
+  "B": {
+    "synthetic": true,
+    "phone_proof": false,
+    "eos_complete_raw_return": true,
+    "production_codec_accepted": true,
+    "search_bbox_normalized": [
+      46.875,
+      175.78125,
+      484.375,
+      410.15625
+    ],
+    "exact_raw_model_output": "Action: Click on the \"Search\" button to initiate the search function.\n<tool_call>\n{\"name\": \"mobile_use\", \"arguments\": {\"action\": \"click\", \"coordinate\": [257, 293]}}\n</tool_call>",
+    "production_codec_result": "action=click;x=257.0;y=293.0;proposal=OwlProposal(action=click, coordinate=OwlPoint(x=257.0, y=293.0), coordinate2=null, text=null, time=null, button=null, status=null)",
+    "point": [
+      257.0,
+      293.0
+    ],
+    "point_inside_search_bbox": true
+  }
+}

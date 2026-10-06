@@ -29,3 +29,22 @@ target_link_libraries(unoone_qwen PRIVATE MNN log)
 # Android 15+ 16 KB page compatibility (NDK r27).
 target_link_options(unoone_qwen PRIVATE "-Wl,-z,max-page-size=16384")
 target_link_options(MNN PRIVATE "-Wl,-z,max-page-size=16384")
+
+# GUI-Owl Qwen3VL text + real mtmd M-RoPE / DeepStack vision, pinned as a pair.
+FetchContent_Declare(owl_llama
+  URL https://codeload.github.com/ggml-org/llama.cpp/tar.gz/4f5406761517648c23dbd60ea5ade37f77a316c9
+  URL_HASH SHA256=bc04be751c6946e51909d1d5591d5be0fd3802673625916a81df788948be06b9)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "Shared Android dependencies" FORCE)
+foreach(opt GGML_NATIVE GGML_CUDA GGML_METAL GGML_VULKAN GGML_OPENCL GGML_SYCL GGML_BLAS GGML_OPENMP GGML_CPU_KLEIDIAI GGML_BACKEND_DL LLAMA_CURL LLAMA_OPENSSL LLAMA_BUILD_COMMON LLAMA_BUILD_TESTS LLAMA_BUILD_SERVER LLAMA_BUILD_EXAMPLES LLAMA_BUILD_TOOLS LLAMA_SUBPROCESS MTMD_VIDEO)
+  set(${opt} OFF CACHE BOOL "Owl CPU baseline" FORCE)
+endforeach()
+set(GGML_CPU_ARM_ARCH "armv8-a" CACHE STRING "Baseline arm64, no dotprod/i8mm requirements" FORCE)
+# Set before subdirectories so ALL native dependencies have 16KB-compatible segments.
+add_link_options("-Wl,-z,max-page-size=16384")
+set(LLAMA_BUILD_MTMD ON CACHE BOOL "Real multimodal library" FORCE)
+FetchContent_MakeAvailable(owl_llama)
+add_library(unoone_owl SHARED owl_jni.cpp)
+target_compile_features(unoone_owl PRIVATE cxx_std_17)
+target_compile_options(unoone_owl PRIVATE -fexceptions -frtti)
+target_include_directories(unoone_owl PRIVATE ${owl_llama_SOURCE_DIR}/include ${owl_llama_SOURCE_DIR}/ggml/include ${owl_llama_SOURCE_DIR}/tools/mtmd ${owl_llama_SOURCE_DIR}/vendor/stb)
+target_link_libraries(unoone_owl PRIVATE mtmd llama ggml ggml-base ggml-cpu log)
