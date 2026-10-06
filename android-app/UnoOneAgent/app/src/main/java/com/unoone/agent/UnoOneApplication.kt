@@ -55,6 +55,8 @@ class UnoOneApplication : Application(), AgentRuntimeController {
     lateinit var orchestrator: AgentOrchestrator
         private set
 
+    val taskRuntime: com.unoone.agent.task.NativeTaskRuntime get() = orchestrator.taskRuntime
+
     lateinit var sharedVoiceModule: VoiceModule
         private set
 
@@ -161,6 +163,7 @@ class UnoOneApplication : Application(), AgentRuntimeController {
             db.skillDao()
         )
         orchestrator.setVoiceModule(sharedVoiceModule)
+        taskRuntime // initialize app-owned coordinator and recovery metadata before ingress
         if (persistedEnabled) {
             appScope.launch(Dispatchers.IO) {
                 orchestrator.skillsModule.ensureBuiltIns()

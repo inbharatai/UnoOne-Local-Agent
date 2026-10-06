@@ -1,0 +1,53 @@
+{
+  "pinned_model_and_native_files": {
+    "/agent/workspace/qwen-validation-model/config.json": {
+      "expected": "92853033efe602f95efca3e1c05cd8b108f973c8beed417843a9671f8147ed8d",
+      "actual": "92853033efe602f95efca3e1c05cd8b108f973c8beed417843a9671f8147ed8d"
+    },
+    "/agent/workspace/qwen-validation-model/export_args.json": {
+      "expected": "a5b3a7d2c45e53c887e539259696d5fcec793637c9a3e9fbc7cd0dd008af6a87",
+      "actual": "a5b3a7d2c45e53c887e539259696d5fcec793637c9a3e9fbc7cd0dd008af6a87"
+    },
+    "/agent/workspace/qwen-validation-model/llm.mnn": {
+      "expected": "23df98f8b341b277365e0bbca025c1d192939e3d32d7f79776352c6f32e77960",
+      "actual": "23df98f8b341b277365e0bbca025c1d192939e3d32d7f79776352c6f32e77960"
+    },
+    "/agent/workspace/qwen-validation-model/llm.mnn.json": {
+      "expected": "7131ff4f1a441add1039d371815ad94652ae6801f579591cb2f9ad90b5954025",
+      "actual": "7131ff4f1a441add1039d371815ad94652ae6801f579591cb2f9ad90b5954025"
+    },
+    "/agent/workspace/qwen-validation-model/llm.mnn.weight": {
+      "expected": "c93f71a2dbecf9328782bd38861656d8faa82e95e7f99607350074768a482054",
+      "actual": "c93f71a2dbecf9328782bd38861656d8faa82e95e7f99607350074768a482054"
+    },
+    "/agent/workspace/qwen-validation-model/llm_config.json": {
+      "expected": "a88234b36c2af0eff8e5c89667011badf71c15e30459eb0e21030a8f3f9ed240",
+      "actual": "a88234b36c2af0eff8e5c89667011badf71c15e30459eb0e21030a8f3f9ed240"
+    },
+    "/agent/workspace/qwen-validation-model/tokenizer.txt": {
+      "expected": "7e75de1f279a10b65bd9dc1a5207205cb8993823861c4c42bbbd74e48e1c23a4",
+      "actual": "7e75de1f279a10b65bd9dc1a5207205cb8993823861c4c42bbbd74e48e1c23a4"
+    },
+    "/agent/workspace/qwen-validation-model/visual.mnn": {
+      "expected": "88fc40a7b676e90eb2cb86d854db15cb90b9eb1f34087ab0f48c5e43572c8dac",
+      "actual": "88fc40a7b676e90eb2cb86d854db15cb90b9eb1f34087ab0f48c5e43572c8dac"
+    },
+    "/agent/workspace/qwen-validation-model/visual.mnn.weight": {
+      "expected": "8f90e106f5b9ae9a939faed240305cfdd5c6740ae91d3fc418a990bee0cce36b",
+      "actual": "8f90e106f5b9ae9a939faed240305cfdd5c6740ae91d3fc418a990bee0cce36b"
+    },
+    "/agent/workspace/qwen-jni-host-validation/libunoone_qwen.so": {
+      "expected": "c8b200d125e38ba85e67c3bffa4f25e5d7e17ca0229833a421a3a2b267b5d898",
+      "actual": "c8b200d125e38ba85e67c3bffa4f25e5d7e17ca0229833a421a3a2b267b5d898"
+    },
+    "/agent/workspace/mnn-host-validation/build/libMNN.so": {
+      "expected": "ddcb418443e7ae0adbcfdffc28d5d52c0339f2d33f901255b5b9c931a1135475",
+      "actual": "ddcb418443e7ae0adbcfdffc28d5d52c0339f2d33f901255b5b9c931a1135475"
+    }
+  },
+  "all_pins_match": true,
+  "original_failed_evidence_unchanged": true,
+  "LocalBrain_source_sha256": "ede563d3664132bbaa9a25316a4aa91d811ef2bf14e77dc176fa847c853c7642",
+  "exact_draftText_method_in_bridge": true,
+  "bridge_limits": "Exact extracted LocalBrain.draftText method body compiled unchanged in host bridge; controllerRequest forwards directly to actual QwenMnnPlanner with identical defaults. Android LocalBrain composition/lifecycle and UI not executed. Shared lease and model budget enforced by actual coordinator worker callback."
+}

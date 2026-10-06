@@ -11,6 +11,8 @@ sealed class NativeDeviceGoal {
     data class Click(val packageName: String, val exactText: String) : NativeDeviceGoal()
     data class SetField(val packageName: String, val resourceId: String, val text: String) : NativeDeviceGoal()
     data class Current(val command: String, val exactText: String = "") : NativeDeviceGoal()
+    /** Null package means bind to the foreground app only if it is already in core TaskScope. */
+    data class Interact(val interaction: ReviewedInteraction, val packageName: String? = null) : NativeDeviceGoal()
     data class ReadScreen(val packageName: String) : NativeDeviceGoal()
     data class Back(val packageName: String) : NativeDeviceGoal()
     data class Scroll(val packageName: String, val direction: ScrollDirection) : NativeDeviceGoal()
@@ -49,6 +51,30 @@ object NativeDeviceCommands {
         return if (goals.size == 1) goals.single() else NativeDeviceGoal.Sequence(goals.filterNotNull())
     }
 
+    /** Admission follows explicit opens, never granting the launcher merely for a later current step. */
+    internal fun scopePackages(goal: NativeDeviceGoal, initialForeground: () -> String?): Set<String> {
+        val packages = mutableSetOf<String>()
+        val initial by lazy(initialForeground)
+        var precedingOpen: String? = null
+        fun visit(step: NativeDeviceGoal) {
+            when (step) {
+                is NativeDeviceGoal.Sequence -> step.goals.forEach(::visit)
+                is NativeDeviceGoal.OpenApp -> { precedingOpen = step.packageName; packages.add(step.packageName) }
+                is NativeDeviceGoal.Current -> (precedingOpen ?: initial)?.let(packages::add)
+                is NativeDeviceGoal.Interact -> (step.packageName ?: precedingOpen ?: initial)?.let(packages::add)
+                is NativeDeviceGoal.Find -> packages.add(step.packageName)
+                is NativeDeviceGoal.Click -> packages.add(step.packageName)
+                is NativeDeviceGoal.SetField -> packages.add(step.packageName)
+                is NativeDeviceGoal.ReadScreen -> packages.add(step.packageName)
+                is NativeDeviceGoal.Back -> packages.add(step.packageName)
+                is NativeDeviceGoal.Scroll -> packages.add(step.packageName)
+                is NativeDeviceGoal.NeedsUser -> Unit
+            }
+        }
+        visit(goal)
+        return packages
+    }
+
     private fun payload(raw: String): String? {
         if (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2) {
             val value = raw.substring(1, raw.length - 1)
@@ -68,6 +94,32 @@ object NativeDeviceCommands {
             "scroll up" -> return NativeDeviceGoal.Current("up")
         }
         if (command.startsWith("draft:", true)) return NativeDeviceGoal.NeedsUser("Draft composition requires a reviewed recipient and composer; no text entered or sent. Complete manually.")
+        // Strict quoted forms are explicit user reviews of operation + target + exact value.
+        if (explicit) {
+            val write = Regex("(?is)^write \"([^\"]{0,256})\" into \"([^\"]{1,256})\"(?: in ([^\"]+))?$").matchEntire(command)
+            if (write != null && write.groupValues[2].isBlank()) return NativeDeviceGoal.NeedsUser("Empty field label")
+            if (write != null) {
+                val app = if (write.groupValues[3].isEmpty()) null else
+                    resolveApp?.invoke(write.groupValues[3])
+                        ?: return NativeDeviceGoal.NeedsUser("App unavailable or ambiguous")
+                return NativeDeviceGoal.Interact(ReviewedInteraction(
+                    NativeTargetSelector(write.groupValues[2]), ReviewedOperation.WRITE, write.groupValues[1]), app)
+            }
+            val interact = Regex("(?is)^(click|focus|select tab) \"([^\"]{1,256})\"(?: result ([1-9][0-9]{0,3}))?(?: in ([^\"]+))?$").matchEntire(command)
+            if (interact != null && interact.groupValues[2].isBlank()) return NativeDeviceGoal.NeedsUser("Empty target label")
+            if (interact != null) {
+                val app = if (interact.groupValues[4].isEmpty()) null else
+                    resolveApp?.invoke(interact.groupValues[4])
+                        ?: return NativeDeviceGoal.NeedsUser("App unavailable or ambiguous")
+                return NativeDeviceGoal.Interact(ReviewedInteraction(
+                NativeTargetSelector(interact.groupValues[2], interact.groupValues[3].toIntOrNull()),
+                when (interact.groupValues[1].lowercase()) {
+                    "focus" -> ReviewedOperation.FOCUS
+                    "select tab" -> ReviewedOperation.SELECT_TAB
+                    else -> ReviewedOperation.CLICK
+                }), app)
+            }
+        }
         val currentClick = Regex("(?is)^click (.+)$").matchEntire(command)
         if (currentClick != null && !command.contains(" in ", true)) return payload(currentClick.groupValues[1])?.let {
             NativeDeviceGoal.Current("click", it)
@@ -129,8 +181,7 @@ object NativeReviewedTargets {
         val search = id == "android:id/search_src_text" ||
             (pkg == "com.google.android.gm" && id == "$pkg:id/search_view") ||
             (pkg == "com.whatsapp" && id == "$pkg:id/search_src_text")
-        val reviewed = pkg in setOf("com.whatsapp", "com.google.android.gm", "com.android.settings", "com.android.chrome")
-        if (!reviewed) return TargetSemantic.UNKNOWN
+        // Framework resource/class contracts apply in any scoped installed app, not four packages.
         if (search && cls == "android.widget.EditText") return TargetSemantic.FORM_FIELD
         if ((id == "android:id/search_button" || (pkg == "com.whatsapp" && id == "$pkg:id/menuitem_search")) &&
             cls in setOf("android.widget.ImageButton", "android.widget.TextView")) return TargetSemantic.NAVIGATION

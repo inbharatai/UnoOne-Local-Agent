@@ -218,7 +218,12 @@ class SecureBrowserViewModel(
         )
         startupJob?.cancel()
         startupJob = viewModelScope.launch {
-            when (val leaseResult = modelLease.acquire()) {
+            val transitionOwner = com.unoone.agent.core.task.TaskId(UUID.randomUUID().toString())
+            val transitionGeneration = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation
+            val acquired = com.unoone.agent.core.task.ProcessTaskResources.model.withLease(transitionOwner, {
+                check(AgentRuntimeGate.isEnabled() && transitionGeneration == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) { "Browser transition revoked" }
+            }) { modelLease.acquire() }
+            when (val leaseResult = acquired) {
                 is Result.Error -> {
                     _state.value = _state.value.copy(
                         phase = "Unavailable",
@@ -259,6 +264,7 @@ class SecureBrowserViewModel(
                                 BrowserNavigationMode.APPROVED_ONLY
                             },
                             scope = viewModelScope,
+                            beforeUiEffect = { owner -> com.unoone.agent.task.ResourceEffects.record(appContext, owner, com.unoone.agent.core.task.TaskSource.BROWSER) },
                             requestHandler = handler,
                             onBlockedNavigation = { reason ->
                                 _state.value = _state.value.copy(status = "Navigation blocked", error = reason)

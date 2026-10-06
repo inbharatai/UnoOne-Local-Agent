@@ -1,10 +1,15 @@
 package com.unoone.agent
 
 import com.unoone.agent.core.device.*
-import kotlinx.coroutines.runBlocking
+import com.unoone.agent.task.admittedDeviceTest
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.junit.Assert.*
 import org.junit.Test
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class NativeDeviceCommandsTest {
     @Test fun naturalCurrentAppCommandsAreNativeScoped() {
         assertEquals(NativeDeviceGoal.Current("read"), NativeDeviceCommands.parse("read screen"))
@@ -29,7 +34,7 @@ class NativeDeviceCommandsTest {
         assertNull(NativeDeviceCommands.parse("open org.example.app"))
         assertEquals(NativeDeviceGoal.OpenApp("org.example.app"), NativeDeviceCommands.parse("device: open org.example.app"))
     }
-    @Test fun unknownGoalDoesNotAcquireAdapterOrBrain() = runBlocking {
+    @Test fun unknownGoalDoesNotAcquireAdapterOrBrain() = admittedDeviceTest {
         val session = DeviceAgentSession(
             brainProvider = { error("must not invoke model") },
             adapterProvider = { error("must not capture screen") },
@@ -39,7 +44,7 @@ class NativeDeviceCommandsTest {
         assertEquals(DeviceOutcomeStatus.NEEDS_USER, outcome.status)
         assertEquals(0, outcome.steps)
     }
-    @Test fun missingAccessibilityIsNotSuccess() = runBlocking {
+    @Test fun missingAccessibilityIsNotSuccess() = admittedDeviceTest {
         val session = DeviceAgentSession(adapterProvider = { null }, enabled = { true }, clockMs = { 0L })
         assertEquals(DeviceOutcomeStatus.NEEDS_USER, session.run(NativeDeviceGoal.OpenApp("com.android.settings")).status)
     }
@@ -59,4 +64,60 @@ class NativeDeviceCommandsTest {
         assertEquals(TargetSemantic.UNKNOWN, NativeReviewedTargets.semantic("com.whatsapp", "com.whatsapp:id/message", "android.widget.EditText"))
         assertEquals(TargetSemantic.UNKNOWN, NativeReviewedTargets.semantic("com.whatsapp", "com.whatsapp:id/search_src_text", "android.widget.Button"))
     }
+    @Test fun reviewedOperationsResolveOnlyExactInstalledAppAliases() {
+        val gmail = "com.google.android.gm"
+        val resolver: (String) -> String? = { if (it == "Gmail") gmail else null }
+        assertEquals(NativeDeviceGoal.Interact(ReviewedInteraction(
+            NativeTargetSelector("Subject"), ReviewedOperation.WRITE, "stay in Gmail then leave"), gmail),
+            NativeDeviceCommands.parse("""device: write "stay in Gmail then leave" into "Subject" in Gmail""", resolver))
+        listOf("focus" to ReviewedOperation.FOCUS, "select tab" to ReviewedOperation.SELECT_TAB,
+            "click" to ReviewedOperation.CLICK).forEach { (verb, operation) ->
+            assertEquals(NativeDeviceGoal.Interact(ReviewedInteraction(
+                NativeTargetSelector("Sign in", 2), operation), gmail),
+                NativeDeviceCommands.parse("""device: $verb "Sign in" result 2 in Gmail""", resolver))
+            assertTrue(NativeDeviceCommands.parse("""device: $verb "Sign in" in unknown""", resolver)
+                is NativeDeviceGoal.NeedsUser)
+        }
+        // A registry ambiguity is represented by null, even for a built-in app alias.
+        assertTrue(NativeDeviceCommands.parse("""device: write "x" into "Subject" in Gmail""") { null }
+            is NativeDeviceGoal.NeedsUser)
+        assertTrue(NativeDeviceCommands.parse("""device: click "Search" in Gmail""") { null }
+            is NativeDeviceGoal.NeedsUser)
+        assertTrue(NativeDeviceCommands.parse("""device: focus "Search" in Gmail""")
+            is NativeDeviceGoal.NeedsUser)
+    }
+
+    @Test fun unscopedReviewedOperationsStillPreserveQuotedIn() {
+        assertEquals(NativeDeviceGoal.Interact(ReviewedInteraction(
+            NativeTargetSelector("Sign in"), ReviewedOperation.WRITE, "in Gmail")),
+            NativeDeviceCommands.parse("""device: write "in Gmail" into "Sign in""""))
+        assertEquals(NativeDeviceGoal.Interact(ReviewedInteraction(
+            NativeTargetSelector("Sign in"), ReviewedOperation.CLICK)),
+            NativeDeviceCommands.parse("""device: click "Sign in""""))
+    }
+
+    @Test fun sequenceAdmissionInheritsExplicitOpenWithoutGrantingOwnApp() {
+        val gmail = "com.google.android.gm"
+        val chrome = "com.android.chrome"
+        val resolver: (String) -> String? = { when (it) { "Gmail" -> gmail; "Chrome" -> chrome; else -> null } }
+        val goal = NativeDeviceCommands.parse(
+            """device: open Gmail then write "in Chrome" into "Subject" then read screen then open Chrome then focus "Search"""",
+            resolver)!!
+        assertEquals(setOf(gmail, chrome), NativeDeviceCommands.scopePackages(goal) {
+            error("Initial UnoOne foreground metadata is not needed after an explicit open")
+        })
+        val scoped = NativeDeviceCommands.parse("""device: click "Inbox" in Gmail""", resolver)!!
+        assertEquals(setOf(gmail), NativeDeviceCommands.scopePackages(scoped) { "com.unoone.agent" })
+    }
+
+    @Test fun firstCurrentUsesInitialForegroundMetadataOnlyOnce() {
+        var reads = 0
+        val sequence = NativeDeviceGoal.Sequence(listOf(NativeDeviceGoal.Current("read"),
+            NativeDeviceGoal.Current("back"), NativeDeviceGoal.OpenApp("com.google.android.gm"),
+            NativeDeviceGoal.Current("read")))
+        assertEquals(setOf("com.android.chrome", "com.google.android.gm"),
+            NativeDeviceCommands.scopePackages(sequence) { reads++; "com.android.chrome" })
+        assertEquals(1, reads)
+    }
+
 }

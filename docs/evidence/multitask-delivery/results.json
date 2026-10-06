@@ -1,0 +1,116 @@
+{
+  "version": "0.6.0-alpha-v3",
+  "versionCode": 6,
+  "baseCommit": "55c15c9d87c2bd9706d968e8110bec1dd118eeba",
+  "gates": {
+    "jvm": 0,
+    "lint": 0,
+    "apk": 0
+  },
+  "jvm": {
+    "tests": 842,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "modules": {
+    "app": {
+      "tests": 295,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "core": {
+      "tests": 284,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "languagepacks": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "localbrain": {
+      "tests": 74,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "modelmanager": {
+      "tests": 37,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "observability": {
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "phonecontrol": {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "securebrowser": {
+      "tests": 40,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "skills": {
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "voice": {
+      "tests": 78,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "browser": {
+    "typecheck": "passed",
+    "unit": 10,
+    "playwright": 15
+  },
+  "artifacts": {
+    "debug": {
+      "path": "app/build/outputs/apk/debug/app-debug.apk",
+      "bytes": 408464391,
+      "sha256": "17aed5c11911333131acef55235a9f8673f539e4d002618e544019f5b7f005f0",
+      "package": "package: name='com.unoone.agent' versionCode='6' versionName='0.6.0-alpha-v3' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'",
+      "mnn_libraries": {
+        "lib/arm64-v8a/libMNN.so": "3c2a60edc197e918966fcbb3f245dfd10a616eb1d96a86e41f01f0a937539d34"
+      },
+      "dom_assets": {
+        "assets/page-agent/unoone-page-agent.js": "695f15c52c003cbe30f26cb7caf6ba9739c978fb8ac075705e182f9b91c5648c"
+      },
+      "native_libraries": {
+        "lib/arm64-v8a/libMNN.so": "3c2a60edc197e918966fcbb3f245dfd10a616eb1d96a86e41f01f0a937539d34",
+        "lib/arm64-v8a/libunoone_qwen.so": "ccd825e5a0febb9e31f36a104c2953543f6221ad891ca841585244d2ebdab5ac",
+        "lib/arm64-v8a/libc++_shared.so": "4397241b4bd20a8e579bfb41d21107857e12985f6a01ca0c2a5f83380d1270b4",
+        "lib/arm64-v8a/liblitertlm_jni.so": "1fd7cc1f57352b2e8f682045cc3dfbc9c312deba48dcb87c4bbd253b3a1900fc"
+      },
+      "dom_matches_source": true
+    },
+    "instrumentation": {
+      "path": "app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk",
+      "bytes": 2708607,
+      "sha256": "d2776752839d1b3498480cbbc4bebab188ca95e234e9e39ccd89eb92680f852d",
+      "package": "package: name='com.unoone.agent.test' versionCode='' versionName='' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'"
+    }
+  },
+  "androidDeviceQualification": "PENDING: no attached phone/emulator; not a production or any-app certification",
+  "lint": "No new issues; existing baseline filters 15 historical errors",
+  "realQwenEvidence": {
+    "original": "../multitask-host/README.md \u2014 strict marker probe FAILED, retained",
+    "gated": "../multitask-draft-gate/README.md \u2014 2/2 literal constraints passed, RESPONDED not semantic verification"
+  }
+}

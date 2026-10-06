@@ -1,6 +1,8 @@
 package com.unoone.agent.securebrowser
 
 import android.annotation.SuppressLint
+import com.unoone.agent.core.task.ProcessTaskResources
+import com.unoone.agent.core.task.TaskId
 import android.content.Context
 import android.net.Uri
 import android.webkit.ValueCallback
@@ -55,13 +57,15 @@ class SecureWebViewController(
         // origin-scoped web-message listener accept PageAgent bridge calls FROM a locally-loaded form.
         allowedOrigins = domainPolicy.origins() + LOCAL_FORM_ORIGIN
     ),
-    private val onCancelPending: () -> Unit = {}
+    private val onCancelPending: () -> Unit = {},
+    private val beforeUiEffect: (TaskId) -> Unit = { error("Durable effect bridge required") }
 ) {
     private val stopped = AtomicBoolean(false)
     private val targetPolicy = NativeTargetPolicy()
     private val documentEpoch: Long get() = targetPolicy.epoch
     private val taskLock = Any()
     private var taskJob: Job? = null
+    @Volatile private var resourceOwner: TaskId? = null
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private fun onMain(action: () -> Unit) {
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) action()
@@ -95,7 +99,20 @@ class SecureWebViewController(
     fun isRuntimeAvailable(): Boolean = runtimeBundle != null
     fun isRuntimeInjected(): Boolean = runtimeInjected
     fun canGoBack(): Boolean = webView.canGoBack()
-    fun goBack() = webView.goBack()
+    fun goBack() { manualNavigation { webView.goBack() } }
+
+    private fun manualNavigation(action: () -> Unit) {
+        if (ProcessTaskResources.ui.owner() != null) {
+            onBlockedNavigation("UI is owned by a task. Stop that task or request takeover before navigating."); return
+        }
+        val generation = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation
+        val owner = TaskId(java.util.UUID.randomUUID().toString())
+        scope.launch(Dispatchers.Main) {
+            ProcessTaskResources.ui.withLease(owner, {
+                check(!stopped.get() && AgentRuntimeGate.isEnabled() && generation == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) { "Navigation revoked" }
+            }) { lease -> lease.checkActive(); beforeUiEffect(owner); lease.checkActive(); action() }
+        }
+    }
 
     fun load(rawUrl: String): NavigationDecision {
         if (!AgentRuntimeGate.isEnabled()) {
@@ -103,7 +120,7 @@ class SecureWebViewController(
         }
         val decision = evaluateNavigation(rawUrl)
         when (decision) {
-            is NavigationDecision.Allow -> webView.loadUrl(decision.normalizedUrl)
+            is NavigationDecision.Allow -> manualNavigation { webView.loadUrl(decision.normalizedUrl) }
             is NavigationDecision.Block -> onBlockedNavigation(decision.reason)
         }
         return decision
@@ -131,7 +148,7 @@ class SecureWebViewController(
         runtimeInjected = false
         // baseUrl sets the page's origin; historyUrl null keeps the synthetic origin. The page's
         // location.origin becomes LOCAL_FORM_ORIGIN, which the bridge filter + isAdmittedOrigin accept.
-        webView.loadDataWithBaseURL(LOCAL_FORM_ORIGIN + "/", html, "text/html", "utf-8", null)
+        manualNavigation { webView.loadDataWithBaseURL(LOCAL_FORM_ORIGIN + "/", html, "text/html", "utf-8", null) }
     }
 
     /** Executes one PageAgent task after the bundle has initialized on the current approved page. */
@@ -159,7 +176,16 @@ class SecureWebViewController(
                     stopTask()
                 }
                 taskJob = scope.launch(Dispatchers.Main, start = kotlinx.coroutines.CoroutineStart.LAZY) {
-                    try { runNativeTask(clean, taskId, epoch) }
+                    try {
+                        val owner = TaskId(java.util.UUID.randomUUID().toString())
+                        ProcessTaskResources.ui.withLease(owner, {
+                            check(expectedStopGeneration == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation && taskGate.activeId() == taskId && !stopped.get()) { "Browser task revoked" }
+                        }) { lease ->
+                            resourceOwner = owner
+                            try { lease.checkActive(); runNativeTask(clean, taskId, epoch) }
+                            finally { resourceOwner = null }
+                        }
+                    }
                     catch (e: CancellationException) { throw e }
                     catch (e: Exception) { finishNativeTask(taskId, false, e.message ?: "Browser task failed") }
                 }
@@ -205,9 +231,15 @@ class SecureWebViewController(
 
     private suspend fun nativeCall(type: PageAgentRequestType, payload: String, id: Long, epoch: Long, allowNavigation: Boolean = false): String {
         requireActive(id, epoch)
-        val response = requestHandler.handle(PageAgentBridgeRequest(
+        val request = PageAgentBridgeRequest(
             requestId = java.util.UUID.randomUUID().toString(), sessionId = session.id,
-            sessionNonce = session.nonce, origin = session.activeOrigin.orEmpty(), type = type, payload = payload))
+            sessionNonce = session.nonce, origin = session.activeOrigin.orEmpty(), type = type, payload = payload)
+        val response = if (type == PageAgentRequestType.MODEL_INVOKE) {
+            val owner = requireNotNull(resourceOwner)
+            ProcessTaskResources.model.withLease(owner, { requireActive(id, epoch) }) {
+                requestHandler.handle(request)
+            }
+        } else requestHandler.handle(request)
         currentCoroutineContext().ensureActive(); requireActive(id, if (allowNavigation) documentEpoch else epoch)
         check(response.success) { response.errorMessage ?: "Native operation rejected" }
         return response.payload
@@ -296,6 +328,10 @@ class SecureWebViewController(
             val command = JsonObject(args + mapOf("fingerprint" to JsonPrimitive(fingerprint.orEmpty()),
                 "action" to JsonPrimitive(if (action == "submit_form") "click_element_by_index" else action)))
             currentCoroutineContext().ensureActive(); requireActive(id, epoch)
+            val owner = requireNotNull(resourceOwner)
+            check(ProcessTaskResources.ui.owner() == owner) { "UI lease revoked" }
+            beforeUiEffect(owner)
+            currentCoroutineContext().ensureActive(); requireActive(id, epoch)
             val result = evaluate("window.UnoOneDomAdapter.act($command)")
             check(result is JsonObject && result["dispatched"]?.jsonPrimitive?.booleanOrNull == true) { "DOM action was not dispatched" }
             delay(150)
@@ -369,6 +405,11 @@ class SecureWebViewController(
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return true
+                val owner = ProcessTaskResources.ui.owner()
+                if (owner != null && owner != resourceOwner) {
+                    onBlockedNavigation("Another task owns UI; request takeover before navigating")
+                    return true
+                }
                 return when (val decision = evaluateNavigation(url)) {
                     is NavigationDecision.Allow -> false
                     is NavigationDecision.Block -> {

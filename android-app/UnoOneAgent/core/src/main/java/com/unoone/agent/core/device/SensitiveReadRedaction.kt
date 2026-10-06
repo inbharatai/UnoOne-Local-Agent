@@ -9,14 +9,14 @@ object SensitiveReadRedaction {
         hasSecretLabel(metadata) || hasSecretLabel(value) || (secretContext && (editable || (value != null && numeric.containsMatchIn(value))))
 
     fun redactNodes(nodes: List<UiNode>): List<UiNode> {
-        val secretContext = nodes.any { it.password || it.semantic.sensitiveObservation() || hasSecretLabel(it.resourceId + " " + it.text + " " + it.description) }
-        val labelledParents = nodes.filter { hasSecretLabel(it.resourceId + " " + it.text + " " + it.description) }
+        val secretContext = nodes.any { it.password || it.semantic.sensitiveObservation() || hasSecretLabel(it.resourceId + " " + it.text + " " + it.description + " " + it.hint) }
+        val labelledParents = nodes.filter { hasSecretLabel(it.resourceId + " " + it.text + " " + it.description + " " + it.hint) }
             .map { it.path.substringBeforeLast('.', "") }.toSet()
         return nodes.map { n ->
             val nearbyLabel = n.path.substringBeforeLast('.', "") in labelledParents
             if (n.password || n.semantic.sensitiveObservation() || nearbyLabel ||
-                shouldRedact(n.resourceId, n.text + " " + n.description, secretContext, n.editable))
-                n.copy(text = "", description = "", semantic = if (n.password) TargetSemantic.SECRET else if (n.semantic.sensitiveObservation()) n.semantic else TargetSemantic.SECRET)
+                shouldRedact(n.resourceId, n.text + " " + n.description + " " + n.hint, secretContext, n.editable))
+                n.copy(text = "", description = "", hint = "", semantic = if (n.password) TargetSemantic.SECRET else if (n.semantic.sensitiveObservation()) n.semantic else TargetSemantic.SECRET)
             else n
         }
     }

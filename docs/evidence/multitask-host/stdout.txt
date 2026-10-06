@@ -1,0 +1,16 @@
+LOAD_MS=11482
+QUEUED_CANCEL_ID=1b883523-0a0f-4280-9a63-e932d973e630 RECEIPT=CancelReceipt(cancelled=[TaskId(value=1b883523-0a0f-4280-9a63-e932d973e630)])
+TASK 14148d97-2f80-4069-b518-7fb9835049db MS=30774 OUTPUT=**Subject:** Invitation to Garden Club Meeting
+
+Join us for the upcoming club meeting on [Date] at [Location]. We will discuss [Topic]. Please RSVP by [Deadline].
+
+ORCHID731
+RESULT_A=TaskResult(outcome=RESPONDED, reason=NONE)
+TASK a8d89d73-bff7-4e73-9219-cc34ca2374b5 MS=30500 OUTPUT=Subject: Return Book [Book Title]
+Date: [Return Date]
+Recipient: [Recipient Name]
+Please return the book [Book Title] by [Return Date] to avoid fines. Thank you.
+RESULT_B=TaskResult(outcome=RESPONDED, reason=NONE)
+RESULT_CANCEL=TaskResult(outcome=CANCELLED, reason=STOPPED)
+NATIVE_CLOSE_ACK=true
+The device supports: i8sdot:0, fp16:0, i8mm: 0, sve2: 0, sme2: 0, perfCores: 0

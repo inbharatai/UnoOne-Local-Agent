@@ -34,12 +34,15 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class ActionExecutorToolCoverageTest {
 
+    private lateinit var fixture: com.unoone.agent.task.NativeTaskFixture
     private lateinit var db: UnoOneDatabase
     private lateinit var executor: ActionExecutor
 
     @Before
     fun setUp() {
-        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        fixture = com.unoone.agent.task.NativeTaskFixture()
+        val context = fixture.context
+        com.unoone.agent.core.runtime.AgentRuntimeGate.setEnabled(true)
         db = Room.inMemoryDatabaseBuilder(context, UnoOneDatabase::class.java)
             .allowMainThreadQueries()
             .build()
@@ -58,12 +61,12 @@ class ActionExecutorToolCoverageTest {
     }
 
     @After
-    fun tearDown() { db.close() }
+    fun tearDown() { fixture.close(); db.close() }
 
     @Test
     fun everyToolDispatchesToARealBranchNotAgentRouter() {
         for ((tool, args) in toolCalls()) {
-            val result = runBlocking { executor.executeTool(ToolCall(tool, args)) }
+            val result = runBlocking { executeAdmitted(ToolCall(tool, args)) }
             assertFalse(
                 "Tool '$tool' fell through to AgentRouter (no real branch): ${messageOf(result)}",
                 isRouterFallback(result)
@@ -74,7 +77,7 @@ class ActionExecutorToolCoverageTest {
     @Test
     fun deactivateBlindAidIsHandledAndReturnsSuccess() {
         // Regression for the prior `deactivate_blind_id` typo: the correct tool name must resolve.
-        val result = runBlocking { executor.executeTool(ToolCall("deactivate_blind_aid", JsonObject(emptyMap()))) }
+        val result = runBlocking { executeAdmitted(ToolCall("deactivate_blind_aid", JsonObject(emptyMap()))) }
         assertTrue("deactivate_blind_aid must be a handled branch", result is Result.Success)
         assertEquals("Blind Aid deactivated.", (result as Result.Success).data)
     }
@@ -85,14 +88,14 @@ class ActionExecutorToolCoverageTest {
         executor._prepareDocumentFill = { opened = it }
 
         val success = runBlocking {
-            executor.executeTool(ToolCall("prepare_document_fill", obj { put("format", "DOCX") }))
+            executeAdmitted(ToolCall("prepare_document_fill", obj { put("format", "DOCX") }))
         }
         assertTrue(success is Result.Success)
         assertEquals("docx", opened)
 
         opened = null
         val rejected = runBlocking {
-            executor.executeTool(ToolCall("prepare_document_fill", obj { put("format", "doc") }))
+            executeAdmitted(ToolCall("prepare_document_fill", obj { put("format", "doc") }))
         }
         assertTrue(rejected is Result.Error)
         assertEquals(null, opened)
@@ -101,25 +104,25 @@ class ActionExecutorToolCoverageTest {
     @Test
     fun noteToolsPersistSearchAndDeleteEndToEnd() {
         runBlocking {
-            val created = executor.executeTool(ToolCall("create_note", buildJsonObject {
+            val created = executeAdmitted(ToolCall("create_note", buildJsonObject {
                 put("title", "Meeting Notes")
                 put("content", "Discuss the roadmap and deadlines")
             }))
             assertTrue(created is Result.Success)
 
-            val found = executor.executeTool(ToolCall("search_notes", buildJsonObject {
+            val found = executeAdmitted(ToolCall("search_notes", buildJsonObject {
                 put("query", "Meeting")
             }))
             assertTrue("search_notes should find the created note", found is Result.Success)
             assertTrue((found as Result.Success).data.contains("Meeting Notes"))
 
-            val deleted = executor.executeTool(ToolCall("delete_notes", buildJsonObject {
+            val deleted = executeAdmitted(ToolCall("delete_notes", buildJsonObject {
                 put("query", "Meeting")
             }))
             assertTrue(deleted is Result.Success)
             assertTrue((deleted as Result.Success).data.contains("Deleted 1 note"))
 
-            val after = executor.executeTool(ToolCall("search_notes", buildJsonObject {
+            val after = executeAdmitted(ToolCall("search_notes", buildJsonObject {
                 put("query", "Meeting")
             }))
             assertTrue(after is Result.Success)
@@ -134,13 +137,60 @@ class ActionExecutorToolCoverageTest {
             "A third sentence adds extra context for the summarizer to consider. " +
             "Finally a fourth sentence wraps up the discussion nicely enough."
         val result = runBlocking {
-            executor.executeTool(ToolCall("summarize_text", buildJsonObject { put("text", longText) }))
+            executeAdmitted(ToolCall("summarize_text", buildJsonObject { put("text", longText) }))
         }
         assertTrue(result is Result.Success)
         val summary = (result as Result.Success).data
         assertTrue("Summary must be shorter than the input", summary.length < longText.length)
         assertTrue("Summary must be non-empty", summary.isNotBlank())
     }
+
+    @Test
+    fun exhaustedActionBudgetPreventsDaoMutation() = runBlocking {
+        val call = ToolCall("create_note", obj { put("title", "blocked-budget"); put("content", "must not persist") })
+        var rejected = false
+        try {
+            fixture.tool(call, com.unoone.agent.core.task.TaskBudget(actions = 0)) { executor.executeTool(call) }
+        } catch (_: com.unoone.agent.core.task.TaskBudgetExceeded) { rejected = true }
+        assertTrue("Zero budget must revoke before DAO", rejected)
+        assertTrue(db.noteDao().searchOnce("blocked-budget").isEmpty())
+    }
+
+    @Test
+    fun journalWriteFailurePreventsDaoMutation() = runBlocking {
+        val call = ToolCall("create_note", obj { put("title", "blocked-journal"); put("content", "must not persist") })
+        fixture.failJournalWrites()
+        var rejected = false
+        try { fixture.tool(call) { executor.executeTool(call) } }
+        catch (_: Exception) { rejected = true }
+        assertTrue("Uncommitted intent must not reach DAO", rejected)
+        assertTrue(db.noteDao().searchOnce("blocked-journal").isEmpty())
+        assertEquals("COMMIT_FAILED", fixture.journal.health)
+    }
+
+    @Test
+    fun namedCancellationDoesNotCancelSiblingExecutor() = runBlocking {
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val cancelled = fixture.start(com.unoone.agent.core.task.TaskScope()) {
+            entered.complete(Unit)
+            kotlinx.coroutines.awaitCancellation()
+        }
+        kotlinx.coroutines.withTimeout(5_000) { entered.await() }
+        val call = ToolCall("create_note", obj { put("title", "sibling-survives"); put("content", "saved") })
+        val sibling = fixture.start(com.unoone.agent.core.task.TaskScope(
+            capabilities = setOf(com.unoone.agent.core.task.TaskCapability.LOCAL_WRITE),
+            objectHandles = setOf(com.unoone.agent.task.TaskToolAuthorization.handle(call)))) {
+            executor.executeTool(call)
+        }
+        assertEquals(setOf(cancelled.id), fixture.coordinator.cancel(cancelled.id).cancelled)
+        assertTrue(kotlinx.coroutines.withTimeout(5_000) { sibling.value.await() } is Result.Success)
+        assertEquals(com.unoone.agent.core.task.TaskOutcome.CANCELLED, fixture.coordinator.await(cancelled.id).outcome)
+        assertEquals(com.unoone.agent.core.task.TaskOutcome.VERIFIED, fixture.coordinator.await(sibling.id).outcome)
+        assertEquals(1, db.noteDao().searchOnce("sibling-survives").size)
+    }
+
+    private suspend fun executeAdmitted(call: ToolCall): Result<String> =
+        fixture.tool(call) { executor.executeTool(call) }
 
     private fun isRouterFallback(result: Result<String>): Boolean =
         result is Result.Error && result.message.contains("No handler registered")

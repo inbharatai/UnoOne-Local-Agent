@@ -16,7 +16,8 @@ class DeviceAuthorization(
     allowedHttpsHosts: Set<String> = emptySet(),
     val navigation: Boolean = false,
     allowedUris: Set<String> = emptySet(),
-    val nativeActionIntent: (DeviceAction, UiNode) -> Boolean = { _, _ -> false }
+    val nativeActionIntent: (DeviceAction, UiNode) -> Boolean = { _, _ -> false },
+    val interactionBindingValid: (DeviceAction, PerceptionState) -> Boolean = { _, _ -> true }
 ) {
     val allowedUris: Set<String> = java.util.Collections.unmodifiableSet(HashSet(allowedUris))
     val allowedPackages: Set<String> = java.util.Collections.unmodifiableSet(HashSet(allowedPackages))
@@ -101,8 +102,12 @@ object DeviceSafetyPolicy {
         TargetSemantic.CAPTCHA, TargetSemantic.LEGAL, TargetSemantic.FINAL_SEND, TargetSemantic.DESTRUCTIVE, TargetSemantic.SECURITY)
     // Defense in depth only. Missing these words is never semantic proof of safety.
     private val sensitive = Regex("(?i)password|passcode|\\botp\\b|verification.code|captcha|credit.card|\\bpay\\b|purchase|checkout|\\bsend\\b|submit|accept.terms|delete|transfer|sign.in|log.in")
+    fun isSensitiveMetadata(value: CharSequence?): Boolean = value != null &&
+        (sensitive.containsMatchIn(value) || SensitiveReadRedaction.hasSecretLabel(value) ||
+            Regex("(?i)payment|billing|authenticat|authoriz|sign.?in|log.?in|sign.?up|two.factor|2fa|mfa|consent|agreement|terms|captcha|\\bauth\\b|confirm.purchase").containsMatchIn(value))
     fun decide(action: DeviceAction, state: PerceptionState, auth: DeviceAuthorization): SafetyDecision {
         if (!auth.observe) return SafetyDecision.Handover("Observation is not authorized")
+        if (!auth.interactionBindingValid(action, state)) return SafetyDecision.Handover("Interaction owner or snapshot binding expired")
         val s = state.snapshot
         if (action is DeviceAction.OpenApp) return if (action.packageName in auth.allowedPackages) SafetyDecision.Allow else SafetyDecision.Handover("Package outside user scope")
         if (action is DeviceAction.OpenUri) return if (action.uri in auth.allowedUris && java.net.URI(action.uri).host in auth.allowedHttpsHosts && !sensitive.containsMatchIn(action.uri)) SafetyDecision.Allow else SafetyDecision.Handover("Exact URI not natively authorized or sensitive")
@@ -112,7 +117,7 @@ object DeviceSafetyPolicy {
         if (action.nodeRef() != null && node == null) return SafetyDecision.Handover("Unknown node")
         if (node != null) {
             if (node.packageName !in auth.allowedPackages) return SafetyDecision.Handover("Target outside user scope")
-            if (node.password || node.semantic in forbidden || sensitive.containsMatchIn(node.text + " " + node.description + " " + node.resourceId))
+            if (node.password || node.semantic in forbidden || isSensitiveMetadata(node.text + " " + node.description + " " + node.resourceId + " " + node.hint))
                 return SafetyDecision.Handover("Sensitive target requires manual takeover")
             if (action is DeviceAction.ReadNode) return SafetyDecision.Allow
             if (node.semantic == TargetSemantic.UNKNOWN) return SafetyDecision.Handover("Unknown target semantics")

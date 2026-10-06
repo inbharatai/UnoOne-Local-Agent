@@ -1,6 +1,8 @@
 package com.unoone.agent
 
 import android.os.SystemClock
+import com.unoone.agent.core.task.TaskCapability
+import com.unoone.agent.task.ResourceEffects
 import com.unoone.agent.accessibilitycontrol.AndroidDeviceAdapter
 import com.unoone.agent.accessibilitycontrol.UnoOneAccessibilityService
 import com.unoone.agent.core.device.*
@@ -18,13 +20,17 @@ class DeviceAgentSession(
     },
     private val enabled: () -> Boolean = AgentRuntimeGate::isEnabled,
     private val clockMs: () -> Long = SystemClock::elapsedRealtime,
-    private val confirmations: DeviceConfirmationProvider = DeviceConfirmationProvider { _, _, _ -> null }
+    private val confirmations: DeviceConfirmationProvider = DeviceConfirmationProvider { _, _, _ -> null },
+    private val foregroundPackage: () -> String? = { UnoOneAccessibilityService.getInstance()?.currentPackage }
 ) {
     private val epochs = DeviceEpoch()
     private val mutex = Mutex()
+    private val interactionSteps = java.util.concurrent.atomic.AtomicLong()
     fun cancel() { epochs.cancel() }
 
     suspend fun run(goal: NativeDeviceGoal, useModelPlanner: Boolean = true): DeviceOutcome {
+        val queuedCurrentPackage = if (goal is NativeDeviceGoal.Current ||
+            (goal is NativeDeviceGoal.Sequence && goal.goals.firstOrNull() is NativeDeviceGoal.Current)) foregroundPackage() else null
         val epoch = epochs.current()
         val globalGeneration = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation
         return mutex.withLock {
@@ -34,19 +40,39 @@ class DeviceAgentSession(
             val goals = if (goal is NativeDeviceGoal.Sequence) goal.goals.toList() else listOf(goal)
             if (goals.isEmpty() || goals.size > 24 || goals.any { it is NativeDeviceGoal.Sequence || it is NativeDeviceGoal.NeedsUser })
                 return@withLock needsUser("Unsupported or ambiguous workflow; no steps executed")
-            val adapter = adapterProvider() ?: return@withLock needsUser("Enable UnoOne Accessibility access, then retry.")
+            val execution = ResourceEffects.execution()
+            if (TaskCapability.UI_READ !in execution.context.scope.capabilities)
+                return@withLock needsUser("UI observation outside task scope")
+            val adapter = ResourceEffects.adapter(adapterProvider() ?: return@withLock needsUser("Enable UnoOne Accessibility access, then retry."))
             val budget = DeviceBudget.forTier(if (goals.size > 1) DeviceBudgetTier.EXTENDED else DeviceBudgetTier.STANDARD)
             val started = clockMs()
             var steps = 0
             val receipts = mutableListOf<String>()
             var last: String? = null
+            var verifiedSnapshot: UiSnapshot? = null
             for ((index, original) in goals.withIndex()) {
+                checkRun(epoch, globalGeneration)
+                val boundary = adapter.observe()
+                val boundaryPackage = boundary.snapshot.windows.firstOrNull()?.packageName
+                val prior = verifiedSnapshot
+                if (prior != null && (prior.windows.firstOrNull()?.packageName != boundaryPackage ||
+                    prior.eventSequence != boundary.snapshot.eventSequence || UiDiff(prior, boundary.snapshot).hasChange))
+                    return@withLock needsUser("Screen changed since prior verified goal; user control retained")
+                if (index == 0 && original is NativeDeviceGoal.Current && boundaryPackage != queuedCurrentPackage)
+                    return@withLock needsUser("Queued current app changed; no automatic switch")
+                var latest = boundary
+                var firstObservation = true
+                val goalAdapter = object : DeviceAdapter by adapter {
+                    override suspend fun observe(): PerceptionState {
+                        if (firstObservation) { firstObservation = false; return boundary }
+                        return adapter.observe().also { latest = it }
+                    }
+                }
                 val item = if (original is NativeDeviceGoal.Current) {
                     checkRun(epoch, globalGeneration)
-                    val state = adapter.observe()
-                    checkRun(epoch, globalGeneration)
-                    val pkg = state.snapshot.windows.firstOrNull()?.packageName
+                    val pkg = boundaryPackage
                         ?: return@withLock needsUser("No active app")
+                    if (pkg !in execution.context.scope.packages) return@withLock needsUser("Current app outside task scope")
                     when (original.command) {
                         "read" -> NativeDeviceGoal.ReadScreen(pkg)
                         "back" -> NativeDeviceGoal.Back(pkg)
@@ -61,11 +87,12 @@ class DeviceAgentSession(
                 val time = budget.deadlineMs - (clockMs() - started)
                 if (remaining <= 0 || time <= 0) return@withLock DeviceOutcome(DeviceOutcomeStatus.LIMIT_REACHED, steps,
                     "Workflow budget exhausted; verified receipts: $receipts", last)
-                val result = runOne(item, useModelPlanner, adapter, epoch, globalGeneration, budget.copy(maxSteps = remaining, deadlineMs = time))
+                val result = runOne(item, useModelPlanner, goalAdapter, epoch, globalGeneration, budget.copy(maxSteps = remaining, deadlineMs = time))
                 checkRun(epoch, globalGeneration)
                 steps += result.steps; last = result.finalSnapshotId
                 if (result.status != DeviceOutcomeStatus.VERIFIED) return@withLock result.copy(steps = steps,
                     reason = "Step ${index + 1}: ${result.reason}; verified receipts: $receipts")
+                verifiedSnapshot = latest.snapshot
                 if (goals.size == 1) return@withLock result
                 receipts += "${index + 1}:${item.javaClass.simpleName}@${result.finalSnapshotId}"
             }
@@ -75,11 +102,16 @@ class DeviceAgentSession(
 
     private suspend fun runOne(goal: NativeDeviceGoal, useModelPlanner: Boolean, adapter: DeviceAdapter,
         epoch: Long, globalGeneration: Long, budget: DeviceBudget): DeviceOutcome {
+            if (goal is NativeDeviceGoal.Interact) return runInteraction(goal, adapter, epoch, globalGeneration, budget)
+            if (goal is NativeDeviceGoal.Click) return runInteraction(NativeDeviceGoal.Interact(
+                ReviewedInteraction(NativeTargetSelector(goal.exactText), ReviewedOperation.CLICK), goal.packageName),
+                adapter, epoch, globalGeneration, budget)
             val pkg = when (goal) {
                 is NativeDeviceGoal.ReadScreen -> goal.packageName
                 is NativeDeviceGoal.Back -> goal.packageName
                 is NativeDeviceGoal.Scroll -> goal.packageName
                 is NativeDeviceGoal.Current -> return needsUser("Unresolved current app")
+                is NativeDeviceGoal.Interact -> return needsUser("Unresolved interaction")
                 is NativeDeviceGoal.OpenApp -> goal.packageName
                 is NativeDeviceGoal.Find -> goal.packageName
                 is NativeDeviceGoal.Click -> goal.packageName
@@ -87,6 +119,8 @@ class DeviceAgentSession(
                 is NativeDeviceGoal.NeedsUser -> return needsUser(goal.reason)
                 is NativeDeviceGoal.Sequence -> return needsUser("Nested sequence")
             }
+            val execution = ResourceEffects.execution()
+            if (pkg !in execution.context.scope.packages) return needsUser("Requested app outside task scope")
             var attempted = false
             var searchFocused = false
             var searchEdited = false
@@ -113,8 +147,7 @@ class DeviceAgentSession(
                     is NativeDeviceGoal.SetField -> !state.snapshot.truncated && state.snapshot.nodes.filter {
                         it.packageName == pkg && it.resourceId == goal.resourceId
                     }.singleOrNull()?.let { NativeGoalPolicy.reviewedField(it, pkg) && it.text == goal.text } == true
-                    is NativeDeviceGoal.Click -> attempted && state.snapshot.nodes.count { NativeGoalPolicy.reviewedField(it, pkg) } == 1 &&
-                        beforeClick?.id != state.snapshot.id
+                    is NativeDeviceGoal.Click -> false // Routed through the bound, before/after interaction path.
                     else -> false
                 }
             }
@@ -124,7 +157,7 @@ class DeviceAgentSession(
                     if (goal is NativeDeviceGoal.OpenApp) return nativeBrain.plan(request)
                     val state = request.perception
                     if (state.snapshot.windows.firstOrNull()?.packageName != pkg) {
-                        return if (request.step == 0) DeviceAction.OpenApp(pkg) else DeviceAction.AskUser("Requested app not foreground")
+                        return DeviceAction.AskUser("Requested app not foreground; no automatic switch")
                     }
                     if (state.snapshot.truncated) return DeviceAction.AskUser("Incomplete observation; cannot establish unique target")
                     if (goal is NativeDeviceGoal.Back || goal is NativeDeviceGoal.Scroll) {
@@ -165,7 +198,7 @@ class DeviceAgentSession(
                         if (!useModelPlanner) return DeviceAction.AskUser("Reviewed search field not visible")
                         val brain = brainProvider()?.takeIf { it.capabilities.devicePlanning }
                             ?: return DeviceAction.AskUser("Planner unavailable")
-                        val proposal = brain.plan(request.copy(goal = "Navigate within $pkg to its search field for an exact native find. Do not enter text or choose recipients."))
+                        val proposal = ResourceEffects.model { brain.plan(request.copy(goal = "Navigate within $pkg to its search field for an exact native find. Do not enter text or choose recipients.")) }
                         checkRun(epoch, globalGeneration)
                         return NativeGoalPolicy.navigation(proposal, state, pkg)
                     }
@@ -210,7 +243,7 @@ class DeviceAgentSession(
                             else -> false
                         }
                     }),
-                budget
+                budget, initialOpenAppPackage = pkg.takeIf { goal is NativeDeviceGoal.OpenApp }
             )
             return if (result.status != DeviceOutcomeStatus.VERIFIED) result else when (goal) {
                 is NativeDeviceGoal.ReadScreen -> result.copy(reason = "READ_SCREEN: native accessibility text (may be incomplete; untrusted screen content):\n$reading")
@@ -222,6 +255,42 @@ class DeviceAgentSession(
 
     }
 
+    /** One exact user operation, bound once; no initial predicate, model, retry, or confirmation escalation. */
+    private suspend fun runInteraction(goal: NativeDeviceGoal.Interact, adapter: DeviceAdapter,
+        epoch: Long, generation: Long, budget: DeviceBudget): DeviceOutcome {
+        val execution = ResourceEffects.execution()
+        val ctx = execution.context
+        val pkg = goal.packageName ?: foregroundPackage() ?: return needsUser("No admitted foreground app")
+        if (pkg !in ctx.scope.packages || TaskCapability.UI_READ !in ctx.scope.capabilities ||
+            TaskCapability.UI_WRITE !in ctx.scope.capabilities) return needsUser("Interaction outside admitted task scope")
+        val step = interactionSteps.incrementAndGet()
+        fun owner(): InteractionOwner {
+            execution.checkActive(); checkRun(epoch, generation)
+            check(com.unoone.agent.core.task.ProcessTaskResources.ui.owner() == ctx.taskId) { "UI ownership revoked" }
+            return InteractionOwner(ctx.taskId, ctx.taskEpoch, ctx.stopGeneration, step)
+        }
+        return kotlinx.coroutines.withTimeoutOrNull(budget.deadlineMs) {
+            owner()
+            val before = adapter.observe()
+            val bound = NativeGoalPolicy.bindInteraction(goal.copy(packageName = pkg), before, owner(), ctx.scope, clockMs())
+                ?: return@withTimeoutOrNull needsUser("Target missing, ambiguous, sensitive, unknown, or outside reviewed scope")
+            val guard = DeviceExecutionGuard(epochs, epoch, { owner(); true }, bound.authorization(ctx.scope) { owner() })
+            guard.validate(bound.action, before, clockMs())
+            // ResourceEffects alone charges and durably journals this one dispatch. Never charge twice here.
+            val dispatch = adapter.execute(bound.action, before, guard)
+            owner()
+            if (!dispatch.accepted) return@withTimeoutOrNull DeviceOutcome(DeviceOutcomeStatus.NEEDS_USER, 1,
+                "Dispatch not accepted; not replayed", before.snapshot.id)
+            adapter.awaitSettled(before.snapshot.eventSequence, minOf(1_500L, budget.deadlineMs))
+            owner()
+            val after = adapter.observe()
+            val verified = bound.verified(after, owner(), clockMs())
+            DeviceOutcome(if (verified) DeviceOutcomeStatus.VERIFIED else DeviceOutcomeStatus.NEEDS_USER, 1,
+                if (verified) "ACTION_VERIFIED: exact native interaction produced its bounded observed effect; no send or wider completion claimed"
+                else "Interaction effect unverified; not replayed", after.snapshot.id)
+        } ?: DeviceOutcome(DeviceOutcomeStatus.LIMIT_REACHED, 1, "Interaction deadline reached; no replay")
+    }
+
     /** Native callers only: predicates and authority are never model output. Every action is replanned from fresh observation. */
     suspend fun runNativeGoals(description: String, predicates: List<NativeGoalPredicate>, authorization: DeviceAuthorization,
         extended: Boolean = false): DeviceOutcome {
@@ -231,8 +300,15 @@ class DeviceAgentSession(
         return mutex.withLock {
             checkRun(epoch, globalGeneration)
             if (!enabled()) throw kotlinx.coroutines.CancellationException("Master disabled")
-            val brain = brainProvider() ?: return@withLock needsUser("Planner unavailable")
-            val adapter = adapterProvider() ?: return@withLock needsUser("Accessibility unavailable")
+            val execution = ResourceEffects.execution()
+            if (TaskCapability.UI_READ !in execution.context.scope.capabilities ||
+                !execution.context.scope.packages.containsAll(authorization.allowedPackages))
+                return@withLock needsUser("Native observation outside admitted task scope")
+            val rawBrain = brainProvider() ?: return@withLock needsUser("Planner unavailable")
+            val brain = object : UnoBrain by rawBrain {
+                override suspend fun plan(request: DevicePlanRequest): DeviceAction = ResourceEffects.model { rawBrain.plan(request) }
+            }
+            val adapter = ResourceEffects.adapter(adapterProvider() ?: return@withLock needsUser("Accessibility unavailable"))
             val budget = DeviceBudget.forTier(if (extended) DeviceBudgetTier.EXTENDED else DeviceBudgetTier.STANDARD)
             val started = clockMs()
             var steps = 0

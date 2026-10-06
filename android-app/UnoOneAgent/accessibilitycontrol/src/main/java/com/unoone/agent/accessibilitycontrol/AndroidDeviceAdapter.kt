@@ -21,8 +21,17 @@ fun interface NativeSemanticResolver {
 /** Real Android adapter. No live AccessibilityNodeInfo escapes capture or execution. */
 class AndroidDeviceAdapter(
     private val service: UnoOneAccessibilityService,
-    private val semantics: NativeSemanticResolver = NativeSemanticResolver { _, _, _ -> TargetSemantic.UNKNOWN }
+    private val semantics: NativeSemanticResolver = NativeSemanticResolver { _, _, _ -> TargetSemantic.UNKNOWN },
+    allowedObservationPackages: Set<String>? = null,
+    // Standalone developer capture is explicit user capture, not task authority.
+    private val explicitCapturePolicy: (String) -> Boolean = { true }
 ) : DeviceAdapter {
+    private val allowedObservationPackages = allowedObservationPackages?.toSet()
+    private fun permitsObservation(pkg: String): Boolean =
+        allowedObservationPackages?.contains(pkg) ?: explicitCapturePolicy(pkg)
+    override fun withObservationPackages(packages: Set<String>): DeviceAdapter =
+        AndroidDeviceAdapter(service, semantics,
+            allowedObservationPackages?.intersect(packages) ?: packages.toSet(), explicitCapturePolicy)
     private var issuedSnapshot: UiSnapshot? = null
     override suspend fun observe(): PerceptionState = withContext(Dispatchers.Main.immediate) {
         check(AgentRuntimeGate.isEnabled()) { "Master disabled" }
@@ -42,10 +51,18 @@ class AndroidDeviceAdapter(
         var visited = 0
         val windowId = root.windowId
         val pkg = clean(root.packageName)
+        // Out-of-scope foreground is metadata-only so OpenApp can still launch its admitted target.
+        if (!permitsObservation(pkg)) {
+            root.recycle()
+            check(AgentRuntimeGate.isEnabled())
+            return UiSnapshot(UUID.randomUUID().toString(), SystemClock.elapsedRealtime(), capturedSequence,
+                display, listOf(UiWindow(windowId, pkg, display, emptyList()))).also { issuedSnapshot = it }
+        }
         // First pass classifies labels before ANY node text enters the immutable snapshot.
         var secretContext = false
         var scanned = 0
         fun scan(node: AccessibilityNodeInfo, depth: Int) {
+            if (!permitsObservation(clean(node.packageName))) return
             if (depth > PerceptionLimits.DEPTH || scanned++ >= PerceptionLimits.NODES) { secretContext = true; return }
             if (node.isPassword || hasSecretMetadata(node)) secretContext = true
             for (i in 0 until node.childCount.coerceAtMost(PerceptionLimits.NODES)) {
@@ -54,6 +71,7 @@ class AndroidDeviceAdapter(
         }
         scan(root, 0)
         fun walk(node: AccessibilityNodeInfo, path: String, depth: Int) {
+            if (!permitsObservation(clean(node.packageName))) return
             if (depth > PerceptionLimits.DEPTH || visited >= PerceptionLimits.NODES) { truncated = true; return }
             visited++
             val described = if (node.isVisibleToUser) describe(node, path, display, secretContext) else null
@@ -74,14 +92,15 @@ class AndroidDeviceAdapter(
 
     private fun clean(value: CharSequence?): String = value?.toString()?.filter { !it.isISOControl() || it == '\n' }?.take(PerceptionLimits.TEXT).orEmpty()
     private fun hasSecretMetadata(node: AccessibilityNodeInfo): Boolean =
-        listOf(node.viewIdResourceName, node.text, node.contentDescription,
-            if (android.os.Build.VERSION.SDK_INT >= 26) node.hintText else null).any(SensitiveReadRedaction::hasSecretLabel)
+        permitsObservation(clean(node.packageName)) && listOf(node.viewIdResourceName, node.text, node.contentDescription,
+            if (android.os.Build.VERSION.SDK_INT >= 26) node.hintText else null).any(DeviceSafetyPolicy::isSensitiveMetadata)
 
     private fun describe(node: AccessibilityNodeInfo, path: String, display: RectData, secretContext: Boolean = false): UiNode? {
+        if (!permitsObservation(clean(node.packageName))) return null
         val r = Rect(); node.getBoundsInScreen(r)
         val l = r.left.coerceIn(display.left, display.right); val t = r.top.coerceIn(display.top, display.bottom)
         val right = r.right.coerceIn(display.left, display.right); val bottom = r.bottom.coerceIn(display.top, display.bottom)
-        if (right <= l || bottom <= t) return null
+        if (right <= l || bottom <= t || r.left < display.left || r.top < display.top || r.right > display.right || r.bottom > display.bottom) return null
         val pkg = clean(node.packageName); val cls = clean(node.className); val resource = clean(node.viewIdResourceName)
         val labelledBy = node.labeledBy
         val labelledSecret = try { labelledBy?.let(::hasSecretMetadata) == true } finally { labelledBy?.recycle() }
@@ -94,13 +113,35 @@ class AndroidDeviceAdapter(
         val deny = node.isPassword || hasSecretMetadata(node) || labelledSecret || neighboringSecret ||
             SensitiveReadRedaction.shouldRedact(resource, node.text, secretContext, node.isEditable) ||
             SensitiveReadRedaction.shouldRedact(resource, node.contentDescription, secretContext, node.isEditable)
-        val semantic = if (deny) TargetSemantic.SECRET else semantics.resolve(pkg, resource, cls)
+        val metadataDenied = listOf(node.viewIdResourceName, node.text, node.contentDescription,
+            if (android.os.Build.VERSION.SDK_INT >= 26) node.hintText else null).any(DeviceSafetyPolicy::isSensitiveMetadata)
+        val inputClass = node.inputType and android.text.InputType.TYPE_MASK_CLASS
+        val variation = node.inputType and android.text.InputType.TYPE_MASK_VARIATION
+        val ordinaryText = inputClass == android.text.InputType.TYPE_CLASS_TEXT && variation in setOf(
+            android.text.InputType.TYPE_TEXT_VARIATION_NORMAL, android.text.InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE,
+            android.text.InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE, android.text.InputType.TYPE_TEXT_VARIATION_FILTER)
+        val nativeTab = cls == "android.app.ActionBar\$Tab" && node.isClickable &&
+            (node.text?.isNotBlank() == true || node.contentDescription?.isNotBlank() == true)
+        val assigned = semantics.resolve(pkg, resource, cls)
+        val semantic = when {
+            deny || (inputClass == android.text.InputType.TYPE_CLASS_TEXT && variation in setOf(
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD, android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+                android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)) ||
+                (inputClass == android.text.InputType.TYPE_CLASS_NUMBER && variation == android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD) -> TargetSemantic.SECRET
+            metadataDenied -> TargetSemantic.SECURITY
+            assigned != TargetSemantic.UNKNOWN -> assigned
+            node.isEditable && ordinaryText && node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT } -> TargetSemantic.FORM_FIELD
+            nativeTab -> TargetSemantic.NAVIGATION
+            else -> TargetSemantic.UNKNOWN
+        }
         val redact = node.isPassword || semantic.sensitiveObservation()
         return UiNode("${node.windowId}:$path", node.windowId, path, pkg, cls, resource,
             if (redact) "" else clean(node.text), if (redact) "" else clean(node.contentDescription),
             RectData(l, t, right, bottom), node.isClickable, node.isLongClickable, node.isEditable, node.isScrollable,
             node.isFocusable, node.isFocused, node.isEnabled, node.isPassword,
-            semantic)
+            semantic, visible = node.isVisibleToUser, selected = node.isSelected, readableTab = nativeTab,
+            collectionRowIndex = node.collectionItemInfo?.rowIndex ?: -1,
+            hint = if (redact || android.os.Build.VERSION.SDK_INT < 26) "" else clean(node.hintText))
     }
 
     override suspend fun execute(action: DeviceAction, state: PerceptionState, guard: DeviceExecutionGuard): DeviceDispatch = withContext(Dispatchers.Main.immediate) {
@@ -147,6 +188,15 @@ class AndroidDeviceAdapter(
             if (!live.refresh() || !live.isVisibleToUser) return false
             val fresh = describe(live, original.path, state.snapshot.displayBounds) ?: return false
             if (fresh.signature() != original.signature()) return false
+            val requiredAction = when (action) {
+                is DeviceAction.ClickNode -> AccessibilityNodeInfo.ACTION_CLICK
+                is DeviceAction.LongPressNode -> AccessibilityNodeInfo.ACTION_LONG_CLICK
+                is DeviceAction.FocusNode -> AccessibilityNodeInfo.ACTION_FOCUS
+                is DeviceAction.SetText, is DeviceAction.ClearText -> AccessibilityNodeInfo.ACTION_SET_TEXT
+                is DeviceAction.Scroll -> if (action.direction == ScrollDirection.FORWARD) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                else -> null
+            }
+            if (requiredAction != null && live.actionList.none { it.id == requiredAction }) return false
             guard.validate(action, state, SystemClock.elapsedRealtime())
             if (!AgentRuntimeGate.isEnabled() || service.eventSequence != state.snapshot.eventSequence) return false
             return when (action) {

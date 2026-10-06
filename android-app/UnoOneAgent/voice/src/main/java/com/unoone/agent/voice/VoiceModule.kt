@@ -11,6 +11,9 @@ import com.unoone.agent.voice.stt.SherpaSttEngine
 import com.unoone.agent.voice.stt.SttMode
 import com.unoone.agent.voice.tts.SherpaTtsEngine
 import com.unoone.agent.voice.tts.TtsPlayer
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -62,6 +65,9 @@ class VoiceModule(private val context: Context) {
     @Volatile
     var lastSttConfidence: Float = 0f
         private set
+
+    private val captureOwnership = CaptureOwnership()
+    private val legacyCaptureOwner = Any()
 
     private val activeSttJob = AtomicReference<Deferred<Result<String>>?>(null)
     private val isRecordingFlag = AtomicBoolean(false)
@@ -194,7 +200,38 @@ class VoiceModule(private val context: Context) {
         return mode == android.media.AudioManager.MODE_IN_CALL || mode == android.media.AudioManager.MODE_IN_COMMUNICATION
     }
 
-    fun startRecording(context: Context, scope: CoroutineScope): Result<Unit> {
+    fun startRecording(context: Context, scope: CoroutineScope): Result<Unit> =
+        captureOwnership.acquire(legacyCaptureOwner, { stopRecordingNative(); Unit }) { startRecordingNative(context, scope) }
+
+    /** The scope, capture and STT child all end before the calling task releases its slot. */
+    suspend fun recordOwned(context: Context, durationMillis: Long): Result<String> = coroutineScope {
+        val owner = Any()
+        var job: Deferred<Result<String>>? = null
+        try {
+            val start = captureOwnership.acquire(owner, { stopRecordingNative(); Unit }) {
+                try { startRecordingNative(context, this) }
+                finally { job = activeSttJob.get() }
+            }
+            if (start is Result.Error) return@coroutineScope start
+            delay(durationMillis)
+            stopAndTranscribeOwned(owner)
+        } finally {
+            withContext(NonCancellable) {
+                try {
+                    captureOwnership.matching(owner) { stopRecordingNative() }
+                } finally {
+                    try {
+                        job?.cancelAndJoin()
+                        // Android cancellation posts native recognizer destruction to Main.
+                        if (job != null) withContext(Dispatchers.Main) { Unit }
+                    }
+                    finally { captureOwnership.release(owner) }
+                }
+            }
+        }
+    }
+
+    private fun startRecordingNative(context: Context, scope: CoroutineScope): Result<Unit> {
         if (callActive()) return Result.Error("Voice capture unavailable during a call")
         if (!AgentRuntimeGate.isEnabled()) {
             return Result.Error("UnoOne is disabled. Enable it before using the microphone.")
@@ -243,41 +280,52 @@ class VoiceModule(private val context: Context) {
     }
 
     suspend fun stopAndTranscribe(): Result<String> {
-        if (callActive()) {
-            stopRecording()
-            androidStt?.release()
-            return Result.Error("Voice capture discarded during call")
-        }
-        if (!isRecordingFlag.getAndSet(false)) return Result.Error("No active voice capture session")
-        VoiceAgentRuntime.transition(VoiceAgentState.PROCESSING, "transcribing final utterance")
-
-        return if (useAndroidStt && sttEngine == null) {
-            androidStt?.stopListening()
-            val job = activeSttJob.getAndSet(null)
-                ?: return Result.Error("No active STT job")
-            val res = job.await()
-            if (callActive()) return Result.Error("Voice capture discarded during call")
-            // Android STT doesn't expose confidence; assume full only on a non-empty success,
-            // otherwise reset to 0 so a stale value never feeds the low-confidence retry logic.
-            lastSttConfidence = if (res is Result.Success && res.data.isNotBlank()) 1f else 0f
-            res
-        } else {
-            // Sherpa decoding is CPU-heavy and may take multiple seconds on a phone. This method is
-            // often called by a Main-scoped ViewModel coroutine, so own the dispatcher boundary here
-            // instead of requiring every UI/agent caller to remember to move it off the UI thread.
-            withContext(Dispatchers.IO) {
-                val engine = sttEngine
-                    ?: return@withContext Result.Error("Offline STT model not installed. Install the Sherpa ASR model or enable the system fallback in Settings.")
-                val pcm = recorder.stop()
-                if (pcm.isEmpty()) return@withContext Result.Error("No audio captured")
-                val sttStart = System.currentTimeMillis()
-                val res = engine.transcribe(pcm)
-                if (callActive()) return@withContext Result.Error("Voice capture discarded during call")
-                com.unoone.agent.observability.Diagnostics.recordSttLatency(System.currentTimeMillis() - sttStart)
-                lastSttConfidence = if (res is Result.Success) engine.lastConfidence else 0f
-                res
+        try { return stopAndTranscribeOwned(legacyCaptureOwner) }
+        finally {
+            withContext(NonCancellable) {
+                val job = captureOwnership.matching(legacyCaptureOwner) {
+                    val pending = activeSttJob.get()
+                    stopRecordingNative()
+                    pending
+                }
+                try {
+                        job?.cancelAndJoin()
+                        // Android cancellation posts native recognizer destruction to Main.
+                        if (job != null) withContext(Dispatchers.Main) { Unit }
+                    }
+                finally { captureOwnership.release(legacyCaptureOwner) }
             }
         }
+    }
+
+    private suspend fun stopAndTranscribeOwned(owner: Any): Result<String> {
+        var job: Deferred<Result<String>>? = null
+        var pcm = ByteArray(0)
+        var engine: SherpaSttEngine? = null
+        val admitted = captureOwnership.matching(owner) {
+            if (!isRecordingFlag.getAndSet(false)) false
+            else {
+                engine = sttEngine
+                job = activeSttJob.get()
+                if (job != null) androidStt?.stopListening()
+                else pcm = recorder.stop()
+                true
+            }
+        } == true
+        if (!admitted) return Result.Error("No matching active voice capture session")
+        if (callActive()) return Result.Error("Voice capture discarded during call")
+        VoiceAgentRuntime.transition(VoiceAgentState.PROCESSING, "transcribing final utterance")
+        val res = if (job != null) job!!.await() else withContext(Dispatchers.IO) {
+            val decoder = engine ?: return@withContext Result.Error("Offline STT model not installed")
+            if (pcm.isEmpty()) return@withContext Result.Error("No audio captured")
+            val started = System.currentTimeMillis()
+            decoder.transcribe(pcm).also {
+                com.unoone.agent.observability.Diagnostics.recordSttLatency(System.currentTimeMillis() - started)
+            }
+        }
+        if (callActive()) return Result.Error("Voice capture discarded during call")
+        lastSttConfidence = if (res is Result.Success && res.data.isNotBlank()) engine?.lastConfidence ?: 1f else 0f
+        return res
     }
 
     /**
@@ -295,7 +343,9 @@ class VoiceModule(private val context: Context) {
         result
     }
 
-    fun stopRecording(): ByteArray {
+    fun stopRecording(): ByteArray = captureOwnership.stopAll { stopRecordingNative() }
+
+    private fun stopRecordingNative(): ByteArray {
         isRecordingFlag.set(false)
         // Cancel the active STT job to prevent orphaned coroutines
         activeSttJob.getAndSet(null)?.cancel()
@@ -370,9 +420,7 @@ class VoiceModule(private val context: Context) {
     fun isTtsInitialized(): Boolean = ttsEngine?.isInitialized() == true
 
     fun release() {
-        isRecordingFlag.set(false)
-        activeSttJob.getAndSet(null)?.cancel()
-        recorder.stop()
+        stopRecording()
         sttEngine?.release()
         ttsEngine?.release()
         activeSttKey = ""

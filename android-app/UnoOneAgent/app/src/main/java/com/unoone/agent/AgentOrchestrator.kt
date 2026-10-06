@@ -1,6 +1,8 @@
 package com.unoone.agent
 
 import com.unoone.agent.core.device.nodeRef
+import com.unoone.agent.core.task.*
+import com.unoone.agent.task.*
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.edit
@@ -55,6 +57,8 @@ import com.unoone.agent.voice.VoiceModule
 import com.unoone.agent.voice.VoiceService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -66,6 +70,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -272,6 +279,9 @@ class AgentOrchestrator(
         requestedCode: String,
         inputType: InputType
     ): Boolean {
+        val execution = ResourceEffects.execution()
+        require("voice-language:" + VoiceLanguage.normalize(requestedCode) in execution.context.scope.objectHandles) { "Voice language outside native scope" }
+        execution.beforeEffect(TaskCapability.LOCAL_WRITE) // WAL gates both engine reinit and preference commit.
         val previousCode = VoiceLanguage.normalize(currentVoiceLanguageCode())
         val requested = VoiceLanguage.normalize(requestedCode)
         val modelBaseDir =
@@ -351,10 +361,9 @@ class AgentOrchestrator(
      */
     private suspend fun recordVoiceNote(durationSeconds: Int): Result<String> {
         return try {
-            val start = voiceModule.startRecording(context, scope)
-            if (start is Result.Error) return start
-            kotlinx.coroutines.delay(durationSeconds * 1000L)
-            voiceModule.stopAndTranscribe()
+            voiceModule.recordOwned(context, durationSeconds * 1000L)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.Error("Voice recording failed: ${e.message}")
         }
@@ -435,20 +444,27 @@ class AgentOrchestrator(
         voiceModule = shared
     }
 
+    private suspend fun <T> modelTransition(cleanup: Boolean = false, block: suspend () -> T): T =
+        com.unoone.agent.task.ModelTransitions.run(cleanup = cleanup, block = block)
+
+    private val blindAidTransitionEpoch = java.util.concurrent.atomic.AtomicLong()
+    private val blindAidOwner = "blind-aid"
+    private val blindAidProducers = com.unoone.agent.core.task.BlindAidProducerGate()
+
     /**
      * Loads a `.litertlm` brain model (default profile) into the command parser's LiteRT-LM engine.
      * Should be called from a coroutine (engine init is slow).
      */
-    suspend fun loadLlmModel(modelPath: String): com.unoone.agent.core.model.Result<Unit> {
+    suspend fun loadLlmModel(modelPath: String): com.unoone.agent.core.model.Result<Unit> = modelTransition {
         if (ExclusiveBrainLeaseState.isActive()) {
-            return Result.Error("Gemma is reserved by ${ExclusiveBrainLeaseState.currentOwner()}")
+            return@modelTransition Result.Error("Gemma is reserved by ${ExclusiveBrainLeaseState.currentOwner()}")
         }
         val result = commandParser.loadModel(modelPath)
         if (result is Result.Success) {
             lastLoadedPath = modelPath
             consecutiveInferenceFailures = 0
         }
-        return result
+        result
     }
 
     /**
@@ -459,14 +475,17 @@ class AgentOrchestrator(
         modelPath: String,
         spec: com.unoone.agent.core.model.BrainModelSpec
     ): com.unoone.agent.core.model.Result<Unit> =
-        loadLlmModel(modelPath, spec, leaseOwner = null)
+        modelTransition { loadLlmModel(modelPath, spec, leaseOwner = null) }
 
     /** Restores the phone planner while [leaseOwner] still holds the exclusive transition lease. */
-    suspend fun loadLlmModelUnderLease(
+    internal suspend fun loadLlmModelUnderLease(
         modelPath: String,
         spec: com.unoone.agent.core.model.BrainModelSpec,
-        leaseOwner: String
-    ): com.unoone.agent.core.model.Result<Unit> = loadLlmModel(modelPath, spec, leaseOwner)
+        authorization: PhoneModelRestoreAuthorization
+    ): com.unoone.agent.core.model.Result<Unit> {
+        authorization.checkActive()
+        return loadLlmModel(modelPath, spec, authorization.residentOwner)
+    }
 
     private suspend fun loadLlmModel(
         modelPath: String,
@@ -492,10 +511,10 @@ class AgentOrchestrator(
      * Unloads the Gemma brain to free native memory under system pressure
      * (see [com.unoone.agent.UnoOneApplication.onTrimMemory]). Idempotent.
      */
-    suspend fun unloadLlmModel(): Boolean {
+    suspend fun unloadLlmModel(): Boolean = modelTransition(cleanup = true) {
         val released = localBrain.unloadModel()
         check(released && !localBrain.isModelLoaded()) { "Native brain did not acknowledge unload" }
-        return released
+        released
     }
 
     fun cancelLlmInference(reason: String = "user stop") {
@@ -517,10 +536,10 @@ class AgentOrchestrator(
         val selected = com.unoone.agent.storage.PreferencesManager(context).selectedBrainManifestId
         if (selected != spec.manifestId || ExclusiveBrainLeaseState.isActive()) return false
         addStep(AgentStatus.EXECUTING, "Recovering", "Brain dropped — reloading…")
-        val result = commandParser.loadModel(path, spec)
+        val result = loadLlmModel(path, spec)
         val ok = result is Result.Success
         if (!AgentRuntimeGate.isEnabled()) {
-            commandParser.unloadModel()
+            unloadLlmModel()
             return false
         }
         if (ok) {
@@ -554,7 +573,8 @@ class AgentOrchestrator(
         state: com.unoone.agent.core.device.PerceptionState,
         envelope: com.unoone.agent.localbrain.SnapshotImageEnvelope,
         question: String
-    ): String = coroutineScope {
+    ): String = modelTransition { coroutineScope {
+        check(!ExclusiveBrainLeaseState.isActive()) { "NeedsUser: local brain is exclusively reserved" }
         check(AgentRuntimeGate.isEnabled() && localBrain.supportsImages()) { "Selected local image runtime is unavailable" }
         require(question.isNotBlank() && question.length <= 1024)
         val generation = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation
@@ -578,7 +598,7 @@ class AgentOrchestrator(
                 is Result.Error -> error("Local image analysis failed; no action was executed")
             }
         } finally { bytes.fill(0); stop.close() }
-    }
+    } }
 
     /** Last load error (empty on success) — surfaces device-compatibility status to the UI. */
     fun lastBrainLoadError(): String = commandParser.lastLoadError()
@@ -591,103 +611,92 @@ class AgentOrchestrator(
      * [com.unoone.agent.core.model.ToolCall] or an error when nothing could be planned.
      */
     suspend fun planToolCall(command: String): com.unoone.agent.core.model.Result<com.unoone.agent.core.model.ToolCall> {
-        val call = commandParser.parseAsync(command, emptyList(), "")
+        val call = try { advisoryModelCall { commandParser.parseAsync(command, emptyList(), "") } }
+        catch (busy: TaskModelBusy) { return Result.Error("MODEL_BUSY", busy) }
         return if (call != null) com.unoone.agent.core.model.Result.Success(call)
         else com.unoone.agent.core.model.Result.Error("No tool call proposed for: $command")
     }
 
     /** Self-test/evaluation-only direct planner call. It proposes but never executes an action. */
     suspend fun planLlmToolCall(command: String): Result<ToolCall> =
-        commandParser.planModelOnly(command)
+        try { advisoryModelCall { commandParser.planModelOnly(command) } }
+        catch (busy: TaskModelBusy) { Result.Error("MODEL_BUSY", busy) }
 
     fun setBlindAidActive(
         active: Boolean,
         bringToForeground: Boolean = false,
-        announce: Boolean = true
+        announce: Boolean = true,
+        reloadAfterRelease: Boolean = true
     ) {
+        val epoch = blindAidTransitionEpoch.incrementAndGet()
+        val generation = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation
         if (active && !AgentRuntimeGate.isEnabled()) return
-        if (active) {
-            if (!blindAidActivationInFlight.compareAndSet(false, true)) return
-            brainLoadCancelCallback?.invoke()
-            cancelLlmInference("Blind Aid activation")
-            // C1: free the 2.5 GB Gemma brain BEFORE binding the camera. Blind Aid is a pure
-            // CameraX + MediaPipe path — it never uses the brain — and on a ~5 GB-available device
-            // keeping the brain resident while the camera + object detector load trips the kernel
-            // lowmemorykiller and kills the app. Native release must not run on the UI thread: wait
-            // for the IO handoff, then expose the camera state so camera and Gemma never overlap.
-            scope.launch {
-                try {
-                    if (!brainReleaseGuard()) {
-                        Logger.w("Orchestrator: Blind Aid start refused while another E4B mode owns the runtime")
-                        return@launch
-                    }
-                    // Always run the unload barrier, even when isLlmLoaded() is false: a native load
-                    // may be in flight and non-cancellable. The process coordinator waits for it,
-                    // then closes the completed engine before CameraX is exposed.
-                    runCatching { withContext(Dispatchers.IO) { unloadLlmModel() } }
-                        .onSuccess {
-                            Logger.i("Orchestrator: E4B unload barrier completed for Blind Aid")
+        // Close admission and revoke every producer before scheduling any native wait.
+        _isBlindAidActive.value = false
+        blindAidProducers.deactivate(epoch)
+        if (!active) voiceModule.stopSpeaking()
+        scope.launch {
+            try {
+                modelTransition(cleanup = !active) {
+                    fun current() = epoch == blindAidTransitionEpoch.get() &&
+                        generation == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation && AgentRuntimeGate.isEnabled()
+                    if (active) {
+                        if (!current()) return@modelTransition
+                        // Never reuse an old detector reservation before ALL producer ACKs.
+                        blindAidProducers.awaitAllClosed()
+                        if (!current()) return@modelTransition
+                        if (ExclusiveBrainLeaseState.currentOwner() == blindAidOwner) {
+                            ExclusiveBrainLeaseState.release(blindAidOwner)
                         }
-                        .onFailure { Logger.e("Orchestrator: brain unload for Blind Aid failed", it) }
-                        .getOrThrow()
-                    currentCoroutineContext().ensureActive()
-                    if (!AgentRuntimeGate.isEnabled()) return@launch
-                    _isBlindAidActive.value = true
+                        check(brainReleaseGuard() && !ExclusiveBrainLeaseState.isActive()) {
+                            "NeedsUser: close Secure Browser before starting Blind Aid"
+                        }
+                        blindAidActivationInFlight.set(true)
+                        brainLoadCancelCallback?.invoke()
+                        // Native unload ACK is mandatory; no reservation is dropped on timeout.
+                        unloadLlmModel()
+                        if (!current()) return@modelTransition
+                        check(ExclusiveBrainLeaseState.acquire(blindAidOwner)) { "NeedsUser: model busy" }
+                        if (!current()) {
+                            ExclusiveBrainLeaseState.release(blindAidOwner)
+                            return@modelTransition
+                        }
+                        if (!blindAidProducers.open(epoch)) return@modelTransition
+                        _isBlindAidActive.value = current()
+                    } else {
+                        if (epoch != blindAidTransitionEpoch.get()) return@modelTransition
+                        blindAidProducers.awaitAllClosed()
+                        if (epoch != blindAidTransitionEpoch.get()) return@modelTransition
+                        ExclusiveBrainLeaseState.release(blindAidOwner)
+                    }
+                }
+                if (active && _isBlindAidActive.value && epoch == blindAidTransitionEpoch.get()) {
                     if (bringToForeground) bringAppToForegroundIfNeeded()
-                    // Accessibility disclaimer: Blind Aid is assistive guidance, not a certified
-                    // navigation or medical-safety device. Spoken once on activation.
-                    if (announce) {
-                        voiceModule.speakAwait(
-                            BlindAidNarrator.activationMessage(currentVoiceLanguageCode())
-                        ).onError { msg: String, _: Throwable? ->
-                            Logger.e("Orchestrator: Blind aid speak failed: $msg")
-                        }
-                    }
-                } catch (e: Exception) {
-                    Logger.e("Orchestrator: Blind Aid activation failed", e)
-                } finally {
-                    blindAidActivationInFlight.set(false)
+                    if (announce) voiceModule.speakAwait(BlindAidNarrator.activationMessage(currentVoiceLanguageCode()))
+                } else if (!active && epoch == blindAidTransitionEpoch.get() &&
+                    generation == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation && AgentRuntimeGate.isEnabled()) {
+                    if (announce) voiceModule.speakAwait(BlindAidNarrator.deactivationMessage(currentVoiceLanguageCode()))
+                    if (reloadAfterRelease && epoch == blindAidTransitionEpoch.get() &&
+                        generation == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) brainReloadCallback?.invoke()
                 }
-            }
-        } else {
-            blindAidActivationInFlight.set(false)
-            // Flush a currently-playing/queued scene before announcing the mode transition.
-            voiceModule.stopSpeaking()
-            _isBlindAidActive.value = false
-            if (announce) {
-                scope.launch {
-                    kotlinx.coroutines.delay(150L)
-                    voiceModule.speakAwait(
-                        BlindAidNarrator.deactivationMessage(currentVoiceLanguageCode())
-                    )
-                        .onError { msg: String, _: Throwable? ->
-                            Logger.e("Orchestrator: Blind aid speak failed: $msg")
-                        }
-                }
-            }
-            // C1: restore the brain for chat/agent commands. The Application's reloader honours the
-            // exclusive-lease guards so it won't fight a Secure Browser session.
-            brainReloadCallback?.invoke()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (e: Exception) {
+                addStep(AgentStatus.FAILED, "Needs user", e.message ?: "Mode transition unavailable")
+                Logger.e("Orchestrator: Blind Aid transition failed", e)
+            } finally { blindAidActivationInFlight.set(false) }
         }
     }
 
-    /**
-     * Voice/agent actions run while [processingLock] is held. The public UI path deliberately avoids
-     * unloading Gemma during an in-flight command, so the tool path must release it explicitly before
-     * CameraX and ML Kit are started. This prevents the voice activation path from retaining both
-     * multi-gigabyte workloads at once on memory-constrained phones.
-     */
+    fun registerBlindAidProducer(epoch: Long, revoke: () -> Unit): com.unoone.agent.core.task.BlindAidProducerGate.Producer? {
+        if (!acceptsBlindAidFeedback(epoch)) return null
+        return blindAidProducers.register(epoch, revoke)
+    }
+
+    fun blindAidFeedbackEpoch(): Long = blindAidTransitionEpoch.get()
+    fun acceptsBlindAidFeedback(epoch: Long): Boolean = com.unoone.agent.core.task.acceptsBlindAidFeedback(
+        _isBlindAidActive.value, epoch, blindAidTransitionEpoch.get(), AgentRuntimeGate.isEnabled())
+
     private suspend fun setBlindAidActiveFromTool(active: Boolean) {
-        if (active && isLlmLoaded() && brainReleaseGuard()) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching { unloadLlmModel() }
-                    .onSuccess { Logger.i("Orchestrator: unloaded Gemma before voice-started Blind Aid") }
-                    .onFailure { Logger.e("Orchestrator: voice Blind Aid brain unload failed", it) }
-                    .getOrThrow()
-            }
-        }
-        // The validated tool pipeline already narrates the action and final result. Suppress the
-        // direct UI-toggle announcement here so a voice command is never spoken two or three times.
         setBlindAidActive(active, bringToForeground = active, announce = false)
     }
 
@@ -728,43 +737,242 @@ class AgentOrchestrator(
         }
     )
 
-    suspend fun processCommand(text: String, inputType: InputType = InputType.TEXT, admissionGeneration: Long? = null) = coroutineScope {
-        // Every ingress (including floating mic and direct test injection) shares the stop barrier.
+    val taskRuntime: NativeTaskRuntime by lazy { NativeTaskRuntime(context, this, noteDao) }
+    @Volatile private var activeTaskContext: TaskContext? = null
+    private var taskOutcome = TaskOutcome.UNVERIFIED
+    private var taskReason = TaskReason.NONE
+    @Volatile private var narrationScope: CoroutineScope? = null
+    private val blockedTicket = AtomicReference<PermissionTicket?>(null)
+
+    /** Stop/voice approval bypass ordinary queue admission. */
+    fun handleImmediateInput(text: String, inputType: InputType): Boolean {
         if (com.unoone.agent.voice.VoiceControlPolicy.isStop(text)) {
-            cancelCurrentCommand()
-            return@coroutineScope
+            cancelCurrentCommand(); return true
         }
-        if (!AgentRuntimeGate.isEnabled() || (admissionGeneration != null && admissionGeneration != com.unoone.agent.core.runtime.GlobalTaskCancellation.generation)) return@coroutineScope
-        if (inputType == InputType.VOICE && resolvePendingVoiceConfirmation(text)) return@coroutineScope
-        val work = synchronized(commandOwner) {
-            if ((admissionGeneration != null && admissionGeneration != com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) || !AgentRuntimeGate.isEnabled() || !processingLock.compareAndSet(false, true)) return@coroutineScope
-            val myRun = currentRunId.incrementAndGet()
-            async(start = CoroutineStart.LAZY) {
-                try {
-                    if (admissionGeneration == null || admissionGeneration == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) processOwnedCommand(text, inputType, myRun)
-                }
-                catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
-                catch (error: Exception) {
-                    Logger.e("Command failed", error)
-                    addStep(AgentStatus.FAILED, "Command failed", "Unable to verify completion; please retry.")
+        return inputType == InputType.VOICE && resolvePendingVoiceConfirmation(text)
+    }
+
+    suspend fun processCommand(text: String, inputType: InputType = InputType.TEXT, admissionGeneration: Long? = null) {
+        if (handleImmediateInput(text, inputType)) return
+        if (!AgentRuntimeGate.isEnabled() || (admissionGeneration != null &&
+            admissionGeneration != com.unoone.agent.core.runtime.GlobalTaskCancellation.generation)) return
+        val receiptGeneration = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation
+        when (val admission = taskRuntime.submitPreparedCommand(text, inputType, admissionGeneration)) {
+            is Admission.Accepted -> taskRuntime.await(admission.taskId)
+            is Admission.Rejected -> {
+                // Rejection has no active run ID: addStep intentionally suppresses cancelled/old
+                // runs, so it cannot publish intake receipts. Do not mint execution authority or
+                // launch narration for a rejected request, and do not revive UI after Stop.
+                if (AgentRuntimeGate.isEnabled() && receiptGeneration == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) {
+                    _timelineSteps.update { it.takeLast(99) + TimelineStep(AgentStatus.FAILED, "Command not admitted", admission.reason.name) }
                 }
             }
-                .also { activeCommandJob = it }
         }
+    }
+
+    /** Called ONLY by the coordinator's one interactive worker. No parallel old-body launch. */
+    internal suspend fun executeAcceptedTask(ctx: TaskContext, inputType: InputType): NativeTaskOutput {
+        ctx.checkActive()
+        val job = currentCoroutineContext()[Job]
+        synchronized(commandOwner) {
+            activeTaskContext = ctx
+            activeCommandJob = job
+            processingLock.set(true)
+        }
+        recentCommands.clear()
+        lastToolResult = ""
+        pendingCommand.set(null); pendingInputType.set(null); pendingRequiredPermission.set(null)
+        taskOutcome = TaskOutcome.UNVERIFIED
+        taskReason = TaskReason.NONE
+        val narrationJob = Job(job)
+        narrationScope = CoroutineScope(currentCoroutineContext() + narrationJob)
+        val myRun = currentRunId.incrementAndGet()
         try {
-            work.await()
-        } catch (cancel: kotlinx.coroutines.CancellationException) {
-            // Stop cancels this child, not the UI's long-lived command collector.
-            currentCoroutineContext().ensureActive()
+            val planDigest = ctx.scope.objectHandles.singleOrNull { it.startsWith("legacy-plan:") }
+            if (planDigest != null) {
+                val approved = synchronized(legacyPlans) { legacyPlans[planDigest] }
+                    ?: throw SecurityException("Skill snapshot expired")
+                if (approved.currentAppDependent && approved.foregroundPackage != accessibilityControl.getCurrentPackage())
+                    throw SecurityException("Foreground changed; request fresh authorization")
+            }
+            processOwnedCommand(ctx.instruction, inputType, myRun)
+            ctx.checkActive()
+            return NativeTaskOutput(TaskResult(taskOutcome, taskReason), lastToolResult)
+        } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+        catch (busy: TaskModelBusy) {
+            return NativeTaskOutput(TaskResult(TaskOutcome.NEEDS_USER), "Local model is reserved by browser/BlindAid; release it and retry.")
+        } catch (budget: TaskBudgetExceeded) { throw budget }
+        catch (error: SecurityException) {
+            return NativeTaskOutput(TaskResult(TaskOutcome.NEEDS_USER),
+                "This step exceeds the explicit native task scope. Request the remaining step explicitly.")
+        } catch (error: Exception) {
+            Logger.e("Command failed", error)
+            return NativeTaskOutput(TaskResult(TaskOutcome.FAILED), "Unable to verify completion; please retry.")
         } finally {
-            // Never release ownership until the old child really finished, including cancellation.
-            withContext(kotlinx.coroutines.NonCancellable) { work.cancel(); work.join() }
+            narrationScope = null
+            withContext(NonCancellable) { narrationJob.cancelAndJoin() }
+            recentCommands.clear(); lastToolResult = ""
             synchronized(commandOwner) {
-                if (activeCommandJob === work) {
-                    activeCommandJob = null
-                    releaseProcessingLock()
+                if (activeTaskContext?.taskId == ctx.taskId) {
+                    activeTaskContext = null; activeCommandJob = null; releaseProcessingLock()
                 }
             }
+        }
+    }
+
+    internal suspend fun chatForTask(prompt: String, requiredPhrases: List<String> = emptyList()): Result<String> =
+        localBrain.draftText(prompt, requiredPhrases)
+
+    private suspend fun <T> taskModelCall(block: suspend () -> T): T {
+        val ctx = requireNotNull(currentCoroutineContext()[NativeTaskExecution]) { "Native task context required" }.context
+        return ProcessTaskResources.model.withLease(ctx.taskId, ctx::checkActive) {
+            if (ExclusiveBrainLeaseState.isActive()) throw TaskModelBusy()
+            ctx.beforeModelCall()
+            block()
+        }
+    }
+
+    /** Explicit advisory/test lane: scheduling authority only, never action authority. */
+    private suspend fun <T> advisoryModelCall(block: suspend () -> T): T = ModelTransitions.run {
+        if (ExclusiveBrainLeaseState.isActive()) throw TaskModelBusy()
+        block()
+    }
+
+    private data class ApprovedLegacyScope(
+        val skill: com.unoone.agent.storage.entity.SkillEntity,
+        val steps: List<String>, val calls: List<ToolCall>, val scope: TaskScope?,
+        val digest: String, val currentAppDependent: Boolean, val foregroundPackage: String?
+    )
+    private val approvedLegacySkills = java.util.concurrent.atomic.AtomicReference<List<ApprovedLegacyScope>?>(null)
+    private val legacyPlans = java.util.LinkedHashMap<String, ApprovedLegacyScope>()
+    private val preparationMutex = kotlinx.coroutines.sync.Mutex()
+    init {
+        scope.launch(Dispatchers.IO) {
+            try { ensureTaskScopesReady() }
+            catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (_: Exception) { approvedLegacySkills.set(null) }
+        }
+    }
+
+    /** Read a new Room snapshot after saves; never poll or block Main awaiting an emission. */
+    suspend fun ensureTaskScopesReady() {
+        preparationMutex.lock()
+        try {
+            withContext(Dispatchers.IO) {
+                val skills = skillsModule.enabledSkills.first()
+                val approved = skills.map { skill ->
+                    var steps = emptyList<String>()
+                    var calls = emptyList<ToolCall>()
+                    var dependent = false
+                    var digest = ""
+                    val foreground = accessibilityControl.getCurrentPackage()
+                    val grant = runCatching {
+                        steps = skillsModule.getSkillSteps(skill).toList()
+                        require(steps.isNotEmpty() && steps.size <= 32)
+                        calls = steps.map { step ->
+                            requireNotNull(commandParser.parse(step)) { "Unresolved stored step" }.also {
+                                fun validate(call: ToolCall) {
+                                    if (call.tool == "compound") {
+                                        val children = call.compoundSteps()
+                                        require(children.isNotEmpty())
+                                        children.forEach(::validate)
+                                    } else require(com.unoone.agent.core.model.ToolCallValidator.rejection(
+                                        com.unoone.agent.core.model.ToolCallValidator.adaptLegacySkill(call)) == null)
+                                }
+                                validate(it)
+                            }
+                        }
+                        val grants = steps.mapIndexed { index, step ->
+                            // Foreground-derived grants must be renewed at explicit user admission.
+                            val goal = NativeDeviceCommands.parse(step) { name ->
+                                (appRegistry.resolveLegacyName(name) as? com.unoone.agent.phonecontrol.AppRegistry.Resolution.Found)?.app?.packageName
+                            }
+                            fun current(g: NativeDeviceGoal): Boolean = when (g) {
+                                is NativeDeviceGoal.Current -> true
+                                is NativeDeviceGoal.Interact -> g.packageName == null
+                                is NativeDeviceGoal.Sequence -> g.goals.any(::current)
+                                else -> false
+                            }
+                            if (goal != null && current(goal)) dependent = true
+                            nativeCommandScope(step, calls[index])
+                        }
+                        val material = skill.toString() + calls.joinToString("\n") { TaskToolAuthorization.handle(it) } + grants.toString()
+                        digest = "legacy-plan:" + java.security.MessageDigest.getInstance("SHA-256")
+                            .digest(material.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 255) }
+                        TaskScope(grants.flatMap { it.capabilities }.toSet(),
+                            grants.flatMap { it.packages }.toSet(), grants.flatMap { it.origins }.toSet(),
+                            grants.flatMap { it.objectHandles }.toSet() + digest)
+                    }.getOrNull()
+                    ApprovedLegacyScope(skill, steps, calls, grant, digest, dependent, foreground)
+                }
+                synchronized(legacyPlans) {
+                    approved.filter { it.scope != null }.forEach { legacyPlans[it.digest] = it }
+                    while (legacyPlans.size > 128) legacyPlans.remove(legacyPlans.keys.first())
+                }
+                approvedLegacySkills.set(approved)
+            }
+        } finally { preparationMutex.unlock() }
+    }
+
+    /** Only native parser/registry results grant authority; model text is never a scope source. */
+    fun authorizeTaskScope(text: String): TaskScope = authorizeTaskScope(text, false)
+    internal fun authorizeTaskScope(text: String, freshlyPrepared: Boolean): TaskScope {
+        val approved = approvedLegacySkills.get() ?: throw com.unoone.agent.task.TaskScopePreparingException()
+        val skill = com.unoone.agent.skills.SkillTriggerMatcher.bestMatch(InputSanitizer.sanitize(text), approved.map { it.skill })
+            ?: return nativeCommandScope(text)
+        val plan = approved.first { it.skill == skill }
+        if (plan.currentAppDependent && !freshlyPrepared) throw com.unoone.agent.task.TaskScopePreparingException()
+        return plan.scope ?: throw IllegalArgumentException("Invalid stored skill scope")
+    }
+
+    private fun nativeCommandScope(text: String, parsedCall: ToolCall? = commandParser.parse(InputSanitizer.sanitize(text))): TaskScope {
+        val packages = mutableSetOf<String>()
+        val capabilities = mutableSetOf(TaskCapability.MODEL, TaskCapability.AUDIO)
+        val handles = mutableSetOf<String>()
+        VoiceLanguage.extractRequest(InputSanitizer.sanitize(text))?.let {
+            capabilities.add(TaskCapability.LOCAL_WRITE)
+            handles.add("voice-language:" + VoiceLanguage.normalize(it.code))
+        }
+        fun goalScope(goal: NativeDeviceGoal) {
+            packages.addAll(NativeDeviceCommands.scopePackages(goal) { accessibilityControl.getCurrentPackage() })
+        }
+        NativeDeviceCommands.parse(text) { name ->
+            (appRegistry.resolveLegacyName(name) as? com.unoone.agent.phonecontrol.AppRegistry.Resolution.Found)?.app?.packageName
+        }?.let {
+            goalScope(it)
+            capabilities.add(TaskCapability.UI_READ); capabilities.add(TaskCapability.UI_WRITE)
+        }
+        fun ruleScope(call: ToolCall) {
+            if (call.tool == "compound") {
+                call.compoundSteps().filter { it.tool != "compound" }.forEach(::ruleScope)
+            }
+            else {
+                handles.add(TaskToolAuthorization.handle(call)); capabilities.add(toolCapability(call.tool))
+                if (call.tool in setOf("read_screen", "ocr_screen", "describe_scene")) {
+                    // Native admission only; never infer scope by reading the screen or model output.
+                    accessibilityControl.getCurrentPackage()?.takeIf { it.isNotBlank() }?.let(packages::add)
+                }
+            }
+        }
+        parsedCall?.let(::ruleScope)
+        return TaskScope(capabilities, packages, objectHandles = handles)
+    }
+    private fun toolCapability(tool: String): TaskCapability = NativeToolEffects.capability(tool)
+    fun cancelTaskOwner(id: TaskId) {
+        synchronized(commandOwner) {
+            if (activeTaskContext?.taskId == id) {
+                deviceSession.cancel()
+                cancelledRunId.set(currentRunId.get())
+                pendingVoiceConfirmation.getAndSet(null)?.respond?.invoke(false)
+                activeCommandJob?.cancel()
+                runCatching { voiceModule.stopSpeaking() }
+            }
+            if (ProcessTaskResources.model.owner() == id) {
+                // Never global-cancel a shared native model from a racy owner snapshot.
+                // Coroutine cancellation + native timeout/quarantine retain the lease until exit.
+                ProcessTaskResources.model.cancelOwner(id)
+            }
+            ProcessTaskResources.ui.cancelOwner(id)
         }
     }
 
@@ -815,6 +1023,9 @@ class AgentOrchestrator(
             currentCoroutineContext().ensureActive()
             if (isCancelled(myRun) || !AgentRuntimeGate.isEnabled()) return
             val verified = outcome.status == com.unoone.agent.core.device.DeviceOutcomeStatus.VERIFIED
+            val result = deviceTaskResult(outcome.status)
+            taskOutcome = result.outcome
+            taskReason = result.reason
             lastToolResult = outcome.reason
             addStep(if (verified) AgentStatus.DONE else AgentStatus.FAILED,
                 if (verified) "Device goal verified" else "Device ${outcome.status.name.lowercase()}", outcome.reason)
@@ -848,6 +1059,7 @@ class AgentOrchestrator(
             addStep(AgentStatus.SPEAKING, "Response", fastReply)
             speakAnswer(fastReply)
             addStep(AgentStatus.DONE, "Done", fastReply)
+            taskOutcome = TaskOutcome.RESPONDED
             lastToolResult = fastReply
             saveLog(
                 ActionLogEntity(
@@ -879,28 +1091,18 @@ class AgentOrchestrator(
             recentCommands.addLast(sanitizedText)
             while (recentCommands.size > 3) recentCommands.removeFirst()
 
-            // Step 1: Check if this triggers a custom Skill
-            val skill = skillsModule.findSkillByTrigger(sanitizedText)
-            if (skill != null) {
+            // Execute only the exact ordered native snapshot authorized at admission. Never reread
+            // Room or reparse stored text: edits/reordering cannot alter a queued task's plan.
+            val digest = requireNotNull(currentCoroutineContext()[NativeTaskExecution]).context.scope
+                .objectHandles.singleOrNull { it.startsWith("legacy-plan:") }
+            val plan = digest?.let { synchronized(legacyPlans) { legacyPlans[it] } }
+            if (digest != null && plan == null) throw SecurityException("Approved skill snapshot expired; request again")
+            if (plan != null) {
+                val skill = plan.skill
                 addStep(AgentStatus.TOOL_SELECTED, "Executing Skill", skill.name)
-                val steps = skillsModule.getSkillSteps(skill)
-                if (steps.isEmpty()) {
-                    addStep(AgentStatus.FAILED, "Invalid Skill", "This skill has no executable steps.")
-                    saveLog(log.copy(selectedTool = "skill:${skill.name}", status = "failed"))
-                            return
-                }
-                for (step in steps) {
+                for ((index, step) in plan.steps.withIndex()) {
                     addStep(AgentStatus.EXECUTING, "Skill Step", step)
-                    val toolCall = commandParser.parse(step)
-                    if (toolCall == null) {
-                        addStep(
-                            AgentStatus.FAILED,
-                            "Invalid Skill Step",
-                            "Could not understand: $step. Edit or disable this skill."
-                        )
-                        saveLog(log.copy(selectedTool = "skill:${skill.name}", status = "failed"))
-                                    return
-                    }
+                    val toolCall = plan.calls[index]
                     // Skills no longer bypass safety: each step runs the full pipeline
                     // (permissions → risk → block → confirm → execute → audit) just like a
                     // standalone command. On any NeedsAccess/Blocked/Cancelled we stop the skill.
@@ -993,7 +1195,7 @@ class AgentOrchestrator(
                 val chatStart = System.currentTimeMillis()
                 addStep(AgentStatus.UNDERSTANDING, "Thinking", sanitizedText)
                 val chatResult = if (commandParser.isModelLoaded()) {
-                    commandParser.chat(sanitizedText)
+                    taskModelCall { commandParser.chat(sanitizedText) }
                 } else {
                     Result.Error("Local model unavailable")
                 }
@@ -1009,6 +1211,7 @@ class AgentOrchestrator(
                     addStep(AgentStatus.SPEAKING, "Response", answer)
                     speakAnswer(answer)
                     addStep(AgentStatus.DONE, "Done", answer)
+                    taskOutcome = TaskOutcome.RESPONDED
                     lastToolResult = answer
                     saveLog(log.copy(
                         selectedTool = "chat",
@@ -1047,7 +1250,7 @@ class AgentOrchestrator(
             var streamingStepAdded = false
             val planningStart = System.currentTimeMillis()
             if (isCancelled(myRun)) { return }
-            val parseOutcome = try {
+            val parseOutcome = taskModelCall { try {
                 if (STREAMING_INFERENCE_ENABLED) {
                     commandParser.parseStreamingWithProvenance(sanitizedText, contextCommands, lastToolResult) { delta ->
                         // Add the "Thinking" step lazily on the first delta, so rule-handled commands
@@ -1064,10 +1267,12 @@ class AgentOrchestrator(
                 } else {
                     commandParser.parseAsyncWithProvenance(sanitizedText, contextCommands, lastToolResult)
                 }
+            } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel
             } catch (e: Exception) {
+                currentCoroutineContext()[NativeTaskExecution]?.context?.beforeModelCall()
                 Logger.w("Orchestrator: streaming plan unavailable, falling back to sync plan (${e.message})")
                 commandParser.parseAsyncWithProvenance(sanitizedText, contextCommands, lastToolResult)
-            }
+            } }
             com.unoone.agent.observability.Diagnostics.recordStage("planning", System.currentTimeMillis() - planningStart)
             val toolCall = parseOutcome.toolCallOrNull()
             if (toolCall == null) {
@@ -1188,6 +1393,7 @@ class AgentOrchestrator(
         } catch (e: Exception) {
             Logger.e("Master Orchestrator Exception", e)
             addStep(AgentStatus.FAILED, "System Error", e.localizedMessage ?: "Error")
+            throw e
         } finally {
             // The outer owner releases the processing lock only after this child terminates.
             // Command-to-completion latency for every lane (chat / rule / agent / error), recorded
@@ -1198,34 +1404,12 @@ class AgentOrchestrator(
     }
 
     fun clearPendingAndReExecute() {
-        if (!AgentRuntimeGate.isEnabled()) {
-            pendingCommand.set(null)
-            pendingInputType.set(null)
-            pendingRequiredPermission.set(null)
-            return
-        }
-        val cmd = pendingCommand.getAndSet(null)
-        val type = pendingInputType.getAndSet(null)
-        val req = pendingRequiredPermission.getAndSet(null)
-        if (cmd != null && type != null) {
-            // C4: don't bounce back to system settings in a loop. If the system permission is STILL
-            // not granted, re-running would just deep-link to settings again and re-stash the pending
-            // command (the reported "keeps on saying reading screen, can't remove it" trap). Instead
-            // speak a one-time clear instruction and stop. The user grants access and re-issues the
-            // command, or taps Cancel.
-            if (req != null && !PermissionManager.isRequirementSatisfied(context, req)) {
-                Logger.i("Orchestrator: pending system permission '$req' still missing on resume — not re-running")
-                scope.launch {
-                    runCatching {
-                        voiceModule.speakAwait(
-                            "That needs an access you haven't enabled yet. " +
-                                "Turn it on in Settings once, then ask me again — or say stop."
-                        )
-                    }
-                }
-                return
-            }
-            scope.launch { processCommand(cmd, type) }
+        // Permission return is NOT replay authority. Keep the task's NEEDS_USER receipt and
+        // require explicit remaining steps; a singleton callback cannot safely identify a continuation.
+        pendingCommand.set(null); pendingInputType.set(null); pendingRequiredPermission.set(null)
+        blockedTicket.getAndSet(null)?.let {
+            addStep(AgentStatus.SAFETY_CHECK, "Task needs explicit continuation",
+                "Access was reviewed. Completed work is not replayed; request only the remaining steps.")
         }
     }
 
@@ -1346,7 +1530,7 @@ class AgentOrchestrator(
         val toolsUsed = mutableListOf(firstCall.tool)
 
         while (true) {
-            val proposal = commandParser.planNext(lastCall.tool, lastObservation)
+            val proposal = taskModelCall { commandParser.planNext(lastCall.tool, lastObservation) }
             // Self-heal: an Error proposal means the brain became unreachable mid-loop (auto-closed on
             // timeout). Track consecutive inference failures and, once BrainHealthPolicy fires, attempt
             // a reload from the remembered path/spec — then stop this loop rather than spinning against
@@ -1481,12 +1665,20 @@ class AgentOrchestrator(
         sanitizedText: String,
         learnUsage: Boolean = true
     ): StepOutcome {
+        val execution = currentCoroutineContext()[NativeTaskExecution]
+            ?: throw SecurityException("Missing task scope")
+        val capability = toolCapability(toolCall.tool)
+        execution.checkActive()
+        if (TaskToolAuthorization.handle(toolCall) !in execution.context.scope.objectHandles)
+            throw SecurityException("Tool outside explicit native command scope")
         // 1. Non-runtime system access (Accessibility / Overlay / MediaProjection)
         val unsatisfiedSystem = safetyPipeline.unsatisfiedRequirements(toolCall.tool)
             .filterNot { it is PermissionRequirement.RuntimePerm }
         if (unsatisfiedSystem.isNotEmpty()) {
             VoiceAgentRuntime.transition(VoiceAgentState.ERROR_RECOVERY, "system access required")
             addStep(AgentStatus.SAFETY_CHECK, "Access Required", "Needs system access for ${toolCall.tool}")
+            taskOutcome = TaskOutcome.NEEDS_USER
+            blockedTicket.set(execution.blocked(capability))
             return StepOutcome.NeedsSystemAccess(unsatisfiedSystem)
         }
 
@@ -1495,6 +1687,8 @@ class AgentOrchestrator(
         if (missingPermissions.isNotEmpty()) {
             VoiceAgentRuntime.transition(VoiceAgentState.ERROR_RECOVERY, "runtime permission required")
             addStep(AgentStatus.SAFETY_CHECK, "Access Required", "Needs permissions for ${toolCall.tool}")
+            taskOutcome = TaskOutcome.NEEDS_USER
+            blockedTicket.set(execution.blocked(capability))
             return StepOutcome.NeedsRuntimeAccess(missingPermissions)
         }
 
@@ -1529,7 +1723,7 @@ class AgentOrchestrator(
         // confirmation. The deterministic tool/input classifier remains active for every tier.
         if (SafetyJudgePolicy.shouldRun(judgeEnabled, SAFETY_JUDGE_ENABLED, commandParser.isModelLoaded(), riskLevel)) {
             val judgeStart = System.currentTimeMillis()
-            val verdict = commandParser.judgeSafety(toolCall.tool, toolCall.args.toString(), sanitizedText)
+            val verdict = taskModelCall { commandParser.judgeSafety(toolCall.tool, toolCall.args.toString(), sanitizedText) }
             com.unoone.agent.observability.Diagnostics.recordStage("safety_judge", System.currentTimeMillis() - judgeStart)
             if (verdict is Result.Success) {
                 val judged = SafetyJudgePolicy.escalate(riskLevel, verdict.data)
@@ -1740,9 +1934,13 @@ class AgentOrchestrator(
         if (now - lastNarrationAt.get() < NARRATION_MIN_INTERVAL_MS) return
         lastNarrationAt.set(now)
         val narrationRun = currentRunId.get()
-        scope.launch {
+        val ownerScope = narrationScope ?: return
+        ownerScope.launch {
             speakMutex.withLock {
                 if (isCancelled(narrationRun) || currentRunId.get() != narrationRun || !AgentRuntimeGate.isEnabled()) return@withLock
+                val execution = requireNotNull(currentCoroutineContext()[NativeTaskExecution])
+                execution.checkActive() // epoch, deadline and revocation checked at playback, not enqueue.
+                execution.beforeEffect(TaskCapability.AUDIO)
                 voiceModule.speakAwait(localizedPhrase)
                     .onError { msg: String, _: Throwable? -> Logger.w("Orchestrator: milestone narration failed: $msg") }
             }
@@ -1758,6 +1956,7 @@ class AgentOrchestrator(
     private suspend fun speakAnswer(text: String) {
         if (text.isBlank()) return
         speakMutex.withLock {
+            requireNotNull(currentCoroutineContext()[NativeTaskExecution]) { "Task audio context required" }.beforeEffect(TaskCapability.AUDIO)
             voiceModule.speakAwait(text)
                 .onError { msg: String, _: Throwable? -> Logger.e("Orchestrator: answer speak failed: $msg") }
         }
@@ -1799,6 +1998,8 @@ class AgentOrchestrator(
      */
     // Weak owner callback never rebroadcasts: external Stop reaches the same native teardown once.
     private val globalStopRegistration = com.unoone.agent.core.runtime.GlobalTaskCancellation.register(this) {
+        it.setBlindAidActive(false, announce = false, reloadAfterRelease = false)
+        it.taskRuntime.coordinator.cancelAll()
         it.cancelCurrentCommandLocally(speak = false)
     }
 
@@ -1844,8 +2045,7 @@ class AgentOrchestrator(
     fun shutdownForDisable() {
         cancelLlmInference("master disable")
         cancelCurrentCommand(speak = false)
-        blindAidActivationInFlight.set(false)
-        _isBlindAidActive.value = false
+        setBlindAidActive(false, announce = false, reloadAfterRelease = false)
         runCatching { voiceModule.stopRecording() }
         runCatching { voiceModule.stopSpeaking() }
     }

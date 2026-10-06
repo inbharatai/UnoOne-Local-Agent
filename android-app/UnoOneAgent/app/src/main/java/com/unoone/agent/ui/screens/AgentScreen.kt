@@ -124,7 +124,8 @@ fun AgentScreen(
     onVoiceLanguageSelected: (String) -> Unit = {},
     onNavigateToSecureBrowser: () -> Unit = {},
     skillCount: Int = 0,
-    onNavigateToSkills: () -> Unit = {}
+    onNavigateToSkills: () -> Unit = {},
+    onNavigateToTasks: () -> Unit = {}
 ) {
     // 5B: rememberSaveable preserves text across configuration changes (rotation)
     var textInput by rememberSaveable { mutableStateOf("") }
@@ -406,6 +407,11 @@ fun AgentScreen(
         // bounded so it cannot push the whole command surface off-screen, and a running task opens
         // the panel automatically. Skills are reachable here because this is where users look to
         // understand which local routine is executing.
+        OutlinedButton(
+            onClick = onNavigateToTasks,
+            modifier = Modifier.fillMaxWidth().height(48.dp)
+                .semantics { contentDescription = "Open Tasks board to enqueue, review, or cancel tasks" }
+        ) { Text("Tasks — queue, results and Stop all") }
         AgentWorkPanel(
             timeline = timeline,
             isProcessing = isProcessing,
@@ -922,6 +928,8 @@ fun BlindAidCameraPreview(
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     val narrationScope = rememberCoroutineScope()
     val previewSessionActive = remember { java.util.concurrent.atomic.AtomicBoolean(true) }
+    val feedbackOwner = (context.applicationContext as com.unoone.agent.UnoOneApplication).orchestrator
+    val feedbackEpoch = remember { feedbackOwner.blindAidFeedbackEpoch() }
     val previewViewRef = remember {
         java.util.concurrent.atomic.AtomicReference<PreviewView?>(null)
     }
@@ -940,9 +948,10 @@ fun BlindAidCameraPreview(
     val blindAidManager = remember {
         com.unoone.agent.phonecontrol.BlindAidManager(
             context = context,
-            onFeedbackSpoken = { feedback ->
+            onFeedbackSpoken = feedback@{ feedback ->
+                if (!previewSessionActive.get() || !feedbackOwner.acceptsBlindAidFeedback(feedbackEpoch)) return@feedback
                 val next = narrationScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
-                    voiceModule.speakAwait(feedback)
+                    if (previewSessionActive.get() && feedbackOwner.acceptsBlindAidFeedback(feedbackEpoch)) voiceModule.speakAwait(feedback)
                 }
                 narrationJob.getAndSet(next)?.cancel()
                 // A changed, freshly-confirmed scene replaces any older spoken observation.
@@ -958,26 +967,46 @@ fun BlindAidCameraPreview(
         )
     }
 
-    DisposableEffect(lifecycleOwner) {
-        onDispose {
+    // Register before AndroidView can submit its first native initialization. The callback
+    // revokes immediately even when Compose disposal is delayed behind a busy Main thread.
+    val producerClosed = remember { kotlinx.coroutines.CompletableDeferred<Unit>() }
+    val teardownStarted = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+    val stopProducer: () -> Unit = remember {
+        {
             previewSessionActive.set(false)
+            blindAidManager.deactivate()
             narrationJob.getAndSet(null)?.cancel()
-            // Coroutine cancellation stops the await, but AudioTrack must also be flushed so no
-            // cached Blind Aid utterance survives after the camera panel closes.
-            voiceModule.stopSpeaking()
-            previewViewRef.getAndSet(null)?.previewStreamState?.removeObservers(lifecycleOwner)
-            // Unbind only this preview session. unbindAll() is process-wide and allowed a stale
-            // Activity/composition to tear down a newer Blind Aid camera on Xiaomi.
-            try {
-                val useCases = boundUseCasesRef.getAndSet(emptyList())
-                if (useCases.isNotEmpty() && cameraProviderFuture.isDone) {
-                    cameraProviderFuture.get().unbind(*useCases.toTypedArray())
+            if (teardownStarted.compareAndSet(false, true)) {
+                // Independent lifetime: disposing the composition must not cancel native cleanup.
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                    voiceModule.stopSpeaking()
+                    previewViewRef.getAndSet(null)?.previewStreamState?.removeObservers(lifecycleOwner)
+                    try {
+                        val useCases = boundUseCasesRef.getAndSet(emptyList())
+                        useCases.filterIsInstance<ImageAnalysis>().forEach { it.clearAnalyzer() }
+                        if (useCases.isNotEmpty() && cameraProviderFuture.isDone) {
+                            cameraProviderFuture.get().unbind(*useCases.toTypedArray())
+                        }
+                        blindAidManager.release().await()
+                        producerClosed.complete(Unit)
+                    } catch (failure: Exception) {
+                        com.unoone.agent.core.util.Logger.e("BlindAidCameraPreview: cleanup failed; reservation retained", failure)
+                    }
                 }
-            } catch (e: Exception) {
-                com.unoone.agent.core.util.Logger.e("BlindAidCameraPreview: Camera unbind failed", e)
             }
-            blindAidManager.release()
         }
+    }
+    val producer = remember {
+        feedbackOwner.registerBlindAidProducer(feedbackEpoch, stopProducer).also {
+            if (it == null) stopProducer()
+            else kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                producerClosed.await()
+                it.acknowledgeClosed()
+            }
+        }
+    }
+    DisposableEffect(lifecycleOwner, producer) {
+        onDispose { stopProducer() }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -1003,7 +1032,7 @@ fun BlindAidCameraPreview(
                 // Build the PreviewView immediately so a surface exists, then bind when the future
                 // completes on the main executor.
                 cameraProviderFuture.addListener({
-                    if (!previewSessionActive.get()) return@addListener
+                    if (!previewSessionActive.get() || !feedbackOwner.acceptsBlindAidFeedback(feedbackEpoch)) return@addListener
                     try {
                         val cameraProvider = cameraProviderFuture.get()
                         val preview = Preview.Builder().build().also {

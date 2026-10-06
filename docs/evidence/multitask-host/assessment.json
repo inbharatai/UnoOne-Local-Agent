@@ -1,0 +1,16 @@
+{
+  "overall_pass": false,
+  "failure": "Second real output omitted requested COBALT942 marker",
+  "distinct_outputs": true,
+  "a_contains_own_marker": true,
+  "b_contains_own_marker": false,
+  "a_contains_other_marker": false,
+  "b_contains_other_marker": false,
+  "concurrency_and_call_count_assertion_passed_before_failure": true,
+  "measured_call_max": 1,
+  "call_count": 2,
+  "queued_task_cancelled_before_worker_dispatch": true,
+  "active_native_cancellation_tested": false,
+  "close_ack": true,
+  "reload_tested": false
+}

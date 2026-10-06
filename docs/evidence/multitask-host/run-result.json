@@ -1,0 +1,38 @@
+{
+  "exit_code": 1,
+  "wall_seconds": 73.72658024199882,
+  "peak_sampled_rss_bytes": 2053775360,
+  "command": [
+    "/agent/workspace/toolchains/jdk17/bin/java",
+    "-Xms32m",
+    "-Xmx384m",
+    "-XX:+UseSerialGC",
+    "-XX:ActiveProcessorCount=2",
+    "-Djava.library.path=/agent/workspace/qwen-jni-host-validation",
+    "-cp",
+    "/agent/workspace/multitask-host-run/harness.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.21/fa374a986e128314c3db00a20aae55f72a258511/kotlin-stdlib-2.2.21.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-compiler-embeddable/2.2.21/b13aed5cf8412f9ee9d1e4db21bdcfebcc24f606/kotlin-compiler-embeddable-2.2.21.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-reflect/2.2.21/17bc47f5dfe27c2351538e711f0afe377b0de6b2/kotlin-reflect-2.2.21.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-script-runtime/2.2.21/e9b021c4e335e4ed7a7e3b32285249ae6bb3a6c8/kotlin-script-runtime-2.2.21.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains/annotations/23.0.0/8cc20c07506ec18e0834947b84a864bfc094484e/annotations-23.0.0.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/1.9.0/9beade4c1c1569e4f36cbd2c37e02e3e41502601/kotlinx-coroutines-core-jvm-1.9.0.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-serialization-core-jvm/1.8.1/510cb839cce9a3e708052d480a6fbf4a7274dfcd/kotlinx-serialization-core-jvm-1.8.1.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-serialization-json-jvm/1.8.1/4de3bace4b175753df5484d2acd74c14bfeb5be9/kotlinx-serialization-json-jvm-1.8.1.jar:/agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/core/build/tmp/kotlin-classes/debug:/agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/localbrain/build/tmp/kotlin-classes/debug",
+    "HarnessKt",
+    "/agent/workspace/multitask-host-run"
+  ],
+  "no_address_space_or_rss_limit": true,
+  "host": "x86_64",
+  "sha256": {
+    "/agent/workspace/multitask-host-run/Harness.kt": "f57a4aa38f3da385e6eea1b2f92857c9af8bc77ba3e391688af7d4288930bac7",
+    "/agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/core/src/main/java/com/unoone/agent/core/task/TaskCoordinator.kt": "c45c54442d5b4e11dcc99d369f7cf400fc6f0fbc57d38b851d1bb4df6c9a117a",
+    "/agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/core/src/main/java/com/unoone/agent/core/task/TaskContract.kt": "b5789a9a1a9e3eba8aba2e587a4166b8abd9b113cbe2c2b23d7c26194f6396f8",
+    "/agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/core/src/main/java/com/unoone/agent/core/task/TaskResourceArbiter.kt": "785f38173c11debbfb303c656475b600068a38a7bfef46d20e741b4125748db2",
+    "/agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/localbrain/src/main/java/com/unoone/agent/localbrain/QwenMnnPlanner.kt": "9448811516b4db8dc0d8b1ca0d07480619fbe94d7b91eaf8f561b762b1ed46a2",
+    "/agent/workspace/UnoOne-Local-Agent/android-app/UnoOneAgent/localbrain/src/main/java/com/unoone/agent/localbrain/qwen/QwenMnnRuntime.kt": "6e007a82d4022365776bc94c7a9cdb27546b1dbb22d45e1eb022e0481a863952",
+    "/agent/workspace/qwen-validation-model/config.json": "92853033efe602f95efca3e1c05cd8b108f973c8beed417843a9671f8147ed8d",
+    "/agent/workspace/qwen-validation-model/export_args.json": "a5b3a7d2c45e53c887e539259696d5fcec793637c9a3e9fbc7cd0dd008af6a87",
+    "/agent/workspace/qwen-validation-model/llm.mnn": "23df98f8b341b277365e0bbca025c1d192939e3d32d7f79776352c6f32e77960",
+    "/agent/workspace/qwen-validation-model/llm.mnn.json": "7131ff4f1a441add1039d371815ad94652ae6801f579591cb2f9ad90b5954025",
+    "/agent/workspace/qwen-validation-model/llm.mnn.weight": "c93f71a2dbecf9328782bd38861656d8faa82e95e7f99607350074768a482054",
+    "/agent/workspace/qwen-validation-model/llm_config.json": "a88234b36c2af0eff8e5c89667011badf71c15e30459eb0e21030a8f3f9ed240",
+    "/agent/workspace/qwen-validation-model/tokenizer.txt": "7e75de1f279a10b65bd9dc1a5207205cb8993823861c4c42bbbd74e48e1c23a4",
+    "/agent/workspace/qwen-validation-model/visual.mnn": "88fc40a7b676e90eb2cb86d854db15cb90b9eb1f34087ab0f48c5e43572c8dac",
+    "/agent/workspace/qwen-validation-model/visual.mnn.weight": "8f90e106f5b9ae9a939faed240305cfdd5c6740ae91d3fc418a990bee0cce36b",
+    "/agent/workspace/qwen-jni-host-validation/libunoone_qwen.so": "c8b200d125e38ba85e67c3bffa4f25e5d7e17ca0229833a421a3a2b267b5d898",
+    "/agent/workspace/mnn-host-validation/build/libMNN.so": "ddcb418443e7ae0adbcfdffc28d5d52c0339f2d33f901255b5b9c931a1135475"
+  }
+}

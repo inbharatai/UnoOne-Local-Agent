@@ -58,7 +58,10 @@ class SecureBrowserModelLease(
     fun configReceipt(): String? = if (runtime == BrainRuntime.MNN) qwen.configReceipt() else null
     fun lastLoadError(): String = if (runtime == BrainRuntime.MNN) qwen.lastLoadError() else gemma.lastLoadError()
 
-    suspend fun acquire(): Result<BrowserModelPort> = mutex.withLock {
+    suspend fun acquire(): Result<BrowserModelPort> = com.unoone.agent.task.ModelTransitions.run { acquireUnderScheduler() }
+
+    private suspend fun acquireUnderScheduler(): Result<BrowserModelPort> = mutex.withLock {
+        val generation = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation
         if (!BrowserLeasePolicy.canAcquire(active || ExclusiveBrainLeaseState.isActive())) return@withLock Result.Error("A local brain model is already exclusively reserved")
 
         // Snapshot restoration identity before unload; never substitute the browser path.
@@ -85,6 +88,7 @@ class SecureBrowserModelLease(
         leasedModelPath = path
         var browserLoadStarted = false
         try {
+            val restoreAuthorization = com.unoone.agent.task.PhoneModelRestoreAuthorization.capture()
             // Always run the native unload barrier, including when a load was in flight.
             val unloaded = orchestrator.unloadLlmModel()
             if (!BrowserLeasePolicy.canLoadBrowser(unloaded, orchestrator.isPhoneBrainResident())) {
@@ -94,6 +98,7 @@ class SecureBrowserModelLease(
                 return@withLock Result.Error("Phone native engine remains resident; browser acquisition refused")
             }
 
+            check(com.unoone.agent.core.runtime.AgentRuntimeGate.isEnabled() && generation == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) { "Browser transition revoked" }
             browserLoadStarted = true
             val load = loadBrowser(path, spec)
             if (load is Result.Error) {
@@ -101,13 +106,14 @@ class SecureBrowserModelLease(
                     active = true
                     return@withLock Result.Error("Browser cleanup refused; exclusive lease retained")
                 }
-                restorePreviousPhone()
+                restorePreviousPhone(restoreAuthorization)
                 previousPhone = null
                 leasedModelPath = null
                 ExclusiveBrainLeaseState.release(OWNER_ID)
                 return@withLock load
             }
 
+            check(com.unoone.agent.core.runtime.AgentRuntimeGate.isEnabled() && generation == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) { "Browser transition revoked" }
             active = true
             Result.Success(
             BrowserModelPort { invocation ->
@@ -138,7 +144,7 @@ class SecureBrowserModelLease(
             withContext(NonCancellable + Dispatchers.IO) {
                 val browserClosed = !browserLoadStarted || runCatching { closeBrowser() }.getOrDefault(false)
                 if (browserClosed) {
-                    runCatching { restorePreviousPhone() }
+                    // Failed or revoked acquisition must not resurrect the phone brain.
                     active = false
                     previousPhone = null
                     leasedModelPath = null
@@ -155,7 +161,7 @@ class SecureBrowserModelLease(
             withContext(NonCancellable + Dispatchers.IO) {
                 val browserClosed = !browserLoadStarted || runCatching { closeBrowser() }.getOrDefault(false)
                 if (browserClosed) {
-                    runCatching { restorePreviousPhone() }
+                    // Failed or revoked acquisition must not resurrect the phone brain.
                     active = false
                     previousPhone = null
                     leasedModelPath = null
@@ -169,7 +175,12 @@ class SecureBrowserModelLease(
         }
     }
 
-    suspend fun release(restore: Boolean = true): Result<Unit> = mutex.withLock {
+    suspend fun release(restore: Boolean = true): Result<Unit> {
+        val generation = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation
+        return com.unoone.agent.task.ModelTransitions.run(cleanup = true) { releaseUnderScheduler(restore, generation) }
+    }
+
+    private suspend fun releaseUnderScheduler(restore: Boolean, generation: Long): Result<Unit> = mutex.withLock {
         if (!active && leasedModelPath == null) {
             ExclusiveBrainLeaseState.release(OWNER_ID)
             return@withLock Result.Success(Unit)
@@ -183,10 +194,12 @@ class SecureBrowserModelLease(
             )
         }
         active = false
+        // Capture while still in the exact scheduling owner, before deliberate cleanup Job change.
+        val restoreAuthorization = com.unoone.agent.task.PhoneModelRestoreAuthorization.capture()
         // Keep ownership until restoration finishes, including cancellation/exception cleanup.
         withContext(NonCancellable) {
             try {
-                if (restore) restorePreviousPhone() else Result.Success(Unit)
+                if (restore && com.unoone.agent.core.runtime.AgentRuntimeGate.isEnabled() && generation == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) restorePreviousPhone(restoreAuthorization) else Result.Success(Unit)
             } finally {
                 leasedModelPath = null
                 previousPhone = null
@@ -196,11 +209,11 @@ class SecureBrowserModelLease(
     }
 
     /** Only invoked after browser close proof. Never create a second phone engine on unload refusal. */
-    private suspend fun restorePreviousPhone(): Result<Unit> {
+    private suspend fun restorePreviousPhone(authorization: com.unoone.agent.task.PhoneModelRestoreAuthorization): Result<Unit> {
         val prior = BrowserLeasePolicy.restoration(
             previousPhone, browserClosed = true, phoneResident = orchestrator.isPhoneBrainResident()
         ) ?: return Result.Success(Unit)
-        return orchestrator.loadLlmModelUnderLease(prior.path, prior.spec, OWNER_ID)
+        return orchestrator.loadLlmModelUnderLease(prior.path, prior.spec, authorization)
     }
 
     private fun requestCancel(reason: String) {

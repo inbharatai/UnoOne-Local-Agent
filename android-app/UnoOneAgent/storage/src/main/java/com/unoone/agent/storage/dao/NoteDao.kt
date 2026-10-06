@@ -8,6 +8,8 @@ import androidx.room.Update
 import com.unoone.agent.storage.entity.NoteEntity
 import kotlinx.coroutines.flow.Flow
 
+data class BoundedNoteSnippet(val title: String, val content: String)
+
 @Dao
 interface NoteDao {
     @Insert
@@ -31,6 +33,10 @@ interface NoteDao {
     /** One-shot (non-Flow) search used by the search_notes tool. */
     @Query("SELECT * FROM notes WHERE title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%' ORDER BY createdAt DESC")
     suspend fun searchOnce(query: String): List<NoteEntity>
+
+    /** Bounded projection: no full entity/body crosses the SQLite cursor boundary. Literal search. */
+    @Query("SELECT substr(title,1,256) AS title, substr(content,1,2048) AS content FROM notes WHERE length(:query) BETWEEN 1 AND 4000 AND (instr(lower(title),lower(:query)) > 0 OR instr(lower(content),lower(:query)) > 0 OR instr(lower(tags),lower(:query)) > 0) ORDER BY createdAt DESC LIMIT 50")
+    suspend fun searchBounded(query: String): List<BoundedNoteSnippet>
 
     /** Most-recent notes for the context snapshot (one-shot). */
     @Query("SELECT * FROM notes ORDER BY createdAt DESC LIMIT :limit")

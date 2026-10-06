@@ -17,6 +17,7 @@ import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.objectdetector.ObjectDetector
 import com.unoone.agent.core.agent.BlindAidNarrator
 import com.unoone.agent.core.util.Logger
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -99,6 +100,7 @@ class BlindAidManager(
 
     @Synchronized
     private fun getDetector(): ObjectDetector? {
+        if (released) return null
         if (detector != null) return detector
         if (detectorInitializationAttempted) return null
         detectorInitializationAttempted = true
@@ -444,44 +446,34 @@ class BlindAidManager(
         if (label.equals("cell phone", ignoreCase = true)) SMALL_OBJECT_SPEECH_SCORE_THRESHOLD
         else SPEECH_SCORE_THRESHOLD
 
-    fun release() {
-        released = true
-        // Blind Aid scene state is intentionally session-only. Closing the panel must behave like
-        // a hard cache boundary: no old TV/person label, confirmation, reminder timestamp, or box
-        // can leak into the next activation.
-        labelEvidence.clear()
-        lastSpokenObject = ""
-        lastSpokenRiskBand = 0
-        lastSpokenTime = 0L
-        lastSceneLabels = emptySet()
-        lastSceneNarrationTime = 0L
-        lastLoggedDetections = emptySet()
-        lastDetectionLogTime = 0L
-        lastNonEmptyDetectionTime = 0L
+    /** Synchronous revocation only: never takes the detector/native monitor. */
+    fun deactivate() { released = true }
+
+    private val closing = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val closed = kotlinx.coroutines.CompletableDeferred<Unit>()
+
+    /** Call after CameraX unbind on Main. A hung analyzer/close deliberately never ACKs. */
+    fun release(): kotlinx.coroutines.Deferred<Unit> {
+        deactivate()
+        if (!closing.compareAndSet(false, true)) return closed
         executor.shutdown()
-        _overlay.value = DetectionOverlay(emptyList(), 1f)
-        try {
-            if (!executor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
-                Logger.w("BlindAidManager: Executor did not terminate in 2s, forcing shutdown")
-                executor.shutdownNow()
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                // Executor termination is the in-flight analyzer acknowledgement, including lazy
+                // native initialization and ImageProxy finally-close. No timeout may fake this ACK.
+                while (!executor.awaitTermination(1, java.util.concurrent.TimeUnit.SECONDS)) { }
+                detector?.close()
+                detector = null
+                labelEvidence.clear()
+                _overlay.value = DetectionOverlay(emptyList(), 1f)
+                toneGenerator?.release()
+                toneGenerator = null
+                closed.complete(Unit)
+            } catch (failure: Throwable) {
+                Logger.e("BlindAidManager: cleanup failed; retaining model reservation", failure)
+                // Fail closed: do not complete the producer lease on uncertain native teardown.
             }
-        } catch (e: InterruptedException) {
-            executor.shutdownNow()
-            Thread.currentThread().interrupt()
         }
-
-        try {
-            detector?.close()
-        } catch (e: Exception) {
-            Logger.e("BlindAidManager: Error closing detector", e)
-        }
-
-        try {
-            toneGenerator?.release()
-            toneGenerator = null
-        } catch (e: Exception) {
-            Logger.e("BlindAidManager: Error releasing ToneGenerator", e)
-        }
-        Logger.i("BlindAidManager: Released successfully")
+        return closed
     }
 }

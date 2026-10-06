@@ -86,6 +86,8 @@ class ContextSnapshotTest {
         override fun search(query: String) = flowOf(recentNotes)
         override suspend fun getById(id: Long): NoteEntity? = recentNotes.firstOrNull { it.id == id }
         override suspend fun searchOnce(query: String): List<NoteEntity> = recentNotes
+        override suspend fun searchBounded(query: String): List<com.unoone.agent.storage.dao.BoundedNoteSnippet> =
+            recentNotes.take(50).map { com.unoone.agent.storage.dao.BoundedNoteSnippet(it.title.take(256), it.content.take(2048)) }
         override suspend fun recent(limit: Int): List<NoteEntity> = recentNotes.take(limit)
         override suspend fun deleteByQuery(query: String): Int = 0
         override suspend fun deleteAll(): Int = 0

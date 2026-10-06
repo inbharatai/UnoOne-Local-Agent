@@ -2,7 +2,7 @@
 
 ## Status and scope: read before pasting
 
-This guide targets **0.5.0-alpha-v3**, a host-verified development build for your later phone testing, not a physically qualified release. The final recorded host gate passed **770 JVM tests, lint with the existing baseline, and both APK assemblies**; see [current receipts](evidence/phone-delivery/results.json). Older repair4 receipts remain historical. Use the main commit supplied with delivery and record `git rev-parse HEAD`; do not invent or substitute a revision.
+This guide targets **0.6.0-alpha-v3 / versionCode 6**, including Task Board. Current host gates passed: **842 JVM tests, zero failures/errors/skips**, app lint and both APK assemblies; [matching artifact identities and receipts](evidence/multitask-delivery/results.json). No phone qualification is claimed. Lint retains 15 historical baseline-suppressed errors. The [historical 770-test 0.5 receipts](evidence/phone-delivery/results.json) and older repair4 receipts remain separate. Use the exact main revision confirmed in the delivery message and record `git rev-parse HEAD`; do not infer a future revision.
 
 Compiled pinned MNN Qwen3.5-2B is integrated with LocalBrain and the native browser planner and can be explicitly selected. Real host toy probes observed text `4`, JSON sum `4`, and image `red`. Those probes are not Android inference, an accuracy score or a phone memory result. **Android inference, all 100 physical tasks and sustained thermal/battery qualification remain PENDING.**
 
@@ -154,7 +154,15 @@ adb install -r android-app/UnoOneAgent/app/build/outputs/apk/debug/app-debug.apk
 
 Select a device explicitly with `adb -s SERIAL ...` if more than one is connected. **`-r` preserves app data only when Android accepts a compatible, same-certificate update.** A debug APK built on another laptop may use a different debug keystore. If installation reports `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, do not uninstall, clear data, or force a downgrade. Stop and obtain an authorized build signed with the original certificate (or plan a separately reviewed backup/migration). Keep signing keys private and outside Git. Compare signing certificates with SDK `apksigner verify --print-certs` when needed. An older repair4 APK/hash is not this build.
 
+Do not follow historical 0.5 installation instructions as a downgrade from installed versionCode 6. Do not add `-d`, uninstall, or clear data to bypass version/signature checks. Preserve existing app data, verified E2B/E4B/Qwen files and model selection; a compatible update is intended to retain them, but verify on the device rather than promising migration success. Record the actual newly built APK hash and signer; historical checksums identify only their historical artifacts.
+
 Open UnoOne manually. Recheck Accessibility after app updates; some OEMs disable it. Do not infer model availability merely from a successful install.
+
+### Task Board after a matching 0.6 install
+
+Open **Agent → Tasks**. Start with a harmless draft; optionally enter exact required phrases, one per line (<=6 unique, <=80 characters each / <=256 combined). Inspect admission, selected-task output and outcome; RESPONDED is not fact verification. At most one repair is allowed, then failed checks/model errors require NEEDS_USER. Try local notes search + draft as independent child outputs, not grounded research or automatic sending. Browser/Skills remain independent lanes, not live Task Board workers; no persistent bot accounts are provisioned.
+
+Use the [10-case safe multitasking protocol](UNOONE_MULTITASKING.md) and retain failed attempts. Global Stop/Camera ACK source and host gates do not certify phone native teardown. Do not interpret an assembled APK as executed instrumentation or device success.
 
 ## 6. Manually grant only the permissions you need
 

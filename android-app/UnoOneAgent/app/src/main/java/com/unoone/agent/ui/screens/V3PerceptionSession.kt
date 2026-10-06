@@ -21,6 +21,15 @@ class V3PerceptionSession(private val context: Context) {
     }
 
     suspend fun capture(explicitUserRequest: Boolean, maxAgeMs: Long = 5_000): Frame {
+        val generation = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation
+        check(com.unoone.agent.core.task.ProcessTaskResources.ui.owner() == null) { "NeedsUser: UI is owned by a task; stop it before preview" }
+        val owner = com.unoone.agent.core.task.TaskId(java.util.UUID.randomUUID().toString())
+        return com.unoone.agent.core.task.ProcessTaskResources.ui.withLease(owner, {
+            check(AgentRuntimeGate.isEnabled() && generation == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) { "Preview revoked" }
+        }) { captureUnderLease(explicitUserRequest, maxAgeMs, generation) }
+    }
+
+    private suspend fun captureUnderLease(explicitUserRequest: Boolean, maxAgeMs: Long, generation: Long): Frame {
         require(explicitUserRequest && maxAgeMs in 1..5_000)
         check(AgentRuntimeGate.isEnabled()) { "Master disabled" }
         check(ScreenshotCapture.hasPermission()) { "Granted MediaProjection required" }
@@ -39,6 +48,7 @@ class V3PerceptionSession(private val context: Context) {
         }
         val snapshot = AndroidDeviceAdapter(service).observe().snapshot
         fun validate() {
+            check(generation == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation) { "Preview revoked" }
             check(AgentRuntimeGate.isEnabled() && ScreenshotCapture.hasPermission())
             check(UnoOneAccessibilityService.getInstance() === service)
             check(service.eventSequence == snapshot.eventSequence) { "Screen changed; capture discarded" }

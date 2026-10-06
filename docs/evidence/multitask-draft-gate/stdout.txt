@@ -1,0 +1,11 @@
+LOAD_MS=7165
+QUEUED_CANCEL_ID=675a597c-afbf-4100-ad2f-190848967fae RECEIPT=CancelReceipt(cancelled=[TaskId(value=675a597c-afbf-4100-ad2f-190848967fae)])
+CALL_START 70adb14f-015f-4751-a6fb-72324cf6337b-1 NS=8911854506146 ACTIVE=1
+CALL_END 70adb14f-015f-4751-a6fb-72324cf6337b-1 MS=7986
+CALL_START b6d47af4-889e-4eb9-bb0f-5ee9707ef5bf-1 NS=8919847159151 ACTIVE=1
+CALL_END b6d47af4-889e-4eb9-bb0f-5ee9707ef5bf-1 MS=5686
+RESULT_A=TaskResult(outcome=RESPONDED, reason=NONE)
+RESULT_B=TaskResult(outcome=RESPONDED, reason=NONE)
+RESULT_CANCEL=TaskResult(outcome=CANCELLED, reason=STOPPED)
+NATIVE_CLOSE_ACK=true
+The device supports: i8sdot:0, fp16:0, i8mm: 0, sve2: 0, sme2: 0, perfCores: 0

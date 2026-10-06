@@ -29,6 +29,7 @@ import java.util.Locale
 @RunWith(AndroidJUnit4::class)
 class QwenMnnPhysicalQualificationTest {
     @Test fun installedPinnedModelActualJniSuite(): Unit = runBlocking(Dispatchers.IO) {
+        com.unoone.agent.task.ModelTransitions.run {
         check(AgentRuntimeGate.isEnabled()) { "Operator must explicitly enable UnoOne first" }
         val app = ApplicationProvider.getApplicationContext<UnoOneApplication>()
         check(app.brainProviderPreferences.qwenOptIn) { "Operator must explicitly opt in to experimental Qwen first" }
@@ -53,6 +54,7 @@ class QwenMnnPhysicalQualificationTest {
         val orchestrator = app.orchestrator
         val runtime = QwenMnnRuntime()
         check(ExclusiveBrainLeaseState.acquire(owner)) { "Global native lease busy or quarantined; no reset allowed" }
+        val authorization = com.unoone.agent.task.PhoneModelRestoreAuthorization.capture()
         val priorPath = orchestrator.loadedBrainPath()
         val priorProfile = orchestrator.loadedBrainProfile()
         var unloadAcknowledged = false
@@ -128,13 +130,14 @@ class QwenMnnPhysicalQualificationTest {
             if (unloadAcknowledged && (!claimed || cleanupAcknowledged)) {
                 try {
                     if (priorPath != null && priorProfile != null) {
-                        val restored = orchestrator.loadLlmModelUnderLease(priorPath, priorProfile, owner)
+                        val restored = orchestrator.loadLlmModelUnderLease(priorPath, priorProfile, authorization)
                         check(restored is Result.Success) { "Prior exact profile restoration failed: $restored" }
                     }
                 } finally {
                     check(ExclusiveBrainLeaseState.release(owner)) { "Lease release refused; preserve quarantine and restart" }
                 }
             }
+        }
         }
     }
 }

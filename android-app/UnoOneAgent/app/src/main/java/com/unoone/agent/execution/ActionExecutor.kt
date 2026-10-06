@@ -1,6 +1,7 @@
 package com.unoone.agent.execution
 
 import android.content.Context
+import com.unoone.agent.core.device.sensitiveObservation
 import com.unoone.agent.accessibilitycontrol.AccessibilityControl
 import com.unoone.agent.agentrouter.AgentRouter
 import com.unoone.agent.core.interfaces.IActionExecutor
@@ -55,6 +56,10 @@ class ActionExecutor(
             return Result.Error(e.message ?: "Invalid legacy skill")
         }
         ToolCallValidator.rejection(normalized)?.let { return Result.Error(it) }
+        // Runtime already owns UI. Never reacquire from an inherited dispatcher/child Job.
+        val execution = com.unoone.agent.task.ResourceEffects.execution()
+        require(com.unoone.agent.task.TaskToolAuthorization.handle(normalized) in execution.context.scope.objectHandles) { "Tool outside native task scope" }
+        execution.beforeEffect(com.unoone.agent.task.NativeToolEffects.capability(normalized.tool))
         return executeValidatedTool(normalized)
     }
 
@@ -409,107 +414,88 @@ class ActionExecutor(
      * already required Accessibility; we do NOT prompt for MediaProjection mid-execution — that
      * would request access the permission registry never declared for this tool.
      */
-    private suspend fun readScreenWithAccessibility(): Result<String> {
-        val accResult = accessibilityControl.captureScreenText()
-        return when (accResult) {
-            is Result.Success -> if (accResult.data.isNotBlank()) {
-                Result.Success(accResult.data)
-            } else {
-                Result.Error("No readable text on screen")
+    /** Immutable metadata identity; obtaining it never reads node text. */
+    private data class ReadIdentity(val pkg: String, val window: Int, val bounds: android.graphics.Rect,
+        val width: Int, val height: Int, val sequence: Long)
+
+    private fun readIdentity(packages: Set<String>): ReadIdentity {
+        val service = checkNotNull(com.unoone.agent.accessibilitycontrol.UnoOneAccessibilityService.getInstance())
+        val sequence = service.eventSequence
+        val root = checkNotNull(service.rootInActiveWindow) { "No active window" }
+        return try {
+            val pkg = root.packageName?.toString().orEmpty()
+            check(pkg.isNotEmpty() && pkg in packages) { "Screen outside admitted package scope" }
+            val bounds = android.graphics.Rect().also(root::getBoundsInScreen)
+            val metrics = service.resources.displayMetrics
+            check(sequence == service.eventSequence) { "Screen changed" }
+            ReadIdentity(pkg, root.windowId, bounds, metrics.widthPixels, metrics.heightPixels, sequence)
+        } finally { root.recycle() }
+    }
+
+    private suspend fun <T> scopedRead(block: suspend (ReadIdentity, () -> Unit) -> T): T {
+        val execution = com.unoone.agent.task.ResourceEffects.execution()
+        val packages = execution.context.scope.packages.toSet()
+        val identity = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) { readIdentity(packages) }
+        val boundary = com.unoone.agent.core.task.NativeReadBoundary(packages,
+            { readIdentity(packages).let { it.pkg to it } }, execution::checkActive)
+        check(identity == readIdentity(packages)) { "Screen changed before read" }
+        return boundary.read { verify -> block(identity, verify) }
+    }
+
+    private suspend fun readScreenWithAccessibility(): Result<String> = scopedRead { identity, verify ->
+        val service = checkNotNull(com.unoone.agent.accessibilitycontrol.UnoOneAccessibilityService.getInstance())
+        val adapter = com.unoone.agent.accessibilitycontrol.AndroidDeviceAdapter(service,
+            allowedObservationPackages = setOf(identity.pkg))
+        verify()
+        val snapshot = adapter.observe().snapshot
+        verify()
+        val text = com.unoone.agent.core.device.SensitiveReadRedaction.readScreen(snapshot, identity.pkg)
+        if (text.isBlank()) Result.Error("No readable text on screen") else Result.Success(text)
+    }
+
+    private suspend fun readScreenWithOcr(): Result<String> = scopedRead { identity, verify ->
+        if (!ScreenshotCapture.hasPermission()) return@scopedRead Result.Error("Screenshot permission not granted")
+        // Full-display pixels are unsafe for split windows/overlays. Require one full-size active
+        // application window; source redaction remains mandatory even on this narrow path.
+        check(identity.bounds == android.graphics.Rect(0, 0, identity.width, identity.height)) { "Ambiguous screen geometry" }
+        val service = checkNotNull(com.unoone.agent.accessibilitycontrol.UnoOneAccessibilityService.getInstance())
+        fun verifyPixelWindows() {
+            verify()
+            check(com.unoone.agent.core.task.PixelWindowPolicy.allows(
+                service.windows.map { it.id to it.type }, identity.window,
+                android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION)) {
+                "Overlay or ambiguous display pixels; close overlays or review a capture manually"
             }
-            is Result.Error -> Result.Error(accResult.message)
+        }
+        verifyPixelWindows()
+        val snapshot = com.unoone.agent.accessibilitycontrol.AndroidDeviceAdapter(service,
+            allowedObservationPackages = setOf(identity.pkg)).observe().snapshot
+        check(!snapshot.truncated && snapshot.nodes.isNotEmpty() && snapshot.nodes.none {
+            it.password || it.semantic.sensitiveObservation()
+        }) { "Sensitive or unverifiable screen; read manually" }
+        verifyPixelWindows()
+        when (val capture = screenshotCapture.captureScreen()) {
+            is Result.Error -> Result.Error(capture.message)
+            is Result.Success -> try {
+                verifyPixelWindows()
+                check(capture.data.width == identity.width && capture.data.height == identity.height) { "Capture geometry changed" }
+                val result = ocrControl.recognizeText(capture.data)
+                verifyPixelWindows()
+                result
+            } finally { capture.data.recycle() }
         }
     }
 
-    /**
-     * ocr_screen: runs OCR on a MediaProjection screenshot. The pre-execution gate already required
-     * MediaProjection; we go straight to OCR rather than returning the accessibility tree (which
-     * would defeat the purpose of a dedicated OCR tool).
-     */
-    private suspend fun readScreenWithOcr(): Result<String> {
-        if (!ScreenshotCapture.hasPermission()) {
-            // Should not happen — the gate checks this before execute — but be defensive.
-            return Result.Error("Screenshot permission not granted. Grant it in Settings.")
+    private suspend fun describeScene(toolCall: ToolCall): Result<String> = scopedRead { identity, verify ->
+        // Raw pixels must not enter a model before source redaction. Use guarded OCR only.
+        val ocr = readScreenWithOcr()
+        verify()
+        when (ocr) {
+            is Result.Error -> ocr
+            is Result.Success -> Result.Success(com.unoone.agent.core.agent.SceneDescriptionBuilder.build(
+                com.unoone.agent.core.agent.SceneInput(currentPackage = identity.pkg, currentActivity = "",
+                    ocrText = ocr.data, aspect = toolCall.args["aspect"]?.jsonPrimitive?.content ?: "")))
         }
-        return when (val ocrResult = ocrControl.recognizeScreen()) {
-            is Result.Success -> if (ocrResult.data.isNotBlank()) {
-                Result.Success(ocrResult.data)
-            } else {
-                Result.Error("No text found on screen")
-            }
-            is Result.Error -> Result.Error(ocrResult.message)
-        }
-    }
-
-    /**
-     * describe_scene: produces a short, spoken scene description of the current screen. The
-     * MediaProjection permission is already gated by the safety pipeline before this runs.
-     *
-     * Two paths, in priority order:
-     *  1. Multimodal vision (device-time, INACTIVE in current production wiring): when
-     *     [_describeSceneWithVision] is wired by the orchestrator AND a vision-capable Gemma model
-     *     is loaded, the screenshot bytes are described by LiteRT-LM `Content.ImageBytes`. On any
-     *     Error (image input disabled, inference failure), this degrades to path 2 — never fails the
-     *     tool solely because vision is unavailable.
-     *  2. Always-available fallback: OCR text + foreground app/activity, framed by the JVM-tested
-     *     [com.unoone.agent.core.agent.SceneDescriptionBuilder]. This is what runs today.
-     *
-     * Honesty: the fallback is a structured description from OCR + context, not true visual
-     * understanding of objects/layout; it never fabricates screen content (the builder says "could
-     * not read" when there are no signals). Vision understanding is pending production image-input
-     * wiring and device qualification; E4B image input is disabled in this app configuration,
-     * although its upstream artifact is multimodal — see DEVICE_VERIFICATION.md.
-     */
-    private suspend fun describeScene(toolCall: ToolCall): Result<String> {
-        if (!ScreenshotCapture.hasPermission()) {
-            return Result.Error("Scene description requires MediaProjection permission. Grant it in Settings.")
-        }
-        val aspect = toolCall.args["aspect"]?.jsonPrimitive?.content ?: ""
-
-        // Path 1: multimodal vision, if wired. Best-effort; any failure falls through to the
-        // always-available OCR + context description.
-        val vision = _describeSceneWithVision
-        if (vision != null) {
-            val bitmap = (screenshotCapture.captureScreen() as? Result.Success)?.data
-            if (bitmap != null) {
-                val bytes = bitmapToJpeg(bitmap)
-                if (bytes != null) {
-                    try {
-                        val v = vision(bytes, aspect)
-                        if (v is Result.Success && v.data.isNotBlank()) return Result.Success(v.data)
-                    } catch (e: Exception) {
-                        Logger.w("describe_scene: vision path failed, using OCR fallback (${e.message})")
-                    }
-                }
-            }
-        }
-
-        // Path 2: OCR + foreground context → SceneDescriptionBuilder.
-        val contextStr = try { accessibilityControl.getCurrentContext() ?: "" } catch (_: Exception) { "" }
-        val pkg = contextStr.substringBefore("/").ifBlank { "" }
-        val activity = contextStr.substringAfter("/", "").ifBlank { "" }
-        val ocrText = try {
-            (ocrControl.recognizeScreen() as? Result.Success)?.data ?: ""
-        } catch (_: Exception) { "" }
-        val description = com.unoone.agent.core.agent.SceneDescriptionBuilder.build(
-            com.unoone.agent.core.agent.SceneInput(
-                currentPackage = pkg,
-                currentActivity = activity,
-                ocrText = ocrText,
-                aspect = aspect
-            )
-        )
-        return Result.Success(description)
-    }
-
-    /** Encodes a screenshot Bitmap to JPEG bytes for the LiteRT-LM `Content.ImageBytes` vision path. */
-    private fun bitmapToJpeg(bitmap: android.graphics.Bitmap): ByteArray? = try {
-        val baos = java.io.ByteArrayOutputStream()
-        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, baos)
-        baos.toByteArray()
-    } catch (e: Exception) {
-        Logger.w("describe_scene: bitmap encode failed (${e.message})")
-        null
     }
 
     private suspend fun executeSystemAction(toolCall: ToolCall): Result<String> {

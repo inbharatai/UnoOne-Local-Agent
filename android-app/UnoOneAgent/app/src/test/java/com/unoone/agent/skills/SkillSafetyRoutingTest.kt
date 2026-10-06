@@ -7,6 +7,7 @@ import com.unoone.agent.core.model.InputType
 import com.unoone.agent.storage.db.UnoOneDatabase
 import com.unoone.agent.storage.entity.NoteEntity
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -68,6 +69,7 @@ class SkillSafetyRoutingTest {
         // Auto-confirm any confirmation prompt so the STRONG_CONFIRM gate can be satisfied.
         orchestrator.onConfirmationRequiredMulticast.add { _, callback -> callback.invoke(true) }
 
+        orchestrator.ensureTaskScopesReady()
         orchestrator.processCommand("cleanup notes", InputType.TEXT)
 
         val timeline = orchestrator.timelineSteps.value
@@ -95,6 +97,7 @@ class SkillSafetyRoutingTest {
         // Deny the confirmation — the safety pipeline must abort the step before execution.
         orchestrator.onConfirmationRequiredMulticast.add { _, callback -> callback.invoke(false) }
 
+        orchestrator.ensureTaskScopesReady()
         orchestrator.processCommand("cleanup2", InputType.TEXT)
 
         val timeline = orchestrator.timelineSteps.value
@@ -119,6 +122,7 @@ class SkillSafetyRoutingTest {
             steps = listOf("open google to check my bank balance")
         )
 
+        orchestrator.ensureTaskScopesReady()
         orchestrator.processCommand("check bank", InputType.TEXT)
 
         val timeline = orchestrator.timelineSteps.value
@@ -137,13 +141,15 @@ class SkillSafetyRoutingTest {
         orchestrator.skillsModule.saveSkill(
             name = "Broken routine",
             triggerPhrases = listOf("run broken routine"),
-            steps = listOf("flibbertigibbet zzq")
+            steps = listOf("create note must not partially execute", "flibbertigibbet zzq")
         )
 
+        orchestrator.ensureTaskScopesReady()
         orchestrator.processCommand("run broken routine", InputType.TEXT)
 
         val timeline = orchestrator.timelineSteps.value
-        assertTrue(timeline.any { it.label == "Invalid Skill Step" })
+        assertTrue("Expected native admission rejection; timeline=$timeline", timeline.any { it.label == "Command not admitted" && it.detail == "INVALID_REQUEST" })
+        assertEquals(0, db.noteDao().recent(100).size)
         assertFalse(timeline.any { it.label == "Skill Complete" })
     }
 
@@ -154,14 +160,46 @@ class SkillSafetyRoutingTest {
             triggerPhrases = listOf("run permission boundary"),
             steps = listOf("create note exactly once", "read screen", "create note must not run")
         )
+        orchestrator.ensureTaskScopesReady()
         orchestrator.processCommand("run permission boundary", InputType.TEXT)
         assertEquals(listOf("exactly once"), db.noteDao().recent(100).map { it.title })
         assertFalse(orchestrator.timelineSteps.value.any { it.label == "Skill Complete" })
-        val pendingField = AgentOrchestrator::class.java.getDeclaredField("pendingCommand").apply { isAccessible = true }
-        val pending = pendingField.get(orchestrator) as java.util.concurrent.atomic.AtomicReference<*>
-        org.junit.Assert.assertNull("A permission grant must not replay the completed note write", pending.get())
         orchestrator.clearPendingAndReExecute()
         assertEquals(1, db.noteDao().recent(100).size)
+    }
+
+    @Test
+    fun queuedSkillRetainsOrderedSnapshotAfterSameHandleReorder() = runBlocking {
+        orchestrator.skillsModule.saveSkill("Ordered snapshot", listOf("run ordered snapshot"),
+            listOf("create note orderproof", "delete note about orderproof"))
+        orchestrator.ensureTaskScopesReady()
+        val originalScope = orchestrator.authorizeTaskScope("run ordered snapshot")
+        val locked = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val blocker = kotlinx.coroutines.CoroutineScope(coroutineContext).launch {
+            com.unoone.agent.core.task.ProcessTaskResources.ui.withLease(
+                com.unoone.agent.core.task.TaskId("snapshot-test-owner"), {}) {
+                locked.complete(Unit)
+                release.await()
+            }
+        }
+        locked.await()
+        orchestrator.onConfirmationRequiredMulticast.add { _, callback -> callback(true) }
+        try {
+            val admitted = orchestrator.taskRuntime.submitPreparedCommand("run ordered snapshot")
+                as com.unoone.agent.core.task.Admission.Accepted
+            val stored = db.skillDao().getAll().first().single { it.name == "Ordered snapshot" }
+            db.skillDao().update(stored.copy(stepsJson = "[\"delete note about orderproof\",\"create note orderproof\"]"))
+            orchestrator.ensureTaskScopesReady()
+            val changedScope = orchestrator.authorizeTaskScope("run ordered snapshot")
+            assertEquals(originalScope.objectHandles.filterNot { it.startsWith("legacy-plan:") }.toSet(),
+                changedScope.objectHandles.filterNot { it.startsWith("legacy-plan:") }.toSet())
+            assertFalse(originalScope.objectHandles == changedScope.objectHandles)
+            release.complete(Unit)
+            orchestrator.taskRuntime.await(admitted.taskId)
+            assertEquals("Queued task must run create/delete, never live delete/create", 0, db.noteDao().recent(100).size)
+            assertTrue(orchestrator.timelineSteps.value.any { it.label == "Skill Complete" })
+        } finally { release.complete(Unit); blocker.join() }
     }
 
     @Test

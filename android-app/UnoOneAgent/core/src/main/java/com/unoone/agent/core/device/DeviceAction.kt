@@ -75,7 +75,7 @@ object DeviceActionValidator {
         val s = state.snapshot
         action.snapshotRef()?.let { require(it == s.id) { "Wrong snapshot" } }
         val node = action.nodeRef()?.let { requireNotNull(s.node(it)) { "Unknown node" } }
-        if (node != null) require(node.enabled && s.displayBounds.contains(node.bounds)) { "Unavailable node" }
+        if (node != null) require(node.visible && node.enabled && s.displayBounds.contains(node.bounds)) { "Unavailable node" }
         when (action) {
             is DeviceAction.ClickNode -> require(node!!.clickable)
             is DeviceAction.LongPressNode -> require(node!!.longClickable)

@@ -113,12 +113,20 @@ fun UnoOneNavHost(
                     onVoiceLanguageSelected = settingsViewModel::setVoiceLanguage,
                     onNavigateToSecureBrowser = { navController.navigate(Screen.SecureBrowser.route) },
                     skillCount = skills.size,
-                    onNavigateToSkills = { navController.navigate(Screen.Skills.route) }
+                    onNavigateToSkills = { navController.navigate(Screen.Skills.route) },
+                    onNavigateToTasks = { navController.navigate("tasks") }
                 )
             }
             composable(Screen.Notes.route) { NotesScreen(viewModel = notesViewModel) }
             composable(Screen.Skills.route) {
                 SkillsScreen(viewModel = skillsViewModel, onReviewedWorkflows = { navController.navigate("skills-v2") })
+            }
+            composable("tasks") {
+                val application = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.unoone.agent.UnoOneApplication
+                com.unoone.agent.ui.screens.TaskBoardScreen(
+                    onBack = { navController.popBackStack() }, agentViewModel = agentViewModel,
+                    onPrepareResearchDraft = { query, prompt -> application.taskRuntime.submitPreparation(query, prompt) }
+                )
             }
             composable("skills-v2") {
                 com.unoone.agent.ui.screens.SkillsV2Screen(onBack = { navController.popBackStack() })

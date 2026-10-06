@@ -5,6 +5,14 @@ import com.unoone.agent.core.device.*
 /** Model proposals never add authority or supply query/recipient values. */
 internal object NativeGoalPolicy {
     const val TOTAL_MAX = 32
+
+    /** Caller owns task/lease checks; this never expands TaskScope to the current app. */
+    fun bindInteraction(goal: NativeDeviceGoal.Interact, state: PerceptionState,
+        owner: InteractionOwner, scope: com.unoone.agent.core.task.TaskScope, nowMs: Long): BoundReviewedInteraction? {
+        val pkg = goal.packageName ?: state.snapshot.windows.firstOrNull()?.packageName ?: return null
+        return BoundReviewedInteraction.bind(goal.interaction, pkg, state, owner, scope, nowMs)
+    }
+
     fun reviewedField(node: UiNode, pkg: String): Boolean =
         node.packageName == pkg && !node.password && node.editable &&
             node.semantic == TargetSemantic.FORM_FIELD &&

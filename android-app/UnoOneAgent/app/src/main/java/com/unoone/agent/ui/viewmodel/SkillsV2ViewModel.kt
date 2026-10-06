@@ -1,6 +1,8 @@
 package com.unoone.agent.ui.viewmodel
 
 import android.app.Application
+import com.unoone.agent.core.task.*
+import com.unoone.agent.task.ResourceEffects
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
@@ -89,14 +91,25 @@ class SkillsV2ViewModel(app: Application) : AndroidViewModel(app) {
                 require(store.read(skill.id, skill.version).digest() == digest)
                 require(SkillsV2Policy.canRun(skill, digest, steps.toSet(), AgentRuntimeGate.isEnabled(),
                     UnoOneAccessibilityService.isEnabled(), installedVersions))
-                val adapter = AndroidDeviceAdapter(requireNotNull(UnoOneAccessibilityService.getInstance()))
+                val rawAdapter = AndroidDeviceAdapter(requireNotNull(UnoOneAccessibilityService.getInstance()))
                 // Native defaults retain UNKNOWN semantics: review never upgrades targets to safe.
                 val auth = DeviceAuthorization(observe = true, allowedPackages = skill.appVersions.keys,
                     navigation = skill.steps.any { it.action in listOf(DeviceAction.Back, DeviceAction.Home, DeviceAction.Recents, DeviceAction.Notifications) })
                 val guard = DeviceExecutionGuard(epochs, epoch, {
                     AgentRuntimeGate.isEnabled() && generation == GlobalTaskCancellation.generation
                 }, auth)
-                val verified = SkillsV2Runner(adapter, SystemClock::elapsedRealtime).run(skill, guard, installedVersions)
+                val owner = TaskId(java.util.UUID.randomUUID().toString())
+                _status.value = "Queued for process UI lease"
+                val verified = ProcessTaskResources.ui.withLease(owner, { guard.check() }) { lease ->
+                    var actions = 0
+                    val adapter = ResourceEffects.adapter(rawAdapter, skill.appVersions.keys,
+                        { lease.checkActive(); guard.check() }, {
+                            check(++actions <= 32) { "Skill action budget exhausted" }
+                            ResourceEffects.record(getApplication<Application>(), owner, com.unoone.agent.core.task.TaskSource.SKILL)
+                        })
+                    _status.value = "Running with process UI lease"
+                    SkillsV2Runner(adapter, SystemClock::elapsedRealtime).run(skill, guard, installedVersions)
+                }
                 guard.check()
                 store.recordNativeRun(skill, verified, installedVersions, Build.FINGERPRINT.take(256))
                 _status.value = if (verified) "Native postconditions verified." else "Not verified; no automatic retry."

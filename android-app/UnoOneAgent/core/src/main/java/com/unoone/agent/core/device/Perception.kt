@@ -48,17 +48,24 @@ data class UiNode(
     val focused: Boolean = false,
     val enabled: Boolean = true,
     val password: Boolean = false,
-    val semantic: TargetSemantic = TargetSemantic.UNKNOWN
+    val semantic: TargetSemantic = TargetSemantic.UNKNOWN,
+    val visible: Boolean = true,
+    val selected: Boolean = false,
+    val readableTab: Boolean = false,
+    val collectionRowIndex: Int = -1,
+    val hint: String = ""
 ) {
     init {
         require(id.isNotBlank() && id.length <= 192 && path.length <= 192)
-        require(listOf(packageName, className, resourceId, text, description).all { it.length <= PerceptionLimits.TEXT })
-        require(!semantic.sensitiveObservation() || (text.isEmpty() && description.isEmpty()))
+        require(collectionRowIndex >= -1)
+        require(listOf(packageName, className, resourceId, text, description, hint).all { it.length <= PerceptionLimits.TEXT })
+        require(!semantic.sensitiveObservation() || (text.isEmpty() && description.isEmpty() && hint.isEmpty()))
         require(!password || (text.isEmpty() && description.isEmpty() && semantic == TargetSemantic.SECRET))
     }
     /** Includes original text, bounds and capabilities: a path alone is not an identity. */
     fun signature(): String = UiStateHasher.digest(listOf(windowId, path, packageName, className, resourceId,
-        text, description, bounds, clickable, longClickable, editable, scrollable, focusable, focused, enabled, password, semantic)
+        text, description, bounds, clickable, longClickable, editable, scrollable, focusable, focused, enabled, password, semantic,
+        visible, selected, readableTab, collectionRowIndex, hint)
         .joinToString("|") { "${it.toString().length}:$it" })
 }
 

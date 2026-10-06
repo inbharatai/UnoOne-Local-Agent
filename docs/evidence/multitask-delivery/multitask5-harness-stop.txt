@@ -1,0 +1,1 @@
+Stopped owned JVM test worker 4622 after jstack confirmed Robolectric SDK Main runBlocking deadlock in everyToolDispatchesToARealBranchNotAgentRouter. Production was not changed to bypass a guard. NativeTaskFixture now starts admitted direct-tool tests on SDK Main using Unconfined; scheduler concurrency tests remain independent. This run is failed/incomplete, not passed.
