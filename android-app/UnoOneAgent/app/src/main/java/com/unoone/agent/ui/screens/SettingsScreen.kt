@@ -54,6 +54,7 @@ import com.unoone.agent.voice.VoiceLanguage
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
+    onNavigateToLatency: () -> Unit = {},
     onNavigateToPrivacy: () -> Unit = {},
     onNavigateToModels: () -> Unit = {},
     onNavigateToLanguagePacks: () -> Unit = {},
@@ -86,6 +87,7 @@ fun SettingsScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
+        TextButton(onClick = onNavigateToLatency) { Text("Latency diagnostics and listening cue") }
         Text("Settings", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
 

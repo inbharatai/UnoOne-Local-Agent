@@ -1,0 +1,6 @@
+{
+  "compiler_exit": 0,
+  "model_not_loaded_during_compile": true,
+  "method": "standalone actual Kotlin sources, no Gradle",
+  "initial_background_compilation": "launcher exited before completion; no model launched; foreground compiler completed successfully"
+}

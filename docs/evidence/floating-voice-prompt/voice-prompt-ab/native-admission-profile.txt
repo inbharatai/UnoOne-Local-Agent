@@ -1,0 +1,4 @@
+Owl admission: text_tokens=1049 text_plus_vision=1113 image_tokens=64 reserved_output=256 context=2048 image_edge=512
+Owl admission: text_tokens=386 text_plus_vision=450 image_tokens=64 reserved_output=256 context=2048 image_edge=512
+Owl admission: text_tokens=386 text_plus_vision=450 image_tokens=64 reserved_output=256 context=2048 image_edge=512
+Owl admission: text_tokens=1049 text_plus_vision=1113 image_tokens=64 reserved_output=256 context=2048 image_edge=512

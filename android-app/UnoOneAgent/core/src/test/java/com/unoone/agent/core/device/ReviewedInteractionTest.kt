@@ -16,6 +16,38 @@ class ReviewedInteractionTest {
     private fun bind(s: PerceptionState, op: ReviewedOperation = ReviewedOperation.CLICK, value: String? = null) =
         BoundReviewedInteraction.bind(ReviewedInteraction(NativeTargetSelector("Search"), op, value), pkg, s, owner, scope, 100)
 
+    private fun spoken(label: String) = NativeTargetSelector(label, matchMode = NativeTargetMatchMode.CASE_INSENSITIVE_UNIQUE)
+
+    @Test fun spokenCaseOnlyUniqueAcrossTextDescriptionAndHint() {
+        for (n in listOf(node(), node(label = "").copy(description = "Search"), node(label = "").copy(hint = "Search"))) {
+            assertEquals(n, NativeTargetResolver.resolve(spoken("search"), state(n), pkg, 100))
+        }
+        // Even an exact spelling is not privileged over a second case-folded match.
+        assertNull(NativeTargetResolver.resolve(spoken("Search"), state(node(), node("two", "SEARCH")), pkg, 100))
+        assertNull(NativeTargetResolver.resolve(spoken("search"), state(node(label = "Sеarch")), pkg, 100)) // Cyrillic е
+        assertNull(NativeTargetResolver.resolve(spoken("cafe"), state(node(label = "Café")), pkg, 100))
+        assertNull(NativeTargetResolver.resolve(spoken("search"), state(node(label = "Search ")), pkg, 100))
+        assertNull(NativeTargetResolver.resolve(NativeTargetSelector("search"), state(node()), pkg, 100))
+        assertEquals(NativeTargetMatchMode.EXACT, NativeTargetSelector("Search").matchMode)
+    }
+
+    @Test fun spokenWritesKeepExactValueAndSensitiveTargetsStayBlocked() {
+        val field = node(semantic = TargetSemantic.FORM_FIELD).copy(editable = true, hint = "Search")
+        val write = BoundReviewedInteraction.bind(ReviewedInteraction(spoken("search"), ReviewedOperation.WRITE, "AbC"),
+            pkg, state(field), owner, scope, 100)!!
+        assertEquals(DeviceAction.SetText("s", field.id, "AbC"), write.action)
+        assertEquals("AbC", write.request.exactValue)
+        assertFalse(write.verified(state(field.copy(text = "abc"), id = "next", time = 101, event = 2), owner, 101))
+        assertTrue(write.verified(state(field.copy(text = "AbC"), id = "next", time = 101, event = 2), owner, 101))
+        val secret = node(label = "", semantic = TargetSemantic.SECRET).copy(password = true)
+        assertNull(BoundReviewedInteraction.bind(ReviewedInteraction(spoken("search"), ReviewedOperation.CLICK),
+            pkg, state(secret), owner, scope, 100))
+        for (n in listOf(node(label = "Send"), node(label = "Search").copy(description = "Confirm payment"))) {
+            assertNull(BoundReviewedInteraction.bind(ReviewedInteraction(spoken(n.text), ReviewedOperation.CLICK),
+                pkg, state(n), owner, scope, 100))
+        }
+    }
+
     @Test fun uniqueExactOnlyAndNoPackageAllowlist() {
         assertNotNull(bind(state(node())))
         assertNull(bind(state(node(), node("other"))))

@@ -1,5 +1,7 @@
 package com.unoone.agent.task
 
+import com.unoone.agent.core.latency.*
+import com.unoone.agent.voice.VoiceLatency
 import android.content.Context
 import com.unoone.agent.AgentOrchestrator
 import com.unoone.agent.core.model.InputType
@@ -48,16 +50,44 @@ class NativeTaskRuntime(context: Context, private val orchestrator: AgentOrchest
     private val search = WorkerKind("notes-search")
     private val draft = WorkerKind("draft")
     private val preparation = WorkerKind("preparation")
+    private val voiceNative = WorkerKind("voice-native-frozen")
+    private val voiceChat = WorkerKind("voice-conversation-only")
+    private val voicePurposes = java.util.concurrent.ConcurrentHashMap<String, com.unoone.agent.core.voice.NativeVoicePurpose>()
     private val owl = WorkerKind("owl-screen")
     private val owlRequests = java.util.concurrent.ConcurrentHashMap<String, Pair<com.unoone.agent.owl.OwlTaskConsent, List<com.unoone.agent.NativeDeviceGoal>>>()
     val coordinator = TaskCoordinator(listOf(
+        WorkerRegistration(voiceNative, WorkerLane.INTERACTIVE, NativeTaskWorker { ctx ->
+            val purpose = voicePurposes.remove(ctx.instruction)
+                ?: return@NativeTaskWorker finish(ctx, TaskResult(TaskOutcome.NEEDS_USER), "Voice scope expired")
+            com.unoone.agent.voice.VoiceService.beginForegroundTask()
+            try {
+            journal.record(ctx.taskId, ReceiptStage.PREPARED)
+            val trace = com.unoone.agent.voice.VoiceLatency.recorder.forRequest(purpose.requestId)
+            com.unoone.agent.voice.VoiceLatency.recorder.bindRequest(ctx.taskId.value, trace)
+            com.unoone.agent.voice.VoiceLatency.recorder.mark(trace, com.unoone.agent.core.latency.LatencyStage.WORKER_START)
+            val result = withContext(NativeTaskExecution(ctx, journal) + com.unoone.agent.VoiceTraceContext(trace)) {
+                ProcessTaskResources.ui.withLease(ctx.taskId, ctx::checkActive) {
+                    withOwnOverlayHidden(ctx) { orchestrator.executeVoicePurpose(purpose) }
+                }
+            }
+            finish(ctx, result.result, result.text)
+            } finally { com.unoone.agent.voice.VoiceService.endForegroundTask() }
+        }),
+        WorkerRegistration(voiceChat, WorkerLane.INTERACTIVE, NativeTaskWorker { ctx ->
+            val trace = workerTrace(ctx)
+            val result = withContext(NativeTaskExecution(ctx, journal) + CurrentLatencyContext(trace)) { orchestrator.executeVoiceConversation(ctx.instruction) }
+            finish(ctx, result.result, result.text)
+        }),
         WorkerRegistration(owl, WorkerLane.INTERACTIVE, NativeTaskWorker { ctx ->
             val request = owlRequests.remove(ctx.instruction)
                 ?: return@NativeTaskWorker finish(ctx, TaskResult(TaskOutcome.NEEDS_USER), "Consent expired")
             com.unoone.agent.voice.VoiceService.beginForegroundTask()
             try {
                 journal.record(ctx.taskId, ReceiptStage.PREPARED)
-                val outcome = withContext(NativeTaskExecution(ctx, journal)) {
+                val trace = com.unoone.agent.voice.VoiceLatency.recorder.forRequest(ctx.instruction)
+                com.unoone.agent.voice.VoiceLatency.recorder.bindRequest(ctx.taskId.value, trace)
+                com.unoone.agent.voice.VoiceLatency.recorder.mark(trace, com.unoone.agent.core.latency.LatencyStage.WORKER_START)
+                val outcome = withContext(NativeTaskExecution(ctx, journal) + com.unoone.agent.VoiceTraceContext(trace)) {
                     val execution = requireNotNull(currentCoroutineContext()[NativeTaskExecution])
                     fun checkApproval() { request.first.checkApproval(); ctx.checkActive() }
                     ProcessTaskResources.ui.withLease(ctx.taskId, ::checkApproval) {
@@ -68,7 +98,7 @@ class NativeTaskRuntime(context: Context, private val orchestrator: AgentOrchest
                             check(com.unoone.agent.accessibilitycontrol.UnoOneAccessibilityService.getInstance() != null) { "Owl accessibility unavailable" }
                             check(orchestrator.isLlmLoaded() && orchestrator.loadedBrainProfile()?.id == com.unoone.agent.core.model.BrainModelId.GUI_OWL_1_5_4B_INSTRUCT) { "Resident Owl profile required before navigation" }
                         }
-                        com.unoone.agent.owl.runApprovedOwlStart(
+                        withOwnOverlayHidden(ctx) { com.unoone.agent.owl.runApprovedOwlStart(
                             ownPractice = request.first.packageName == context.packageName,
                             checkActive = ::checkOwned,
                             beforeLaunch = { execution.beforeEffect(TaskCapability.UI_WRITE) },
@@ -76,7 +106,7 @@ class NativeTaskRuntime(context: Context, private val orchestrator: AgentOrchest
                                 context.startActivity(android.content.Intent(context, com.unoone.agent.owl.OwlPracticeActivity::class.java)
                                     .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
                             }
-                        ) { orchestrator.runOwlTask(request.first, request.second) }
+                        ) { orchestrator.runOwlTask(request.first, request.second) } }
                     }
                 }
                 finish(ctx, TaskResult(if (outcome.status == com.unoone.agent.core.device.DeviceOutcomeStatus.VERIFIED) TaskOutcome.VERIFIED else TaskOutcome.NEEDS_USER), outcome.reason)
@@ -153,11 +183,18 @@ class NativeTaskRuntime(context: Context, private val orchestrator: AgentOrchest
     // AgentOrchestrator's existing global-stop registration revokes this coordinator first,
     // then performs its native teardown. Do not register a second generation increment here.
 
+    private fun workerTrace(ctx: TaskContext): LatencyToken? {
+        val trace = ctx.requestId?.let { VoiceLatency.recorder.forRequest(it.value) }
+        VoiceLatency.recorder.bindRequest(ctx.taskId.value, trace)
+        VoiceLatency.recorder.mark(trace, LatencyStage.WORKER_START)
+        return trace
+    }
     private suspend fun runCommand(ctx: TaskContext, type: InputType): WorkerResult {
         com.unoone.agent.voice.VoiceService.beginForegroundTask()
         try {
             journal.record(ctx.taskId, ReceiptStage.PREPARED)
-            val result = withContext(NativeTaskExecution(ctx, journal)) {
+            val trace = workerTrace(ctx)
+            val result = withContext(NativeTaskExecution(ctx, journal) + CurrentLatencyContext(trace)) {
                 ProcessTaskResources.ui.withLease(ctx.taskId, ctx::checkActive) {
                     orchestrator.executeAcceptedTask(ctx, type)
                 }
@@ -167,7 +204,53 @@ class NativeTaskRuntime(context: Context, private val orchestrator: AgentOrchest
             com.unoone.agent.voice.VoiceService.endForegroundTask()
         }
     }
+    internal suspend fun <T> withOwnOverlayHidden(ctx: TaskContext, block: suspend () -> T): T {
+        ctx.checkActive()
+        check(ProcessTaskResources.ui.owner() == ctx.taskId)
+        // UI/model ownership is not microphone ownership; keep the Stop monitor live.
+        val generation = GlobalTaskCancellation.generation
+        val receipt = if (com.unoone.agent.overlay.OwnOverlayBridge.hasOwner())
+            com.unoone.agent.overlay.OwnOverlayBridge.acquireHidden(ctx.taskId.value, generation) else null
+        try { ctx.checkActive(); return block() }
+        finally { if (receipt != null) withContext(NonCancellable) { com.unoone.agent.overlay.OwnOverlayBridge.release(receipt) } }
+    }
+    fun submitVoicePurpose(purpose: com.unoone.agent.core.voice.NativeVoicePurpose, trace: LatencyToken? = null): Admission {
+        val generation = coordinator.captureGeneration()
+        if (purpose.captureGlobalGeneration != GlobalTaskCancellation.generation) return Admission.Rejected(RejectionReason.CLOSED)
+        VoiceLatency.recorder.bindRequest(purpose.requestId, trace)
+        voicePurposes[purpose.requestId] = purpose
+        val admission = submit(voiceNative, purpose.requestId,
+            TaskScope(setOf(TaskCapability.UI_READ, TaskCapability.UI_WRITE), purpose.steps.map { it.app.packageName }.toSet()), TaskSource.VOICE, generation)
+        if (admission is Admission.Rejected) voicePurposes.remove(purpose.requestId)
+        if (admission is Admission.Accepted) scope.launch { try { coordinator.await(admission.taskId) } finally { voicePurposes.remove(purpose.requestId) } }
+        return admission
+    }
+    fun submitVoiceConversation(ingress: com.unoone.agent.core.voice.VoiceIngress, trace: LatencyToken? = null): Admission {
+        val generation = coordinator.captureGeneration()
+        if (ingress.captureGlobalGeneration != GlobalTaskCancellation.generation) return Admission.Rejected(RejectionReason.CLOSED)
+        return submit(voiceChat, ingress.transcript, TaskScope(setOf(TaskCapability.MODEL)), TaskSource.VOICE, generation, trace)
+    }
+    fun submitVoiceOwl(review: com.unoone.agent.core.voice.VoiceTaskReview, trace: LatencyToken? = null): Admission {
+        val purpose = review.purpose
+        val generation = coordinator.captureGeneration()
+        if (purpose.captureGlobalGeneration != GlobalTaskCancellation.generation || !AgentRuntimeGate.isEnabled() || journal.health != "HEALTHY") return Admission.Rejected(RejectionReason.CLOSED)
+        if (!com.unoone.agent.VoicePurposeAdapter.owlSupported(purpose)) return Admission.Rejected(RejectionReason.INVALID_REQUEST)
+        val pkg = purpose.steps.first().app.packageName
+        val consent = com.unoone.agent.owl.OwlTaskConsent(pkg, "Reviewed voice scope " + purpose.digest, review.maxSteps, review.maxSeconds, purpose.captureGlobalGeneration)
+        val key = purpose.requestId
+        VoiceLatency.recorder.bindRequest(key, trace)
+        VoiceLatency.recorder.mark(trace, LatencyStage.TASK_ENQUEUED)
+        owlRequests[key] = consent to com.unoone.agent.VoicePurposeAdapter.goals(purpose)
+        val admission = coordinator.submit(TaskRequest(RequestId(key), owl, key,
+            TaskScope(setOf(TaskCapability.UI_READ, TaskCapability.UI_WRITE, TaskCapability.MODEL), setOf(pkg)), generation,
+            TaskSource.VOICE, TaskPriority.INTERACTIVE, TaskBudget(review.maxSeconds * 1000L, actions = 128, modelCalls = review.maxSteps)))
+        if (admission is Admission.Rejected) owlRequests.remove(key)
+        if (admission is Admission.Accepted) scope.launch { try { coordinator.await(admission.taskId) } finally { owlRequests.remove(key) } }
+        return admission
+    }
     private fun finish(ctx: TaskContext, result: TaskResult, text: String): WorkerResult {
+        val trace = com.unoone.agent.voice.VoiceLatency.recorder.forRequest(ctx.taskId.value)
+        com.unoone.agent.voice.VoiceLatency.recorder.mark(trace, com.unoone.agent.core.latency.LatencyStage.RESULT_READY)
         val bounded = boundedTaskText(sequenceOf(text))
         // Only bounded in-memory publication runs under the coordinator cancellation lock.
         // Terminal metadata is written by the existing IO summary collector. A crash before
@@ -178,15 +261,19 @@ class NativeTaskRuntime(context: Context, private val orchestrator: AgentOrchest
                     .entries.toList().takeLast(128).associate { it.toPair() }
             }
         }
+        com.unoone.agent.voice.VoiceLatency.recorder.mark(trace, com.unoone.agent.core.latency.LatencyStage.UI_STATE_PUBLISHED)
         return WorkerResult.Finished(result)
     }
     private fun submit(kind: WorkerKind, text: String, taskScope: TaskScope, source: TaskSource,
-        generation: Long): Admission = synchronized(historyLock) {
+        generation: Long, trace: LatencyToken? = null): Admission = synchronized(historyLock) {
         if (journal.health != "HEALTHY") return@synchronized Admission.Rejected(RejectionReason.CLOSED)
         if ((kind == search) && (text.isBlank() || text.length > 4000))
             return@synchronized Admission.Rejected(RejectionReason.INVALID_REQUEST)
         if (!AgentRuntimeGate.isEnabled()) return@synchronized Admission.Rejected(RejectionReason.CLOSED)
-        return@synchronized coordinator.submit(TaskRequest(RequestId(UUID.randomUUID().toString()), kind,
+        val requestId = UUID.randomUUID().toString()
+        VoiceLatency.recorder.bindRequest(requestId, trace)
+        VoiceLatency.recorder.mark(trace, LatencyStage.TASK_ENQUEUED)
+        return@synchronized coordinator.submit(TaskRequest(RequestId(requestId), kind,
             text, taskScope, generation, source,
             priority = if (kind == command || kind == voice) TaskPriority.INTERACTIVE else TaskPriority.NORMAL))
     }
@@ -214,7 +301,7 @@ class NativeTaskRuntime(context: Context, private val orchestrator: AgentOrchest
             catch (_: TaskScopePreparingException) { return Admission.Rejected(RejectionReason.PREPARING) }
             catch (_: IllegalArgumentException) { return Admission.Rejected(RejectionReason.INVALID_REQUEST) }
         return submit(if (inputType == InputType.VOICE) voice else command, text, authorized,
-            if (inputType == InputType.VOICE) TaskSource.VOICE else TaskSource.TEXT, generation)
+            if (inputType == InputType.VOICE) TaskSource.VOICE else TaskSource.TEXT, generation, currentCoroutineContext()[CurrentLatencyContext]?.token)
     }
     /** Called only after displaying this exact task's package/goal/limits and receiving consent. */
     fun submitOwl(consent: com.unoone.agent.owl.OwlTaskConsent, registry: com.unoone.agent.phonecontrol.AppRegistry): Admission {

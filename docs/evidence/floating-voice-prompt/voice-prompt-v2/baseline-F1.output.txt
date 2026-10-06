@@ -1,0 +1,4 @@
+Action: Click on the "Search query" input field to activate it.
+<tool_call>
+{"name": "mobile_use", "arguments": {"action": "click", "coordinate": [505, 684]}}
+</tool_call>

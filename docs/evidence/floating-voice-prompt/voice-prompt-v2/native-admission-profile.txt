@@ -1,0 +1,8 @@
+Owl admission: text_tokens=1049 text_plus_vision=1113 image_tokens=64 reserved_output=256 context=2048 image_edge=512
+Owl admission: text_tokens=493 text_plus_vision=557 image_tokens=64 reserved_output=256 context=2048 image_edge=512
+Owl admission: text_tokens=493 text_plus_vision=557 image_tokens=64 reserved_output=256 context=2048 image_edge=512
+Owl admission: text_tokens=1049 text_plus_vision=1113 image_tokens=64 reserved_output=256 context=2048 image_edge=512
+Owl admission: text_tokens=1051 text_plus_vision=1115 image_tokens=64 reserved_output=256 context=2048 image_edge=512
+Owl admission: text_tokens=495 text_plus_vision=559 image_tokens=64 reserved_output=256 context=2048 image_edge=512
+Owl admission: text_tokens=502 text_plus_vision=566 image_tokens=64 reserved_output=256 context=2048 image_edge=512
+Owl admission: text_tokens=1058 text_plus_vision=1122 image_tokens=64 reserved_output=256 context=2048 image_edge=512

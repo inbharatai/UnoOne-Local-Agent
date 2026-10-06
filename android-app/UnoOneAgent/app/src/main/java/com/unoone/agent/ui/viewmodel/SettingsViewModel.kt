@@ -151,7 +151,7 @@ class SettingsViewModel(context: Context) : ViewModel() {
                     voiceModule.reinitForLanguage(base)
                 }
             }
-            val startResult = voiceModule.startRecording(context, viewModelScope)
+            val startResult = voiceModule.recordOwned(context, 3_000)
             if (startResult is Result.Error) {
                 Logger.w("SettingsViewModel: STT test start failed: ${startResult.message}")
             }

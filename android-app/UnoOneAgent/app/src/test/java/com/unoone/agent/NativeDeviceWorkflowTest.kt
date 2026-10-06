@@ -24,6 +24,7 @@ class NativeDeviceWorkflowTest {
     }
     private class Adapter(var pkg: String) : DeviceAdapter {
         var sequence = 0L
+        var windowId = 1
         var node: UiNode? = null
         val actions = mutableListOf<DeviceAction>()
         var afterExecute: () -> Unit = {}
@@ -38,7 +39,7 @@ class NativeDeviceWorkflowTest {
         override suspend fun observe(): PerceptionState {
             beforeObserve()
             val bounds = RectData(0, 0, 100, 100)
-            return PerceptionState(UiSnapshot("s${sequence++}", 0, actions.size.toLong(), bounds, listOf(UiWindow(1, pkg, bounds, if (pkg in observationPackages) listOfNotNull(node) else emptyList())))).also { issued = it }
+            return PerceptionState(UiSnapshot("s${sequence++}", 0, actions.size.toLong(), bounds, listOf(UiWindow(windowId, pkg, bounds, if (pkg in observationPackages) listOfNotNull(node) else emptyList())))).also { issued = it }
         }
         override suspend fun execute(action: DeviceAction, state: PerceptionState, guard: DeviceExecutionGuard): DeviceDispatch {
             check(state === issued) { "Snapshot was not issued by this scoped adapter" }
@@ -52,6 +53,49 @@ class NativeDeviceWorkflowTest {
             return DeviceDispatch(true)
         }
         override suspend fun awaitSettled(afterEventSequence: Long, timeoutMs: Long) {}
+    }
+    @Test fun firstNativeObservationRejectsSamePackageWindowChangeAfterPreflight() = admittedDeviceTest {
+        val adapter = Adapter(gmail)
+        // Preflight succeeded on window 1; the first observe inside run's mutex sees 2.
+        val expected = DeviceAgentSession.ExpectedInitialPackageWindow(adapter.pkg, adapter.windowId)
+        val session = DeviceAgentSession(adapterProvider = {
+            assertEquals(expected.windowId, adapter.windowId)
+            adapter.beforeObserve = { adapter.windowId = 2 }
+            adapter
+        }, enabled = { true }, clockMs = { 0 })
+        val result = session.run(NativeDeviceGoal.Back(gmail), useModelPlanner = false,
+            expectedInitialPackageWindow = expected)
+        assertEquals(DeviceOutcomeStatus.NEEDS_USER, result.status)
+        assertEquals(1L, adapter.sequence)
+        assertTrue(adapter.actions.isEmpty())
+    }
+    @Test fun matchingFrozenWindowAllowsNativeDispatchAndPostcheck() = admittedDeviceTest {
+        val adapter = Adapter(gmail)
+        adapter.afterExecute = { adapter.node = UiNode("changed", 1, "0", gmail,
+            "android.widget.TextView", text = "After back", bounds = RectData(1, 1, 90, 20)) }
+        val result = DeviceAgentSession(adapterProvider = { adapter }, enabled = { true }, clockMs = { 0 })
+            .run(NativeDeviceGoal.Back(gmail), useModelPlanner = false,
+                expectedInitialPackageWindow = DeviceAgentSession.ExpectedInitialPackageWindow(gmail, 1))
+        assertEquals(DeviceOutcomeStatus.VERIFIED, result.status)
+        assertEquals(listOf(DeviceAction.Back), adapter.actions)
+    }
+    @Test fun explicitInitialOpenMayOwnNewWindowDespiteOldEvidence() = admittedDeviceTest {
+        val adapter = Adapter("com.unoone.agent")
+        adapter.windowId = 2
+        adapter.afterExecute = { adapter.windowId = 3 }
+        val result = DeviceAgentSession(adapterProvider = { adapter }, enabled = { true }, clockMs = { 0 })
+            .run(NativeDeviceGoal.OpenApp(gmail), useModelPlanner = false,
+                expectedInitialPackageWindow = DeviceAgentSession.ExpectedInitialPackageWindow(gmail, 1))
+        assertEquals(DeviceOutcomeStatus.VERIFIED, result.status)
+        assertEquals(listOf(DeviceAction.OpenApp(gmail)), adapter.actions)
+    }
+    @Test fun frozenWindowAlsoRejectsDifferentPackage() = admittedDeviceTest {
+        val adapter = Adapter(chrome)
+        val result = DeviceAgentSession(adapterProvider = { adapter }, enabled = { true }, clockMs = { 0 })
+            .run(NativeDeviceGoal.Back(gmail), useModelPlanner = false,
+                expectedInitialPackageWindow = DeviceAgentSession.ExpectedInitialPackageWindow(gmail, 1))
+        assertEquals(DeviceOutcomeStatus.NEEDS_USER, result.status)
+        assertTrue(adapter.actions.isEmpty())
     }
     @Test fun initialExplicitOpenFromMetadataOnlyIsAllowed() = admittedDeviceTest {
         val adapter = Adapter("com.unoone.agent")

@@ -1,5 +1,6 @@
 package com.unoone.agent.voice
 
+import com.unoone.agent.core.latency.*
 import android.content.Context
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.errorOrNull
@@ -11,6 +12,7 @@ import com.unoone.agent.voice.stt.SherpaSttEngine
 import com.unoone.agent.voice.stt.SttMode
 import com.unoone.agent.voice.tts.SherpaTtsEngine
 import com.unoone.agent.voice.tts.TtsPlayer
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.cancelAndJoin
@@ -18,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -66,8 +69,86 @@ class VoiceModule(private val context: Context) {
     var lastSttConfidence: Float = 0f
         private set
 
-    private val captureOwnership = CaptureOwnership()
-    private val legacyCaptureOwner = Any()
+    private val audioAdmission = Any()
+    private val captureOwnership = CaptureSessionController()
+    private val closed = captureOwnership.closed
+    private val speechGeneration = QueuedSpeechGeneration()
+    private val speechInFlight = java.util.concurrent.atomic.AtomicInteger(0)
+    fun isSpeechBusy(): Boolean = speechInFlight.get() > 0 || VoiceService.isAgentSpeaking()
+
+    class CaptureHandle internal constructor() : CaptureSessionController.Session() { internal var pauseOwner: Any? = null }
+    private val cleanupScope = CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    private var legacyCaptureOwner: CaptureHandle? = null
+    private val globalStopRegistration = com.unoone.agent.core.runtime.GlobalTaskCancellation.register(this) {
+        it.stopRecording() // authority revocation is synchronous; native joins remain on IO
+    }
+
+    /** A fresh capability is returned only after native admission succeeds. */
+    fun startCapture(context: Context, scope: CoroutineScope, trace: LatencyToken? = null): Result<CaptureHandle> {
+        if (closed.get()) return Result.Error("Voice module is shut down")
+        val handle = CaptureHandle()
+        VoiceLatency.recorder.mark(trace, LatencyStage.MIC_START_REQUEST)
+        return when (val result = captureOwnership.acquire(handle, { stopRecordingNative(); Unit }) { if (closed.get()) Result.Error("Voice module is shut down") else startRecordingNative(context, scope) }) {
+            is Result.Error -> result
+            is Result.Success -> {
+                if (handle.revoked.get() || closed.get()) {
+                    discardCapture(handle)
+                    return Result.Error("Voice capture revoked during start")
+                }
+                if (!useAndroidStt) VoiceLatency.recorder.mark(trace, LatencyStage.MIC_RECORDING_CONFIRMED)
+                Result.Success(handle)
+            }
+        }
+    }
+
+    /** Claims before the cue, then waits for the actual passive recorder drain ACK. */
+    suspend fun startForegroundCapture(context: Context, scope: CoroutineScope, trace: LatencyToken? = null,
+        cue: suspend () -> Unit = {}): Result<CaptureHandle> {
+        val pause = Any()
+        if (!VoiceService.claimPassivePause(pause)) return Result.Error("Microphone busy")
+        var retained = false
+        try {
+            if (!VoiceService.yieldPassiveCapture(pause)) return Result.Error("Microphone drain not acknowledged")
+            cue()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val result = startCapture(context, scope, trace)
+            if (result is Result.Success) { result.data.pauseOwner = pause; retained = true }
+            return result
+        } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+        catch (failure: Exception) { return Result.Error("Capture admission failed", failure) }
+        finally { if (!retained) VoiceService.releasePassivePause(pause) }
+    }
+
+    /** Revoke synchronously; native stop/drain never blocks the UI caller. */
+    fun discardCapture(handle: CaptureHandle) {
+        handle.revoked.set(true)
+        cleanupScope.launch {
+            captureOwnership.matching(handle) { activeSttJob.get()?.cancel() }
+            drainCapture(handle)
+        }
+    }
+
+    private suspend fun drainCapture(handle: CaptureHandle) = withContext(NonCancellable + Dispatchers.IO) {
+        captureOwnership.drain(handle) {
+            val job = activeSttJob.get()
+            stopRecordingNative()
+            job?.cancelAndJoin()
+            val acknowledged = if (job != null) androidStt?.isDrainAcknowledged() == true else recorder.isDrainAcknowledged()
+            if (acknowledged) activeSttJob.compareAndSet(job, null)
+            if (acknowledged) handle.pauseOwner?.let { VoiceService.releasePassivePause(it) }
+            acknowledged
+        }
+    }
+
+    suspend fun stopAndTranscribe(handle: CaptureHandle, trace: LatencyToken? = null): Result<String> {
+        try {
+            if (handle.revoked.get()) return Result.Error("Voice capture revoked")
+            val result = captureOwnership.use(handle, { Result.Error("Voice capture revoked") }) {
+                stopAndTranscribeOwned(handle, trace)
+            }
+            return if (handle.revoked.get()) Result.Error("Voice capture revoked") else result
+        } finally { drainCapture(handle) }
+    }
 
     private val activeSttJob = AtomicReference<Deferred<Result<String>>?>(null)
     private val isRecordingFlag = AtomicBoolean(false)
@@ -114,6 +195,7 @@ class VoiceModule(private val context: Context) {
         mode: SttMode = SttMode.TRANSDUCER,
         language: String = "en"
     ): Result<Unit> {
+        if (closed.get()) return Result.Error("Voice module is shut down")
         val engine = SherpaSttEngine(context, modelDir, mode, language)
         val result = engine.initialize()
         return if (result is Result.Success) {
@@ -176,6 +258,7 @@ class VoiceModule(private val context: Context) {
         )
 
     fun initTts(modelDir: String): Result<Unit> {
+        if (closed.get()) return Result.Error("Voice module is shut down")
         val engine = SherpaTtsEngine(context, modelDir)
         val result = engine.initialize()
         return if (result is Result.Success) {
@@ -200,43 +283,35 @@ class VoiceModule(private val context: Context) {
         return mode == android.media.AudioManager.MODE_IN_CALL || mode == android.media.AudioManager.MODE_IN_COMMUNICATION
     }
 
-    fun startRecording(context: Context, scope: CoroutineScope): Result<Unit> =
-        captureOwnership.acquire(legacyCaptureOwner, { stopRecordingNative(); Unit }) { startRecordingNative(context, scope) }
-
-    /** The scope, capture and STT child all end before the calling task releases its slot. */
-    suspend fun recordOwned(context: Context, durationMillis: Long): Result<String> = coroutineScope {
-        val owner = Any()
-        var job: Deferred<Result<String>>? = null
-        try {
-            val start = captureOwnership.acquire(owner, { stopRecordingNative(); Unit }) {
-                try { startRecordingNative(context, this) }
-                finally { job = activeSttJob.get() }
-            }
-            if (start is Result.Error) return@coroutineScope start
-            delay(durationMillis)
-            stopAndTranscribeOwned(owner)
-        } finally {
-            withContext(NonCancellable) {
-                try {
-                    captureOwnership.matching(owner) { stopRecordingNative() }
-                } finally {
-                    try {
-                        job?.cancelAndJoin()
-                        // Android cancellation posts native recognizer destruction to Main.
-                        if (job != null) withContext(Dispatchers.Main) { Unit }
-                    }
-                    finally { captureOwnership.release(owner) }
-                }
-            }
+    fun startRecording(context: Context, scope: CoroutineScope, trace: LatencyToken? = null): Result<Unit> {
+        return when (val result = startCapture(context, scope, trace)) {
+            is Result.Error -> result
+            is Result.Success -> { legacyCaptureOwner = result.data; Result.Success(Unit) }
         }
     }
 
-    private fun startRecordingNative(context: Context, scope: CoroutineScope): Result<Unit> {
+    /** The scope, capture and STT child all end before the calling task releases its slot. */
+    suspend fun recordOwned(context: Context, durationMillis: Long): Result<String> = coroutineScope {
+        val start = startForegroundCapture(context, this)
+        if (start is Result.Error) return@coroutineScope start
+        val handle = (start as Result.Success).data
+        try {
+            delay(durationMillis)
+            stopAndTranscribe(handle)
+        } finally {
+            handle.revoked.set(true)
+            drainCapture(handle)
+        }
+    }
+
+    private fun startRecordingNative(context: Context, scope: CoroutineScope): Result<Unit> = synchronized(audioAdmission) {
+        if (closed.get()) return Result.Error("Voice module is shut down")
+        if (isSpeechBusy()) return Result.Error("Speech is still completing; retry microphone when ready")
         if (callActive()) return Result.Error("Voice capture unavailable during a call")
         if (!AgentRuntimeGate.isEnabled()) {
             return Result.Error("UnoOne is disabled. Enable it before using the microphone.")
         }
-        if (!isRecordingFlag.compareAndSet(false, true)) return Result.Success(Unit)
+        if (!isRecordingFlag.compareAndSet(false, true)) return Result.Error("Microphone busy; retry")
 
         // Sherpa path (offline): record PCM, transcribe on stop.
         // Emergency Android path: the recognizer records its own audio; we drive it via async.
@@ -279,30 +354,16 @@ class VoiceModule(private val context: Context) {
         }
     }
 
-    suspend fun stopAndTranscribe(): Result<String> {
-        try { return stopAndTranscribeOwned(legacyCaptureOwner) }
-        finally {
-            withContext(NonCancellable) {
-                val job = captureOwnership.matching(legacyCaptureOwner) {
-                    val pending = activeSttJob.get()
-                    stopRecordingNative()
-                    pending
-                }
-                try {
-                        job?.cancelAndJoin()
-                        // Android cancellation posts native recognizer destruction to Main.
-                        if (job != null) withContext(Dispatchers.Main) { Unit }
-                    }
-                finally { captureOwnership.release(legacyCaptureOwner) }
-            }
-        }
+    suspend fun stopAndTranscribe(trace: LatencyToken? = null): Result<String> {
+        val handle = legacyCaptureOwner ?: return Result.Error("No legacy capture")
+        return stopAndTranscribe(handle, trace)
     }
 
-    private suspend fun stopAndTranscribeOwned(owner: Any): Result<String> {
+    private suspend fun stopAndTranscribeOwned(owner: CaptureHandle, trace: LatencyToken? = null): Result<String> {
         var job: Deferred<Result<String>>? = null
         var pcm = ByteArray(0)
         var engine: SherpaSttEngine? = null
-        val admitted = captureOwnership.matching(owner) {
+        val admitted = withContext(Dispatchers.IO) { captureOwnership.matching(owner) {
             if (!isRecordingFlag.getAndSet(false)) false
             else {
                 engine = sttEngine
@@ -311,16 +372,17 @@ class VoiceModule(private val context: Context) {
                 else pcm = recorder.stop()
                 true
             }
-        } == true
+        } == true }
+        VoiceLatency.recorder.mark(trace, LatencyStage.RECORDER_STOP)
         if (!admitted) return Result.Error("No matching active voice capture session")
         if (callActive()) return Result.Error("Voice capture discarded during call")
         VoiceAgentRuntime.transition(VoiceAgentState.PROCESSING, "transcribing final utterance")
         val res = if (job != null) job!!.await() else withContext(Dispatchers.IO) {
             val decoder = engine ?: return@withContext Result.Error("Offline STT model not installed")
             if (pcm.isEmpty()) return@withContext Result.Error("No audio captured")
-            val started = System.currentTimeMillis()
-            decoder.transcribe(pcm).also {
-                com.unoone.agent.observability.Diagnostics.recordSttLatency(System.currentTimeMillis() - started)
+            val started = android.os.SystemClock.elapsedRealtime()
+            decoder.transcribe(pcm, trace).also {
+                com.unoone.agent.observability.Diagnostics.recordSttLatency(android.os.SystemClock.elapsedRealtime() - started)
             }
         }
         if (callActive()) return Result.Error("Voice capture discarded during call")
@@ -332,23 +394,27 @@ class VoiceModule(private val context: Context) {
      * Decode PCM captured by the background wake service through this application-owned Sherpa
      * engine. VoiceService no longer constructs a second full STT model.
      */
-    suspend fun transcribePcm(pcmData: ByteArray): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun transcribePcm(pcmData: ByteArray, trace: LatencyToken? = null): Result<String> = withContext(Dispatchers.IO) {
+        if (closed.get()) return@withContext Result.Error("Voice module is shut down")
         if (callActive()) return@withContext Result.Error("Voice capture unavailable during call")
         if (pcmData.isEmpty()) return@withContext Result.Error("No audio captured")
         val engine = sttEngine
             ?: return@withContext Result.Error("Offline STT model not installed")
-        val result = engine.transcribe(pcmData)
+        val result = engine.transcribe(pcmData, trace)
         if (callActive()) return@withContext Result.Error("Voice capture discarded during call")
         lastSttConfidence = if (result is Result.Success) engine.lastConfidence else 0f
         result
     }
 
-    fun stopRecording(): ByteArray = captureOwnership.stopAll { stopRecordingNative() }
+    fun stopRecording(): ByteArray {
+        (captureOwnership.current() as? CaptureHandle)?.let { discardCapture(it) }
+        return ByteArray(0)
+    }
 
     private fun stopRecordingNative(): ByteArray {
         isRecordingFlag.set(false)
         // Cancel the active STT job to prevent orphaned coroutines
-        activeSttJob.getAndSet(null)?.cancel()
+        activeSttJob.get()?.cancel()
         return recorder.stop()
     }
 
@@ -356,13 +422,30 @@ class VoiceModule(private val context: Context) {
      * Highly accurate, multilingual on-device transcription supporting English and Indian languages.
      * Emergency-only path; the default offline path is Sherpa via [stopAndTranscribe].
      */
-    suspend fun transcribeWithAndroid(locale: Locale = Locale("en", "IN")): Result<String> {
-        return withContext(Dispatchers.Main) {
-            val engine = androidStt ?: AndroidSttEngine(context).also { androidStt = it }
-            val initResult = engine.initialize()
-            if (initResult is Result.Error) return@withContext initResult
-            engine.transcribeOnce(locale, ::dispatchAmplitude)
-        }
+    suspend fun transcribeWithAndroid(locale: Locale = Locale("en", "IN")): Result<String> = coroutineScope {
+        if (closed.get() || !allowSystemSttFallback || !AgentRuntimeGate.isEnabled())
+            return@coroutineScope Result.Error("System STT fallback not enabled")
+        val handle = CaptureHandle()
+        try {
+            val admitted = withContext(Dispatchers.Main) {
+                captureOwnership.acquire(handle, {}) {
+                    if (callActive() || isSpeechBusy()) Result.Error("Audio unavailable") else {
+                        val engine = androidStt ?: AndroidSttEngine(context).also { androidStt = it }
+                        val init = engine.initialize()
+                        if (init is Result.Success) {
+                            isRecordingFlag.set(true)
+                            activeSttJob.set(async(Dispatchers.Main) { engine.transcribeOnce(locale, ::dispatchAmplitude) })
+                        }
+                        init
+                    }
+                }
+            }
+            if (admitted is Result.Error) return@coroutineScope admitted
+            val result = captureOwnership.use(handle, { Result.Error("Voice capture revoked") }) {
+                activeSttJob.get()?.await() ?: Result.Error("No recognition child")
+            }
+            if (handle.revoked.get()) Result.Error("Voice capture revoked") else result
+        } finally { drainCapture(handle) }
     }
 
     /**
@@ -372,46 +455,66 @@ class VoiceModule(private val context: Context) {
         text: String,
         languageCode: String = VoiceLanguage.localeTag(currentLanguage())
     ): Result<Unit> {
-        if (!AgentRuntimeGate.isEnabled()) return Result.Error("UnoOne is disabled")
-        val engine = ttsEngine
-        if (engine != null && engine.isInitialized()) {
-            val ttsStart = System.currentTimeMillis()
-            val res = engine.speak(text)
-            com.unoone.agent.observability.Diagnostics.recordTtsLatency(System.currentTimeMillis() - ttsStart)
-            return res
+        val queuedGeneration = speechGeneration.capture()
+        synchronized(audioAdmission) {
+            if (!AgentRuntimeGate.isEnabled()) return Result.Error("UnoOne is disabled")
+            if (isRecording()) return Result.Error("Microphone owns audio; speech refused")
+            speechInFlight.incrementAndGet()
         }
-        // Emergency Android TTS fallback — explicitly logged, not the default production path.
-        Logger.i("VoiceModule: Sherpa TTS unavailable; using Android TTS fallback")
-        return ttsPlayer.speak(text, languageCode)
+        cleanupScope.launch {
+            try { if (speechGeneration.current(queuedGeneration)) speakAtGeneration(text, languageCode, null, queuedGeneration) }
+            finally { speechInFlight.decrementAndGet() }
+        }
+        return Result.Success(Unit)
     }
 
     /** Speaks and suspends until playback completes, preventing hands-free self-capture. */
     suspend fun speakAwait(
         text: String,
-        languageCode: String = VoiceLanguage.localeTag(currentLanguage())
-    ): Result<Unit> {
+        languageCode: String = VoiceLanguage.localeTag(currentLanguage()),
+        trace: LatencyToken? = null
+    ): Result<Unit> = speakAtGeneration(text, languageCode, trace, speechGeneration.capture())
+
+    private suspend fun speakAtGeneration(text: String, languageCode: String, trace: LatencyToken?, expectedSpeechGeneration: Long): Result<Unit> {
+        if (!speechGeneration.current(expectedSpeechGeneration)) return Result.Error("Speech stopped")
         if (!AgentRuntimeGate.isEnabled()) return Result.Error("UnoOne is disabled")
-        VoiceService.beginAgentSpeech()
+        val ownedTrace = trace ?: kotlinx.coroutines.currentCoroutineContext()[CurrentLatencyContext]?.token
+        synchronized(audioAdmission) {
+            if (isRecording()) return Result.Error("Microphone owns audio; speech refused")
+            speechInFlight.incrementAndGet()
+        }
+        VoiceLatency.recorder.mark(ownedTrace, LatencyStage.TTS_REQUEST)
+        val speechOwner = VoiceService.acquireAgentSpeech()
         VoiceAgentRuntime.transition(VoiceAgentState.SPEAKING, "playing local response")
         return try {
+            if (!speechGeneration.current(expectedSpeechGeneration)) return Result.Error("Speech stopped")
             val engine = ttsEngine
             val result = if (engine != null && engine.isInitialized()) {
-                engine.speakAwait(text)
+                engine.speakAwait(text, trace = ownedTrace)
             } else {
                 ttsPlayer.speakAwait(text, languageCode)
             }
             // Keep recognition gated briefly while speaker echo decays.
             delay(220L)
+            if (result is Result.Success) VoiceLatency.recorder.mark(ownedTrace, LatencyStage.NEXT_CAPTURE_AVAILABLE)
             result
         } finally {
-            VoiceService.endAgentSpeech()
+            VoiceService.endAgentSpeech(speechOwner)
+            speechInFlight.decrementAndGet()
         }
     }
 
     fun stopSpeaking() {
+        speechGeneration.stop()
         ttsEngine?.stop()
         ttsPlayer.stop()
     }
+
+    /** Includes pre-handle cue/admission and retained native drain, but not passive PCM ownership. */
+    fun isForegroundCaptureIdle(): Boolean = PassiveMonitoringPolicy.foregroundIdle(
+        VoiceService.isForegroundCaptureClaimed(), captureOwnership.current() != null)
+
+    fun isCaptureIdle(): Boolean = captureOwnership.current() == null && processMicrophoneLease.isIdle()
 
     fun isRecording(): Boolean = isRecordingFlag.get()
 
@@ -419,14 +522,28 @@ class VoiceModule(private val context: Context) {
 
     fun isTtsInitialized(): Boolean = ttsEngine?.isInitialized() == true
 
-    fun release() {
-        stopRecording()
-        sttEngine?.release()
-        ttsEngine?.release()
-        activeSttKey = ""
-        activeTtsKey = ""
-        androidStt?.release()
-        ttsPlayer.release()
+    /** Main-safe shutdown: admission closes and authority revokes before asynchronous drain. */
+    fun release() { releaseAsync() }
+
+    fun releaseAsync(): kotlinx.coroutines.Job {
+        val owner = captureOwnership.shutdown() as? CaptureHandle
+        globalStopRegistration.close()
+        return cleanupScope.launch {
+            if (owner != null) {
+                captureOwnership.matching(owner) { activeSttJob.get()?.cancel() }
+                drainCapture(owner)
+            }
+            // A failed native ACK quarantines this module rather than destroying resources in use.
+            if (captureOwnership.current() != null) return@launch
+            sttEngine?.release()
+            ttsEngine?.release()
+            activeSttKey = ""
+            activeTtsKey = ""
+            withContext(Dispatchers.Main) {
+                androidStt?.release()
+                ttsPlayer.release()
+            }
+        }
     }
 
     private fun sttKey(modelDir: String, mode: SttMode, language: String): String =

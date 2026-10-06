@@ -1,0 +1,7 @@
+{
+  "compiler": "standalone K2JVMCompiler 2.2.21",
+  "exit_code": 0,
+  "gradle_used": false,
+  "compiled_before_model_load": true,
+  "note": "Initial background preparation terminated before compilation completed; same frozen input compiled synchronously successfully before model process. No model calls repeated."
+}

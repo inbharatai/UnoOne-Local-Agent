@@ -1,0 +1,3 @@
+Action: Type "AbC 42" into the focused input field.
+<tool_call>{"name":"mobile_use","arguments":{"action":"type","text":"AbC 42"}}
+</tool_call>

@@ -1,0 +1,4 @@
+java.lang.IllegalStateException: Expected one official Action/tool_call envelope
+	at com.unoone.agent.core.guiowl.OwlOutputCodec.decode(OwlOutputCodec.kt:16)
+	at ProbeKt.main(Probe.kt:24)
+	at ProbeKt.main(Probe.kt)

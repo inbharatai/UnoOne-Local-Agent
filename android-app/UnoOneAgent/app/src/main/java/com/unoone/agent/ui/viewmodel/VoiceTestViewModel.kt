@@ -77,23 +77,18 @@ class VoiceTestViewModel(private val voiceModule: VoiceModule) : ViewModel() {
      * confidence. If Sherpa is unavailable and the emergency fallback is disabled, surfaces a clear
      * "install the model" message instead of silently using cloud STT.
      */
+    private var captureJob: kotlinx.coroutines.Job? = null
+
     fun startSttTest(context: Context) {
         if (_isRecording.value) return
-        viewModelScope.launch {
+        _isRecording.value = true
+        captureJob = viewModelScope.launch {
+            try {
             _transcript.value = ""
             _confidence.value = 0f
             _wakeMatch.value = ""
             _message.value = "Listening… speak now"
-            val start = voiceModule.startRecording(context, viewModelScope)
-            if (start is Result.Error) {
-                _message.value = start.message
-                return@launch
-            }
-            _isRecording.value = true
-            delay(3_000)
-            _isRecording.value = false
-            _message.value = "Transcribing…"
-            val result = voiceModule.stopAndTranscribe()
+            val result = voiceModule.recordOwned(context, 3_000)
             when (result) {
                 is Result.Success -> {
                     _transcript.value = result.data
@@ -117,13 +112,14 @@ class VoiceTestViewModel(private val voiceModule: VoiceModule) : ViewModel() {
                     Logger.w("VoiceTestViewModel: STT test failed: ${result.message}")
                 }
             }
+            } finally { _isRecording.value = false }
         }
     }
 
     fun cancelRecording() {
         if (!_isRecording.value) return
         _isRecording.value = false
-        viewModelScope.launch { voiceModule.stopAndTranscribe() }
+        captureJob?.cancel()
         _message.value = "Cancelled"
     }
 

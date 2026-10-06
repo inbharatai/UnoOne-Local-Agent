@@ -4,8 +4,15 @@ import com.unoone.agent.core.task.TaskCapability
 import com.unoone.agent.core.task.TaskId
 import com.unoone.agent.core.task.TaskScope
 
-/** Compiled from an exact user command, never from model proposals or screen instructions. */
-data class NativeTargetSelector(val exactLabel: String, val rowNumber: Int? = null) {
+/** Native policy, never inferred from model proposals or screen instructions. */
+enum class NativeTargetMatchMode { EXACT, CASE_INSENSITIVE_UNIQUE }
+
+/** Only trusted native voice compilation opts into case-insensitive target labels. */
+data class NativeTargetSelector(
+    val exactLabel: String,
+    val rowNumber: Int? = null,
+    val matchMode: NativeTargetMatchMode = NativeTargetMatchMode.EXACT
+) {
     init { require(exactLabel.isNotBlank() && exactLabel.length <= 256); require(rowNumber == null || rowNumber > 0) }
 }
 enum class ReviewedOperation { CLICK, SELECT_TAB, FOCUS, WRITE }
@@ -19,13 +26,18 @@ data class ReviewedInteraction(val selector: NativeTargetSelector, val operation
 data class InteractionOwner(val taskId: TaskId, val taskEpoch: Long, val stopGeneration: Long, val step: Long)
 
 object NativeTargetResolver {
+    private fun matches(label: String, selector: NativeTargetSelector): Boolean = when (selector.matchMode) {
+        NativeTargetMatchMode.EXACT -> label == selector.exactLabel
+        NativeTargetMatchMode.CASE_INSENSITIVE_UNIQUE -> label.equals(selector.exactLabel, ignoreCase = true)
+    }
+
     /** No fuzzy labels, parent promotion, coordinates, recipient inference, or truncated-tree uniqueness. */
     fun resolve(selector: NativeTargetSelector, state: PerceptionState, pkg: String, nowMs: Long): UiNode? {
         val s = state.snapshot
         if (s.truncated || s.windows.firstOrNull()?.packageName != pkg || nowMs < s.capturedAtMs ||
             nowMs - s.capturedAtMs > DeviceActionValidator.MAX_SNAPSHOT_AGE_MS) return null
         return s.nodes.filter { it.packageName == pkg && it.visible && it.enabled &&
-            s.displayBounds.contains(it.bounds) && (it.text == selector.exactLabel || it.description == selector.exactLabel || it.hint == selector.exactLabel) &&
+            s.displayBounds.contains(it.bounds) && (matches(it.text, selector) || matches(it.description, selector) || matches(it.hint, selector)) &&
             (selector.rowNumber == null || it.collectionRowIndex == selector.rowNumber - 1) }.singleOrNull()
     }
 }

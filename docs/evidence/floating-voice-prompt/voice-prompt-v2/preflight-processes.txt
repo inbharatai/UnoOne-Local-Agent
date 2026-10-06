@@ -1,0 +1,11 @@
+    PID    PPID   RSS COMMAND         COMMAND
+      1       0 11788 sandbox-init    /run/vercel/share/sandbox-init --socket=/run/vercel/share/init.sock --pubkey=SfvYDw/3BTzHZ2lan6KWjjR/tBZ0tvzGsJ+Nv1xodaU=
+  16913       1 19724 python3         python3 /tmp/agent-container/dist/vercel-monitor.py
+  16930   16913 543988 MainThread     node /tmp/agent-container/dist/index.mjs
+  16945       1  2964 sudo            sudo bash -c exec ip netns exec whoami-ns sudo -u whoami /tmp/agent-container/bin/whoami >>/var/log/whoami-daemon.log 2>&1
+  16947   16945  2972 sudo            sudo -u whoami /tmp/agent-container/bin/whoami
+  16949   16947 18240 whoami          /tmp/agent-container/bin/whoami
+  16956       1  2960 sudo            sudo bash -c exec python3 /tmp/agent-container/dist/whoami-dns.py >>/var/log/whoami-daemon.log 2>&1
+  16958   16956  6588 python3         python3 /tmp/agent-container/dist/whoami-dns.py
+  19646   16913 13888 python3         python3 /agent/workspace/owl-native-prep/voice-prompt-v2/monitor.py
+  19647   19646  2544 ps              ps -eo pid,ppid,rss,comm,args

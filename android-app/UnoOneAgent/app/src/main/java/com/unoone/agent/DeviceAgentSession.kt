@@ -28,7 +28,11 @@ class DeviceAgentSession(
     private val interactionSteps = java.util.concurrent.atomic.AtomicLong()
     fun cancel() { epochs.cancel() }
 
-    suspend fun run(goal: NativeDeviceGoal, useModelPlanner: Boolean = true): DeviceOutcome {
+    /** Frozen native admission evidence, never populated from planner/model output. */
+    data class ExpectedInitialPackageWindow(val packageName: String, val windowId: Int)
+
+    suspend fun run(goal: NativeDeviceGoal, useModelPlanner: Boolean = true,
+        expectedInitialPackageWindow: ExpectedInitialPackageWindow? = null): DeviceOutcome {
         val queuedCurrentPackage = if (goal is NativeDeviceGoal.Current ||
             (goal is NativeDeviceGoal.Sequence && goal.goals.firstOrNull() is NativeDeviceGoal.Current)) foregroundPackage() else null
         val epoch = epochs.current()
@@ -53,7 +57,14 @@ class DeviceAgentSession(
             for ((index, original) in goals.withIndex()) {
                 checkRun(epoch, globalGeneration)
                 val boundary = adapter.observe()
-                val boundaryPackage = boundary.snapshot.windows.firstOrNull()?.packageName
+                val boundaryWindow = boundary.snapshot.windows.firstOrNull()
+                val boundaryPackage = boundaryWindow?.packageName
+                // Root preflight can race with provider work or the mutex queue. Fence the
+                // first actual native snapshot before binding targets or dispatching anything.
+                if (index == 0 && original !is NativeDeviceGoal.OpenApp && expectedInitialPackageWindow != null &&
+                    (boundaryPackage != expectedInitialPackageWindow.packageName ||
+                        boundaryWindow?.id != expectedInitialPackageWindow.windowId))
+                    return@withLock needsUser("Source window changed; no action or automatic retarget; user control retained")
                 val prior = verifiedSnapshot
                 if (prior != null && (prior.windows.firstOrNull()?.packageName != boundaryPackage ||
                     prior.eventSequence != boundary.snapshot.eventSequence || UiDiff(prior, boundary.snapshot).hasChange))

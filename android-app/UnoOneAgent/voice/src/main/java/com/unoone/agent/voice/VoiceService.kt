@@ -2,6 +2,8 @@ package com.unoone.agent.voice
 
 import com.unoone.agent.core.runtime.GlobalTaskCancellation
 import com.unoone.agent.core.runtime.VoiceAdmissionTicket
+import com.unoone.agent.core.voice.VoiceIngress
+import com.unoone.agent.core.latency.*
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -57,6 +59,18 @@ class VoiceService : Service() {
     private var isListeningForCommand = false
 
     companion object {
+        private val passiveHandoff = PassiveCaptureHandoff()
+        private val liveService = java.util.concurrent.atomic.AtomicReference<java.lang.ref.WeakReference<VoiceService>?>(null)
+        fun claimPassivePause(token: Any): Boolean = passiveHandoff.claim(token)
+        fun isForegroundCaptureClaimed(): Boolean = passiveHandoff.paused()
+        suspend fun yieldPassiveCapture(token: Any): Boolean = passiveHandoff.acknowledge(token) {
+            val service = liveService.get()?.get()
+            if (service == null) processMicrophoneLease.isIdle()
+            else kotlinx.coroutines.withTimeoutOrNull(2_000L) { service.haltPassiveCapture() } ?: false
+        }
+        fun releasePassivePause(token: Any) {
+            if (passiveHandoff.release(token)) liveService.get()?.get()?.resumePassiveCapture()
+        }
         private const val CHANNEL_ID = "voice_service_channel"
         private const val NOTIFICATION_ID = 1001
         /** One second of 16 kHz mono PCM16; safely exceeds the bundled KWS 45-frame minimum. */
@@ -77,10 +91,50 @@ class VoiceService : Service() {
          */
         var voiceCommandCallback: ((String) -> Unit)? = null
         var voiceTicketCallback: ((VoiceAdmissionTicket) -> Unit)? = null
-        private fun dispatchVoice(text: String, generation: Long) {
-            val ticket = VoiceAdmissionTicket(text, generation)
-            if (voiceTicketCallback != null) voiceTicketCallback?.invoke(ticket)
-            else if (ticket.isCurrent() || VoiceControlPolicy.isStop(text)) voiceCommandCallback?.invoke(text)
+        /** Application supplies scope/review facts; voice never imports the application module. */
+        @Volatile var captureMetadataProvider: (() -> VoiceIngress)? = null
+        private fun captureTicket(): VoiceAdmissionTicket {
+            val ingress = captureMetadataProvider?.invoke() ?: VoiceIngress(
+                java.util.UUID.randomUUID().toString(), "", GlobalTaskCancellation.generation,
+                SystemClock.elapsedRealtime())
+            // Capture authority is frozen even for idle PCM; diagnostics are allocated only at STT admission.
+            return WakeCaptureTrace.captured(ingress)
+        }
+        private fun admitTranscription(capture: VoiceAdmissionTicket): VoiceAdmissionTicket =
+            WakeCaptureTrace.admit(capture, GlobalTaskCancellation.generation, VoiceLatency.recorder)
+
+        private fun dispatchVoice(text: String, capture: VoiceAdmissionTicket) {
+            if (!capture.isCurrent()) {
+                VoiceLatency.recorder.closeCapture(capture.latencyToken, LatencyOutcome.CANCELLED)
+                return
+            }
+            val ticket = capture.copy(text = text)
+            VoiceLatency.recorder.mark(ticket.latencyToken, LatencyStage.ADMISSION)
+            val callback = voiceTicketCallback
+            if (callback != null) {
+                callback(ticket)
+                // Callback queues Unified.accept asynchronously: transfer before producer finally.
+                VoiceLatency.recorder.acceptOwnership(ticket.latencyToken)
+            }
+            // Bare text carries no authority. In particular it must never approve a later review.
+            else if (VoiceControlPolicy.isStop(text)) voiceCommandCallback?.invoke(text)
+        }
+
+        /** Preserve capture facts when an in-process producer chooses Intent transport. */
+        fun putAdmissionTicket(intent: Intent, ticket: VoiceAdmissionTicket): Intent = intent.apply {
+            putExtra(EXTRA_COMMAND, ticket.text)
+            putExtra(EXTRA_COMMAND_GENERATION, ticket.generation)
+            putExtra("voice_request_id", ticket.requestId)
+            putExtra("voice_capture_start", ticket.captureStartMono)
+            putExtra("voice_review_id", ticket.liveReviewId)
+            ticket.underlyingAppEvidence?.let {
+                putExtra("voice_app_package", it.packageName)
+                putExtra("voice_app_window", it.windowId)
+                putExtra("voice_app_observed", it.observedAtMono)
+                putExtra("voice_app_is_application", it.isApplicationWindow)
+                putExtra("voice_app_is_overlay", it.isOwnOverlay)
+            }
+            VoiceLatency.recorder.bindRequest(ticket.requestId, ticket.latencyToken)
         }
 
         /**
@@ -113,24 +167,28 @@ class VoiceService : Service() {
         @Volatile
         var awaitingVoiceConfirmation: Boolean = false
 
-        private val agentSpeechOwners = AtomicInteger(0)
+        private val agentSpeechOwners = SpeechReferences()
         private val foregroundTaskOwners = AtomicInteger(0)
 
         /** Prevents the wake recorder from transcribing UnoOne's own TTS. */
         fun beginAgentSpeech() {
-            agentSpeechOwners.incrementAndGet()
+            agentSpeechOwners.beginLegacy()
         }
 
         fun endAgentSpeech() {
-            agentSpeechOwners.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
+            agentSpeechOwners.endLegacy()
         }
 
-        fun isAgentSpeaking(): Boolean = agentSpeechOwners.get() > 0
+        fun acquireAgentSpeech(): SpeechReferences.Owner = agentSpeechOwners.acquire()
+
+        fun endAgentSpeech(owner: SpeechReferences.Owner) { agentSpeechOwners.release(owner) }
+
+        fun isAgentSpeaking(): Boolean = agentSpeechOwners.isBusy()
 
         /**
-         * Gives a foreground agent operation exclusive access to local CPU/audio resources.
-         * The passive wake loop otherwise runs full Sherpa fallback transcription every few
-         * seconds, competing with PageAgent inference and decoding the agent's spoken progress.
+         * Marks ordinary-command dispatch busy. Native/UI/model work does not own the mic;
+         * wake-qualified Stop monitoring remains available unless actual capture or playback
+         * policy blocks it. Physical capture uses claimPassivePause/yield/release instead.
          */
         fun beginForegroundTask() {
             foregroundTaskOwners.incrementAndGet()
@@ -138,6 +196,7 @@ class VoiceService : Service() {
 
         fun endForegroundTask() {
             foregroundTaskOwners.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
+            liveService.get()?.get()?.resumePassiveCapture()
         }
 
         fun isForegroundTaskActive(): Boolean = foregroundTaskOwners.get() > 0
@@ -145,7 +204,7 @@ class VoiceService : Service() {
         fun clearAudioOwnership() {
             foregroundSessionActive = false
             awaitingVoiceConfirmation = false
-            agentSpeechOwners.set(0)
+            agentSpeechOwners.clear()
             foregroundTaskOwners.set(0)
         }
 
@@ -170,6 +229,7 @@ class VoiceService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        liveService.set(java.lang.ref.WeakReference(this))
         createNotificationChannel()
         if (!AgentRuntimeGate.isEnabled()) {
             stopSelf()
@@ -200,9 +260,15 @@ class VoiceService : Service() {
             val command = intent.getStringExtra(EXTRA_COMMAND)
             // Delivery can be delayed by Android; never attach fresh authority to queued text.
             val capturedGeneration = intent.getLongExtra(EXTRA_COMMAND_GENERATION, Long.MIN_VALUE)
-            if (!command.isNullOrBlank() && (VoiceControlPolicy.isStop(command) || ordinarySpeechAllowed(capturedGeneration))) {
-                Logger.i("VoiceService: received injected voice command")
-                dispatchVoice(command, capturedGeneration)
+            val injected = injectedTicket(intent, command.orEmpty(), capturedGeneration)
+            try {
+                if (!command.isNullOrBlank() && (VoiceControlPolicy.isStop(command) || ordinarySpeechAllowed(capturedGeneration))) {
+                    Logger.i("VoiceService: received injected voice command")
+                    dispatchVoice(command, injected)
+                }
+            } finally {
+                VoiceLatency.recorder.closeCapture(injected.latencyToken,
+                    if (injected.isCurrent()) LatencyOutcome.REJECTED else LatencyOutcome.CANCELLED)
             }
             return START_STICKY
         }
@@ -270,7 +336,29 @@ class VoiceService : Service() {
         }
     }
 
+    private val passiveLifecycle = Mutex()
+    private suspend fun haltPassiveCapture(): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        passiveLifecycle.withLock {
+            monitoringJob?.cancel()
+            recorder.stop()
+            monitoringJob?.join()
+            updateNotification("Foreground task active — use Stop to cancel")
+            recorder.isDrainAcknowledged() && processMicrophoneLease.isIdle()
+        }
+    }
+    private fun resumePassiveCapture() {
+        serviceScope.launch {
+            passiveLifecycle.withLock {
+                if (!passiveHandoff.paused() && AgentRuntimeGate.isEnabled() && serviceJob.isActive) {
+                    monitoringStarted = false
+                    ensureEnginesAndMonitoring()
+                }
+            }
+        }
+    }
+
     private fun startMonitoring() {
+        if (passiveHandoff.paused()) return
         monitoringJob?.cancel()
         monitoringJob = serviceScope.launch {
             try {
@@ -313,15 +401,20 @@ class VoiceService : Service() {
         var stopSilence = 0
         var stopBufferHadPlayback = false
         var captureGeneration = GlobalTaskCancellation.generation
+        var pendingCapture = captureTicket()
+        var passiveCapture = pendingCapture
+        var commandCapture = pendingCapture
+        var stopCapture = pendingCapture
 
         // 0C-7: Keep recorder running continuously instead of start/stop every second.
         // Start recording ONCE and use readChunk() to drain accumulated audio incrementally.
         if (
             !VoiceCapturePolicy.isCallAudioActive(audioManager.mode) &&
-            !foregroundSessionActive &&
+            !foregroundSessionActive && !passiveHandoff.paused() &&
             !recorder.isRecording() &&
             recorder.hasPermission(this@VoiceService)
         ) {
+            pendingCapture = captureTicket()
             val startResult = recorder.start(this@VoiceService)
             if (startResult is Result.Error) {
                 Logger.e("VoiceService: Cannot start recorder: ${startResult.message}")
@@ -333,6 +426,8 @@ class VoiceService : Service() {
         }
 
         while (serviceScope.isActive && AgentRuntimeGate.isEnabled()) {
+            var iterationTrace: LatencyToken? = null
+            var iterationOutcome = LatencyOutcome.REJECTED
             try {
                 // Invalidate ALL retained PCM, including AudioRecord's pending chunk, before KWS/ASR.
                 if (captureGeneration != GlobalTaskCancellation.generation) {
@@ -378,7 +473,7 @@ class VoiceService : Service() {
                 // Exactly one audio owner at a time. Release and discard buffered state while an
                 // in-app recording owns the microphone. TTS gets only the gated AEC stop path below.
                 if (
-                    foregroundSessionActive
+                    foregroundSessionActive || passiveHandoff.paused()
                 ) {
                     if (recorder.isRecording()) recorder.stop()
                     stopAudio.clear()
@@ -403,7 +498,8 @@ class VoiceService : Service() {
 
                 // If recorder stopped (e.g., after command capture), restart it
                 if (!recorder.isRecording()) {
-                    val startResult = recorder.start(this@VoiceService)
+                    pendingCapture = captureTicket()
+            val startResult = recorder.start(this@VoiceService)
                     if (startResult is Result.Error) {
                         delay(500)
                         continue
@@ -426,7 +522,11 @@ class VoiceService : Service() {
                 delay(chunkSizeMs)
 
                 // Read accumulated chunk without stopping the recorder
-                if (captureGeneration != GlobalTaskCancellation.generation) continue
+                if (captureGeneration != GlobalTaskCancellation.generation || passiveHandoff.paused()) continue
+                // Metadata owns the interval BEFORE drain, including residual PCM accumulated
+                // during a previous decode. Never stamp that residual with the later review.
+                val chunkCapture = pendingCapture
+                pendingCapture = captureTicket()
                 val pcmData = recorder.readChunk()
                 if (pcmData.isEmpty()) {
                     continue
@@ -441,7 +541,7 @@ class VoiceService : Service() {
                     continue
                 }
                 val speakingDuringCapture = isAgentSpeaking()
-                val stopOnly = speakingDuringCapture || (isForegroundTaskActive() && !awaitingVoiceConfirmation)
+                val stopOnly = PassiveMonitoringPolicy.stopOnly(isForegroundTaskActive(), speakingDuringCapture)
                 if (stopOnly != previousStopOnly) {
                     stopAudio.clear()
                     passiveWakeAudio.clear()
@@ -455,28 +555,41 @@ class VoiceService : Service() {
                     continue
                 }
                 if (stopOnly) {
-                    if (stopAudio.size == 0) stopBufferHadPlayback = false
+                    if (stopAudio.size == 0) { stopBufferHadPlayback = false; stopCapture = chunkCapture }
                     stopBufferHadPlayback = stopBufferHadPlayback || speakingDuringCapture
                     val speech = hasSpeechActivity(pcmData)
                     if (speech || stopAudio.size > 0) stopAudio.add(pcmData)
                     stopSilence = if (speech) 0 else stopSilence + 1
                     if (stopAudio.size > 0 && (stopSilence >= 2 || stopAudio.isFull)) {
+                        val stopComplete = !stopAudio.isFull
                         val pcm = stopAudio.toByteArray()
                         stopAudio.clear()
                         stopSilence = 0
                         val capturedPlayback = stopBufferHadPlayback
-                        val text = (transcribeAudio(pcm) as? Result.Success)?.data
+                        if (!stopCapture.isCurrent()) continue
+                        stopCapture = admitTranscription(stopCapture)
+                        iterationTrace = stopCapture.latencyToken
+                        val text = (transcribeAudio(pcm, stopCapture) as? Result.Success)?.data
                         if (AgentRuntimeGate.isEnabled() && text != null && EmergencyStopPolicy.accepts(text,
                                 capturedPlayback || isAgentSpeaking(), recorder.isEchoCancellationAvailable(),
                                 recorder.isEchoCancellationEnabled(), VoiceCapturePolicy.isCallAudioActive(audioManager.mode),
-                                foregroundSessionActive)) dispatchVoice(text, captureGeneration)
+                                foregroundSessionActive || passiveHandoff.paused()) &&
+                                (!isForegroundTaskActive() || VoiceControlPolicy.payload(text) != text.trim())) dispatchVoice(text, stopCapture)
+                        else if (UtteranceCompletionPolicy.eligible(UtteranceCompletionPolicy.endpointReason(stopComplete), text) && text != null && !capturedPlayback && !isAgentSpeaking() && emergencyCaptureAllowed() &&
+                            awaitingVoiceConfirmation && stopCapture.requestId != "UNKNOWN" && stopCapture.captureStartMono > 0 &&
+                            stopCapture.liveReviewId != null && stopCapture.liveReviewId == captureMetadataProvider?.invoke()?.liveReviewId &&
+                            (VoiceConfirmationPolicy.decision(text, false) != null || VoiceConfirmationPolicy.decision(text, true) != null)) {
+                            // Forward only a captured, still-live review decision; final request binding stays in admission.
+                            dispatchVoice(text, stopCapture)
+                        }
                     }
-                    continue // No wake cues, approvals, ordinary command dispatch or KWS in this mode.
+                    continue // No wake cues, ordinary command dispatch or KWS in this mode.
                 }
                 val sttWakeFallbackAvailable = sharedVoiceModuleProvider?.invoke()?.isSttInitialized() == true
                 if (!isListeningForCommand) {
                     val hasSpeech = hasSpeechActivity(pcmData)
                     if (sttWakeFallbackAvailable && (passiveSpeechActive || hasSpeech)) {
+                        if (passiveWakeAudio.size == 0) passiveCapture = chunkCapture
                         passiveSpeechActive = true
                         passiveWakeAudio.add(pcmData)
                         passiveSilenceChunks = if (hasSpeech) 0 else passiveSilenceChunks + 1
@@ -510,6 +623,7 @@ class VoiceService : Service() {
                         stopAudio.clear()
                     stopSilence = 0
                     commandAudio.clear()
+                        commandCapture = if (passiveWakeAudio.size > 0) passiveCapture else chunkCapture
                         commandAudio.add(passiveWakeAudio.toByteArray())
                         if (commandAudio.size == 0) commandAudio.add(pcmData)
                         passiveWakeAudio.clear()
@@ -528,16 +642,24 @@ class VoiceService : Service() {
                         // Some supported transducer/KWS combinations initialize but have poor live
                         // phrase recall. Decode the bounded speech burst locally and accept it only
                         // when it begins with an explicit wake phrase.
+                        val wakeComplete = !passiveWakeAudio.isFull
                         val wakePcm = passiveWakeAudio.toByteArray()
                         passiveWakeAudio.clear()
                         passiveSpeechActive = false
                         passiveSilenceChunks = 0
-                        val transcript = transcribeAudio(wakePcm)
+                        if (!passiveCapture.isCurrent()) continue
+                        passiveCapture = admitTranscription(passiveCapture)
+                        iterationTrace = passiveCapture.latencyToken
+                        val transcript = transcribeAudio(wakePcm, passiveCapture)
                         if ((transcript as? Result.Success)?.data?.let(VoiceControlPolicy::isStop) == true && emergencyCaptureAllowed()) {
-                            dispatchVoice((transcript as Result.Success).data, captureGeneration)
+                            dispatchVoice((transcript as Result.Success).data, passiveCapture)
                             continue
                         }
                         if (!ordinarySpeechAllowed(captureGeneration)) continue
+                        if (!UtteranceCompletionPolicy.eligible(UtteranceCompletionPolicy.endpointReason(wakeComplete), (transcript as? Result.Success)?.data)) {
+                            updateNotification(UtteranceCompletionPolicy.SHORTER_CUE)
+                            continue
+                        }
                         val rawTranscript = (transcript as? Result.Success)?.data
                         val match = rawTranscript?.let(WakePhraseMatcher::match)
                         if (
@@ -563,7 +685,7 @@ class VoiceService : Service() {
                             } else {
                                 Logger.i("VoiceService: received one-breath wake command")
                                 if (recorder.isRecording()) recorder.stop()
-                            dispatchVoice(match.command, captureGeneration)
+                            dispatchVoice(match.command, passiveCapture)
                                 VoiceAgentRuntime.transition(VoiceAgentState.PROCESSING, "one-breath command routed")
                                 updateNotification("Processing command locally...")
                             }
@@ -573,6 +695,7 @@ class VoiceService : Service() {
                     // Retain every post-wake chunk. Previously only the final (usually silent)
                     // chunk reached STT, so wake detection succeeded but the actual command was
                     // discarded and recognition appeared random or empty.
+                    if (commandAudio.size == 0) commandCapture = chunkCapture
                     commandAudio.add(pcmData)
                     // In command mode, check for silence
                     val hasSpeech = hasSpeechActivity(pcmData)
@@ -589,17 +712,26 @@ class VoiceService : Service() {
                         val finalChunk = recorder.readChunk()
                         isListeningForCommand = false
                         commandAudio.add(finalChunk)
+                        val commandComplete = !commandAudio.isFull
                         val commandPcm = commandAudio.toByteArray()
                         stopAudio.clear()
                     stopSilence = 0
                     commandAudio.clear()
 
-                        val transcript = transcribeAudio(commandPcm)
+                        if (!commandCapture.isCurrent()) continue
+                        commandCapture = admitTranscription(commandCapture)
+                        iterationTrace = commandCapture.latencyToken
+                        val transcript = transcribeAudio(commandPcm, commandCapture)
                         if ((transcript as? Result.Success)?.data?.let(VoiceControlPolicy::isStop) == true && emergencyCaptureAllowed()) {
-                            dispatchVoice((transcript as Result.Success).data, captureGeneration)
+                            dispatchVoice((transcript as Result.Success).data, commandCapture)
                             continue
                         }
                         if (!ordinarySpeechAllowed(captureGeneration)) continue
+                        if (!UtteranceCompletionPolicy.eligible(UtteranceCompletionPolicy.endpointReason(commandComplete), (transcript as? Result.Success)?.data)) {
+                            captureIncludesWakePhrase = false
+                            updateNotification(UtteranceCompletionPolicy.SHORTER_CUE)
+                            continue
+                        }
                         if (transcript is Result.Success && transcript.data.isNotBlank()) {
                             val match = if (captureIncludesWakePhrase) {
                                 WakePhraseMatcher.match(transcript.data)
@@ -651,7 +783,7 @@ class VoiceService : Service() {
                             // sendBroadcast() is visible in system logs even with setPackage(),
                             // exposing the user's transcribed speech. The callback is set by the
                             // Application layer, keeping commands in-process only.
-                            dispatchVoice(command, captureGeneration)
+                            dispatchVoice(command, commandCapture)
                             VoiceAgentRuntime.transition(
                                 VoiceAgentState.PROCESSING,
                                 "voice command routed"
@@ -676,32 +808,60 @@ class VoiceService : Service() {
                     }
                 }
             } catch (e: Exception) {
+                iterationOutcome = if (e is kotlinx.coroutines.CancellationException) LatencyOutcome.CANCELLED else LatencyOutcome.FAILED
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Logger.e("VoiceService: Error in spotting loop", e)
                 // 0C-11: Defensive stop on error
                 if (recorder.isRecording()) {
                     recorder.stop()
                 }
                 delay(500)
+            } finally {
+                VoiceLatency.recorder.closeCapture(iterationTrace,
+                    if (!serviceJob.isActive || captureGeneration != GlobalTaskCancellation.generation)
+                        LatencyOutcome.CANCELLED else iterationOutcome)
             }
         }
     }
 
     private fun ordinarySpeechAllowed(generation: Long): Boolean = generation == GlobalTaskCancellation.generation && serviceJob.isActive && AgentRuntimeGate.isEnabled() &&
-        !isAgentSpeaking() && !foregroundSessionActive &&
+        PassiveMonitoringPolicy.ordinaryAllowed(isForegroundTaskActive(), isAgentSpeaking(), foregroundSessionActive || passiveHandoff.paused()) &&
         !VoiceCapturePolicy.isCallAudioActive(audioManager.mode)
 
     private fun emergencyCaptureAllowed(): Boolean = serviceJob.isActive && AgentRuntimeGate.isEnabled() &&
-        EmergencyStopPolicy.canListen(isAgentSpeaking(), recorder.isEchoCancellationAvailable(),
+        PassiveMonitoringPolicy.canCapture(isAgentSpeaking(), recorder.isEchoCancellationAvailable(),
             recorder.isEchoCancellationEnabled(), VoiceCapturePolicy.isCallAudioActive(audioManager.mode),
-            foregroundSessionActive)
+            foregroundSessionActive || passiveHandoff.paused())
 
     private fun hasSpeechActivity(pcmData: ByteArray): Boolean {
         return speechDetector.hasSpeech(pcmData)
     }
 
-    private suspend fun transcribeAudio(pcmData: ByteArray): Result<String> {
-        return sharedVoiceModuleProvider?.invoke()?.transcribePcm(pcmData)
+    private suspend fun transcribeAudio(pcmData: ByteArray, capture: VoiceAdmissionTicket): Result<String> {
+        if (!capture.isCurrent()) return Result.Error("Stale capture")
+        val trace = capture.latencyToken
+        VoiceLatency.recorder.mark(trace, LatencyStage.ENDPOINT_DECISION)
+        val result = sharedVoiceModuleProvider?.invoke()?.transcribePcm(pcmData, trace)
             ?: Result.Error("Shared offline STT is unavailable")
+        if (!capture.isCurrent()) {
+            VoiceLatency.recorder.closeCapture(trace, LatencyOutcome.CANCELLED)
+            return Result.Error("Stale capture")
+        }
+        if (result is Result.Error) VoiceLatency.recorder.closeCapture(trace, LatencyOutcome.FAILED)
+        // Successful dispatch transfers the trace to the task. Decode completion is NOT task success.
+        return result
+    }
+
+    private fun injectedTicket(intent: Intent, text: String, generation: Long): VoiceAdmissionTicket {
+        // Missing legacy extras stay UNKNOWN. No provider call at delayed Intent delivery.
+        val requestId = intent.getStringExtra("voice_request_id") ?: "UNKNOWN"
+        val evidencePackage = intent.getStringExtra("voice_app_package")
+        val evidence = evidencePackage?.let { com.unoone.agent.core.voice.UnderlyingAppEvidence(
+            it, intent.getIntExtra("voice_app_window", -1), intent.getLongExtra("voice_app_observed", 0L),
+            intent.getBooleanExtra("voice_app_is_application", false), intent.getBooleanExtra("voice_app_is_overlay", true)) }
+        return VoiceAdmissionTicket(text, generation, requestId,
+            intent.getLongExtra("voice_capture_start", 0L), evidence,
+            intent.getStringExtra("voice_review_id"), VoiceLatency.recorder.forRequest(requestId))
     }
 
     private fun updateNotification(text: String) {
@@ -727,6 +887,9 @@ class VoiceService : Service() {
         // User-perceptible microphone FGS notification (Play policy): makes background mic capture
         // explicit and gives the user a visible, ongoing signal. No silent background voice mode.
         return NotificationCompat.Builder(this, CHANNEL_ID)
+            .addAction(android.R.drawable.ic_media_pause, "Stop", android.app.PendingIntent.getBroadcast(
+                this, 701, Intent("com.unoone.agent.STOP_ALL_TASKS").setClassName(packageName, "com.unoone.agent.TaskStopReceiver"),
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE))
             .setContentTitle("UnoOne listening locally")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
@@ -737,6 +900,8 @@ class VoiceService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        val registered = liveService.get()
+        if (registered?.get() === this) liveService.compareAndSet(registered, null)
         kwsLifecycle.invalidate()
         engineInitJob?.cancel()
         monitoringJob?.cancel()

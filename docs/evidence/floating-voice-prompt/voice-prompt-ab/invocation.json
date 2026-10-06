@@ -1,0 +1,24 @@
+{
+  "argv": [
+    "/agent/workspace/toolchains/jdk17/bin/java",
+    "-Xms16m",
+    "-Xmx128m",
+    "-XX:ErrorFile=/agent/workspace/owl-native-prep/voice-prompt-ab/hs_err_pid%p.log",
+    "-Djava.library.path=/agent/workspace/owl-native-prep/voice-prompt-ab/pinned-host:/agent/workspace/owl-native-prep/build/bin",
+    "-cp",
+    "/agent/workspace/owl-native-prep/voice-prompt-ab/classes:/agent/workspace/owl-native-prep/voice-prompt-ab/pinned-host/classes:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.21/fa374a986e128314c3db00a20aae55f72a258511/kotlin-stdlib-2.2.21.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains/annotations/13.0/919f0dfe192fb4e063e7dacadee7f8bb9a2672a9/annotations-13.0.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains/annotations/23.0.0/8cc20c07506ec18e0834947b84a864bfc094484e/annotations-23.0.0.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/1.9.0/9beade4c1c1569e4f36cbd2c37e02e3e41502601/kotlinx-coroutines-core-jvm-1.9.0.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-serialization-core-jvm/1.8.0/fe5bb37ab4a3771f14c63e0c333c98bdfeb1d7cc/kotlinx-serialization-core-jvm-1.8.0.jar:/agent/workspace/toolchains/gradle-home/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-serialization-json-jvm/1.8.0/8253bf6e8c713a3dace54493a838e0f8fd3e08fa/kotlinx-serialization-json-jvm-1.8.0.jar",
+    "ProbeKt"
+  ],
+  "LD_LIBRARY_PATH": "/agent/workspace/owl-native-prep/voice-prompt-ab/pinned-host:/agent/workspace/owl-native-prep/build/bin",
+  "RLIMIT_AS": [
+    -1,
+    -1
+  ],
+  "native_timeout_seconds": 180,
+  "outer_timeout_seconds": 900,
+  "rss_cutoff_KiB": 3984588,
+  "memavailable_cutoff_KiB": 262144,
+  "sample_period_seconds": 0.1,
+  "memory_current_path": "/sys/fs/cgroup/memory.current",
+  "signal_target": "child PID only"
+}

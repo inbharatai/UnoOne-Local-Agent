@@ -1,5 +1,9 @@
 package com.unoone.agent.voice.stt
 
+import com.unoone.agent.voice.processMicrophoneLease
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -25,6 +29,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 class AndroidSttEngine(private val context: Context) {
 
     private var speechRecognizer: SpeechRecognizer? = null
+    @Volatile private var destructionAck = true
+    fun isDrainAcknowledged(): Boolean = destructionAck
 
     fun initialize(): Result<Unit> {
         return try {
@@ -46,17 +52,26 @@ class AndroidSttEngine(private val context: Context) {
         locale: Locale = Locale("en", "IN"),
         onAmplitude: ((Float) -> Unit)? = null
     ): Result<String> {
-        // 0C-3: Wrap in timeout to prevent indefinite hangs if SpeechRecognizer
-        // never fires onError or onResults (happens on some devices/emulators)
-        return withTimeoutOrNull(15_000L) {
-            suspendCancellableCoroutine { continuation ->
-                doTranscribe(locale, onAmplitude, continuation)
+        // Reject unsupported/local-recognizer-unavailable requests before taking the mic
+        // or posting work to Main. Never create a provider-dependent recognizer.
+        if (android.os.Build.VERSION.SDK_INT < 31 || !SpeechRecognizer.isOnDeviceRecognitionAvailable(context))
+            return Result.Error("Local system recognizer unavailable; offline models required")
+        val owner = Any()
+        if (!processMicrophoneLease.acquire(owner)) return Result.Error("Microphone busy")
+        try {
+            // withContext awaits the recognition child, including cancellation, before returning.
+            return withContext(Dispatchers.Main.immediate) {
+                withTimeoutOrNull(15_000L) {
+                    suspendCancellableCoroutine<Result<String>> { continuation ->
+                        doTranscribe(locale, onAmplitude, continuation)
+                    }
+                } ?: Result.Error("Speech recognition timed out")
             }
-        } ?: run {
-            // Timeout: destroy the recognizer and return error
-            Logger.w("AndroidSttEngine: Transcription timed out after 15s")
-            release()
-            Result.Error("Speech recognition timed out")
+        } finally {
+            withContext(NonCancellable + Dispatchers.Main.immediate) {
+                speechRecognizer?.let { safeDestroyRecognizer(it) }
+            }
+            processMicrophoneLease.release(owner, destructionAck, true)
         }
     }
 
@@ -71,6 +86,7 @@ class AndroidSttEngine(private val context: Context) {
         }
         val recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(context).also {
             speechRecognizer = it
+            destructionAck = false
         }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -146,9 +162,10 @@ class AndroidSttEngine(private val context: Context) {
     private fun safeDestroyRecognizer(recognizer: SpeechRecognizer) {
         synchronized(this) {
             if (speechRecognizer == recognizer) {
-                speechRecognizer = null
                 try {
                     recognizer.destroy()
+                    speechRecognizer = null
+                    destructionAck = true
                 } catch (e: Exception) {
                     Logger.e("AndroidSttEngine: Error destroying recognizer", e)
                 }
@@ -157,18 +174,12 @@ class AndroidSttEngine(private val context: Context) {
     }
 
     fun stopListening() {
-        try {
-            speechRecognizer?.stopListening()
-        } catch (e: Exception) {
-            Logger.e("AndroidSttEngine: Error stopping listening", e)
+        Handler(Looper.getMainLooper()).post {
+            try { speechRecognizer?.stopListening() }
+            catch (e: Exception) { Logger.e("AndroidSttEngine: Error stopping listening", e) }
         }
     }
 
-    fun release() {
-        synchronized(this) {
-            val recognizer = speechRecognizer
-            speechRecognizer = null
-            recognizer?.destroy()
-        }
-    }
+    /** Called on Main after the recognition child has joined. */
+    fun release() { speechRecognizer?.let { safeDestroyRecognizer(it) } }
 }

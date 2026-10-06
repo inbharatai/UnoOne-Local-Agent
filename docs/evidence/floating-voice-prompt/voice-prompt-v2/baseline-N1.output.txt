@@ -1,0 +1,4 @@
+Action: Click on the "Library" button in the "Demo workspace" section.
+<tool_call>
+{"name": "mobile_use", "arguments": {"action": "click", "coordinate": [257, 428]}}
+</tool_call>

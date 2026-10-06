@@ -1,0 +1,6 @@
+{
+  "file": "voice-browser.log.txt",
+  "rawSha256": "e043acbac569a6db9eaa233049254ef994a4346b70c2715ef715db9c6628f289",
+  "gitTextSha256": "064bd8940133fc37b3000e3065055995ae17b4b22c8ca806aac1136df889f349",
+  "change": "Console carriage returns normalized; raw build-evidence/voice-browser.log retained. No executable change."
+}

@@ -1,0 +1,152 @@
+[
+  {
+    "order": 1,
+    "variant": "baseline",
+    "case": "A",
+    "generate_status": "OK",
+    "total_generate_wall_ms": 68075,
+    "admission": {
+      "text_tokens": 1049,
+      "text_plus_vision": 1113,
+      "image_tokens": 64,
+      "reserved_output": 256,
+      "context": 2048,
+      "image_edge": 512
+    },
+    "EOS_return": true,
+    "raw_output": "Action: Click on the \"Search\" button with red background\n<tool_call>\n{\"name\": \"mobile_use\", \"arguments\": {\"action\": \"click\", \"coordinate\": [741, 673]}}\n</tool_call>",
+    "generation_error": null,
+    "production_codec_accepted": true,
+    "codec": "action=click;x=741.0;y=673.0;proposal=OwlProposal(action=click, coordinate=OwlPoint(x=741.0, y=673.0), coordinate2=null, text=null, time=null, button=null, status=null)",
+    "coordinate": [
+      741.0,
+      673.0
+    ],
+    "search_bbox": [
+      523.4375,
+      566.40625,
+      960.9375,
+      800.78125
+    ],
+    "inside_search": true,
+    "output_token_count": null,
+    "native_phase_timings": null,
+    "raw_diagnostic_coordinate": [
+      741.0,
+      673.0
+    ],
+    "raw_diagnostic_bbox_hit": true,
+    "raw_diagnostic_not_codec_validated": true
+  },
+  {
+    "order": 2,
+    "variant": "candidate",
+    "case": "B",
+    "generate_status": "OK",
+    "total_generate_wall_ms": 28725,
+    "admission": {
+      "text_tokens": 386,
+      "text_plus_vision": 450,
+      "image_tokens": 64,
+      "reserved_output": 256,
+      "context": 2048,
+      "image_edge": 512
+    },
+    "EOS_return": true,
+    "raw_output": "Action: Click the \"Search\" button\n<tool_call> JSON </tool_call>: {\"action\":\"click\",\"coordinate\": [272, 293]}\n",
+    "generation_error": null,
+    "production_codec_accepted": false,
+    "codec": "",
+    "coordinate": null,
+    "search_bbox": [
+      46.875,
+      175.78125,
+      484.375,
+      410.15625
+    ],
+    "inside_search": false,
+    "output_token_count": null,
+    "native_phase_timings": null,
+    "raw_diagnostic_coordinate": [
+      272.0,
+      293.0
+    ],
+    "raw_diagnostic_bbox_hit": true,
+    "raw_diagnostic_not_codec_validated": true
+  },
+  {
+    "order": 3,
+    "variant": "candidate",
+    "case": "A",
+    "generate_status": "OK",
+    "total_generate_wall_ms": 28922,
+    "admission": {
+      "text_tokens": 386,
+      "text_plus_vision": 450,
+      "image_tokens": 64,
+      "reserved_output": 256,
+      "context": 2048,
+      "image_edge": 512
+    },
+    "EOS_return": true,
+    "raw_output": "Action: Click the \"Search\" button\n<tool_call> JSON </tool_call>: {\"action\":\"click\",\"coordinate\": [744, 678]}\n",
+    "generation_error": null,
+    "production_codec_accepted": false,
+    "codec": "",
+    "coordinate": null,
+    "search_bbox": [
+      523.4375,
+      566.40625,
+      960.9375,
+      800.78125
+    ],
+    "inside_search": false,
+    "output_token_count": null,
+    "native_phase_timings": null,
+    "raw_diagnostic_coordinate": [
+      744.0,
+      678.0
+    ],
+    "raw_diagnostic_bbox_hit": true,
+    "raw_diagnostic_not_codec_validated": true
+  },
+  {
+    "order": 4,
+    "variant": "baseline",
+    "case": "B",
+    "generate_status": "OK",
+    "total_generate_wall_ms": 67965,
+    "admission": {
+      "text_tokens": 1049,
+      "text_plus_vision": 1113,
+      "image_tokens": 64,
+      "reserved_output": 256,
+      "context": 2048,
+      "image_edge": 512
+    },
+    "EOS_return": true,
+    "raw_output": "Action: Click on the \"Search\" button to proceed with the operation.\n<tool_call>\n{\"name\": \"mobile_use\", \"arguments\": {\"action\": \"click\", \"coordinate\": [257, 293]}}\n</tool_call>",
+    "generation_error": null,
+    "production_codec_accepted": true,
+    "codec": "action=click;x=257.0;y=293.0;proposal=OwlProposal(action=click, coordinate=OwlPoint(x=257.0, y=293.0), coordinate2=null, text=null, time=null, button=null, status=null)",
+    "coordinate": [
+      257.0,
+      293.0
+    ],
+    "search_bbox": [
+      46.875,
+      175.78125,
+      484.375,
+      410.15625
+    ],
+    "inside_search": true,
+    "output_token_count": null,
+    "native_phase_timings": null,
+    "raw_diagnostic_coordinate": [
+      257.0,
+      293.0
+    ],
+    "raw_diagnostic_bbox_hit": true,
+    "raw_diagnostic_not_codec_validated": true
+  }
+]

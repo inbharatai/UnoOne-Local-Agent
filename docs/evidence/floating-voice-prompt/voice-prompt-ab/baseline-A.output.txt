@@ -1,0 +1,4 @@
+Action: Click on the "Search" button with red background
+<tool_call>
+{"name": "mobile_use", "arguments": {"action": "click", "coordinate": [741, 673]}}
+</tool_call>

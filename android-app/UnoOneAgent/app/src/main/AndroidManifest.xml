@@ -121,11 +121,16 @@
             android:foregroundServiceType="mediaProjection"
             android:exported="false" />
 
+        <receiver android:name=".TaskStopReceiver" android:exported="false" />
+
         <!-- Floating Agent Bubble — foreground service to prevent system kill -->
         <service
             android:name=".FloatingAgentService"
             android:foregroundServiceType="specialUse"
-            android:exported="false" />
+            android:exported="false">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled persistent floating assistant controls with explicit task Stop; no background microphone authorization." />
+        </service>
 
         <!-- The "Hands" of the Agent - Accessibility Service -->
         <service

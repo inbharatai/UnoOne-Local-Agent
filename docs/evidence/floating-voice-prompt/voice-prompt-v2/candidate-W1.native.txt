@@ -1,0 +1,4 @@
+expected=SetText(snapshotId=W1, nodeId=target, text=AbC 42)
+actual=Bound(action=SetText(snapshotId=W1, nodeId=target, text=AbC 42), snapshotHash=8a7b7c65f2131e9929fef5aeb6b50790baa8c21dea5244d9a1914ef125d7dc15, taskId=synthetic-task, epoch=1, scopeVersion=2, eventSequence=7, imageSha256=7bc64b34777ca9bce853b33cf187d6f1eb05f09ba03d59c7b8e0fe52faaeabd7, nodeSignature=077b8231e8c737d69436c9f835a817d8657440891fd4c171bc6c907a4d103977)
+exact_native_action_match=true
+SYNTHETIC_RECEIPT_AND_CLOCK_ONLY; no dispatch or phone authorization evidence

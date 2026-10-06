@@ -1,0 +1,87 @@
+[
+  {
+    "id": "N1",
+    "operation": "CLICK",
+    "label": "Library",
+    "bbox": [
+      16,
+      90,
+      126,
+      132
+    ],
+    "focused": false,
+    "image_sha256": "d6df8470f714a4ba60074e0bcfebeb8f369b12fff53d8d591a689ca72f5da491",
+    "bbox_normalized": [
+      62.5,
+      351.5625,
+      492.1875,
+      515.625
+    ],
+    "truth_origin": "renderer geometry frozen before any model call",
+    "native_semantic": "NAVIGATION"
+  },
+  {
+    "id": "N2",
+    "operation": "CLICK",
+    "label": "Settings",
+    "bbox": [
+      128,
+      182,
+      240,
+      226
+    ],
+    "focused": false,
+    "image_sha256": "1c61a98718a2f813ca1e5fa1e89ffe537911f586a7c48b8bd0181bb4dae27c16",
+    "bbox_normalized": [
+      500.0,
+      710.9375,
+      937.5,
+      882.8125
+    ],
+    "truth_origin": "renderer geometry frozen before any model call",
+    "native_semantic": "NAVIGATION"
+  },
+  {
+    "id": "F1",
+    "operation": "FOCUS",
+    "label": "Search query",
+    "bbox": [
+      24,
+      152,
+      230,
+      193
+    ],
+    "focused": false,
+    "image_sha256": "82679a62d02187c130758f7e82ae412eb4e79e53d1f63ad00627ca582cd02409",
+    "bbox_normalized": [
+      93.75,
+      593.75,
+      898.4375,
+      753.90625
+    ],
+    "truth_origin": "renderer geometry frozen before any model call",
+    "native_semantic": "FORM_FIELD"
+  },
+  {
+    "id": "W1",
+    "operation": "WRITE",
+    "label": "Draft title",
+    "bbox": [
+      24,
+      72,
+      230,
+      115
+    ],
+    "focused": true,
+    "value": "AbC 42",
+    "image_sha256": "7bc64b34777ca9bce853b33cf187d6f1eb05f09ba03d59c7b8e0fe52faaeabd7",
+    "bbox_normalized": [
+      93.75,
+      281.25,
+      898.4375,
+      449.21875
+    ],
+    "truth_origin": "renderer geometry frozen before any model call",
+    "native_semantic": "FORM_FIELD"
+  }
+]

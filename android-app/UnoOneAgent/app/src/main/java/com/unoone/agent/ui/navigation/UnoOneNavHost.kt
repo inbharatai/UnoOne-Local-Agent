@@ -136,9 +136,13 @@ fun UnoOneNavHost(
                 com.unoone.agent.ui.screens.SkillsV2Screen(onBack = { navController.popBackStack() })
             }
             composable(Screen.Logs.route) { LogsScreen(viewModel = logsViewModel) }
+            composable("latency-diagnostics") {
+                com.unoone.agent.ui.screens.LatencyDiagnosticsScreen(onBack = { navController.popBackStack() })
+            }
             composable(Screen.Settings.route) {
                 SettingsScreen(
                     viewModel = settingsViewModel,
+                    onNavigateToLatency = { navController.navigate("latency-diagnostics") },
                     onNavigateToPrivacy = { navController.navigate(Screen.PrivacySettings.route) },
                     onNavigateToModels = { navController.navigate(Screen.Models.route) },
                     onNavigateToLanguagePacks = { navController.navigate(Screen.LanguagePacks.route) },

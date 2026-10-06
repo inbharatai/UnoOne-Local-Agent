@@ -1,0 +1,3 @@
+Action: Focus the search query input field.
+<tool_call>{"name":"mobile_use","arguments":{"action":"focus","coordinate": [500, 675]}}
+</tool_call>

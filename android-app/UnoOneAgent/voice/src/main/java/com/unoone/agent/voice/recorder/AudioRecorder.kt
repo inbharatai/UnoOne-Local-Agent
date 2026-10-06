@@ -6,7 +6,7 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.audiofx.AcousticEchoCanceler
-import java.util.concurrent.atomic.AtomicReference
+import com.unoone.agent.voice.processMicrophoneLease
 import android.media.MediaRecorder
 import androidx.core.content.ContextCompat
 import com.unoone.agent.core.model.Result
@@ -17,13 +17,14 @@ import android.media.AudioManager
 class AudioRecorder(private val requestEchoCancellation: Boolean = false) {
 
     companion object {
-        private val microphoneOwner = AtomicReference<AudioRecorder?>(null)
         const val SAMPLE_RATE = 16000
         const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
         private const val AMPLITUDE_INTERVAL_MS = 100L
     }
 
+    private var leaseToken: Any? = null
+    @Volatile private var destructionAck = false
     private var audioRecord: AudioRecord? = null
     @Volatile private var echoCanceler: AcousticEchoCanceler? = null
     fun isEchoCancellationAvailable(): Boolean = runCatching { AcousticEchoCanceler.isAvailable() }.getOrDefault(false)
@@ -76,7 +77,10 @@ class AudioRecorder(private val requestEchoCancellation: Boolean = false) {
                 return Result.Error("Invalid audio buffer size")
             }
 
-            if (!microphoneOwner.compareAndSet(null, this)) return Result.Error("Microphone already owned by voice capture")
+            val token = Any()
+            if (!processMicrophoneLease.acquire(token)) return Result.Error("Microphone already owned by voice capture")
+            leaseToken = token
+            destructionAck = false
             val record = AudioRecord(
                 if (requestEchoCancellation) MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.MIC,
                 SAMPLE_RATE,
@@ -85,9 +89,10 @@ class AudioRecorder(private val requestEchoCancellation: Boolean = false) {
                 bufferSize * 2
             )
 
+            audioRecord = record
             if (record.state != AudioRecord.STATE_INITIALIZED) {
-                runCatching { record.release() } // don't leak the native AudioRecord on init failure
-                microphoneOwner.compareAndSet(this, null)
+                destructionAck = runCatching { record.release() }.isSuccess
+                processMicrophoneLease.release(token, destructionAck, true)
                 return Result.Error("AudioRecord failed to initialize")
             }
 
@@ -144,8 +149,8 @@ class AudioRecorder(private val requestEchoCancellation: Boolean = false) {
                     if (discarded) synchronized(bufferLock) { audioBuffer.reset() }
                     runCatching { record.stop() }
                     releaseEchoCanceler()
-                    runCatching { record.release() }
-                    microphoneOwner.compareAndSet(this@AudioRecorder, null)
+                    destructionAck = runCatching { record.release() }.isSuccess
+                    // Only stop(), after joining this worker, can relinquish the lease.
                     if (android.os.Build.VERSION.SDK_INT >= 31 && modeListener != null) {
                         runCatching { manager?.removeOnModeChangedListener(modeListener) }
                     }
@@ -162,8 +167,8 @@ class AudioRecorder(private val requestEchoCancellation: Boolean = false) {
             Logger.e("Microphone permission was revoked while starting recording", e)
             isRecording = false
             releaseEchoCanceler()
-            runCatching { audioRecord?.release() }
-            microphoneOwner.compareAndSet(this, null)
+            destructionAck = runCatching { audioRecord?.release() }.isSuccess
+            leaseToken?.let { processMicrophoneLease.release(it, destructionAck, true) }
             audioRecord = null
             Result.Error("Microphone permission not granted", e)
         } catch (e: Exception) {
@@ -173,8 +178,8 @@ class AudioRecorder(private val requestEchoCancellation: Boolean = false) {
             // (isRecording was set true before startRecording() could throw).
             isRecording = false
             releaseEchoCanceler()
-            runCatching { audioRecord?.release() }
-            microphoneOwner.compareAndSet(this, null)
+            destructionAck = runCatching { audioRecord?.release() }.isSuccess
+            leaseToken?.let { processMicrophoneLease.release(it, destructionAck, true) }
             audioRecord = null
             Result.Error("Failed to start recording: ${e.message}", e)
         }
@@ -195,7 +200,10 @@ class AudioRecorder(private val requestEchoCancellation: Boolean = false) {
         // truncated audio if the recording thread is still flushing data
         recordingThread?.join(2000)
         if (recordingThread?.isAlive == true) discarded = true
-        else recordingThread = null
+        else {
+            recordingThread = null
+            leaseToken?.let { if (processMicrophoneLease.release(it, destructionAck, true)) leaseToken = null }
+        }
 
         val result = synchronized(bufferLock) {
             val bytes = if (discarded || captureContext?.let { captureAllowed(it) } != true) ByteArray(0) else audioBuffer.toByteArray()
@@ -205,6 +213,8 @@ class AudioRecorder(private val requestEchoCancellation: Boolean = false) {
         Logger.i("AudioRecorder stopped. Captured ${result.size} bytes")
         return result
     }
+
+    fun isDrainAcknowledged(): Boolean = recordingThread?.isAlive != true && leaseToken == null
 
     fun isRecording(): Boolean = isRecording
 

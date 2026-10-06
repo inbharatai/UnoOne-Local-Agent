@@ -1,0 +1,4 @@
+expected=FocusNode(snapshotId=F1, nodeId=target)
+actual=Bound(action=FocusNode(snapshotId=F1, nodeId=target), snapshotHash=25c2a1895ec193d060a22ba1bc53dd5ab3c88a28b812e2cfa65cd651e78482df, taskId=synthetic-task, epoch=1, scopeVersion=2, eventSequence=7, imageSha256=82679a62d02187c130758f7e82ae412eb4e79e53d1f63ad00627ca582cd02409, nodeSignature=6e03c2162c45eec7f4614e75798e2cb934d1ef97ecfa0a3a31baa73205da6bef)
+exact_native_action_match=true
+SYNTHETIC_RECEIPT_AND_CLOCK_ONLY; no dispatch or phone authorization evidence

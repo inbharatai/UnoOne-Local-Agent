@@ -1,0 +1,4 @@
+expected=ClickNode(snapshotId=N1, nodeId=target)
+actual=Bound(action=ClickNode(snapshotId=N1, nodeId=target), snapshotHash=6d3da7832de0523d7370c8d01a03602d00817760ffc1cb2bb6aa683cbca3f525, taskId=synthetic-task, epoch=1, scopeVersion=2, eventSequence=7, imageSha256=d6df8470f714a4ba60074e0bcfebeb8f369b12fff53d8d591a689ca72f5da491, nodeSignature=5d27755d92ba2e09317ebf438d415d44133cc8437ba3ea87b211d3e97e35e17d)
+exact_native_action_match=true
+SYNTHETIC_RECEIPT_AND_CLOCK_ONLY; no dispatch or phone authorization evidence

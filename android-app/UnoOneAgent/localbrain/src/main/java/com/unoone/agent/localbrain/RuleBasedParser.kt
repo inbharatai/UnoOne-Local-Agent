@@ -99,6 +99,20 @@ object RuleBasedParser {
 
     fun parse(command: String): ToolCall? {
         val text = command.trim()
+        // Exact envelopes only: shared text is data, never a second executable command.
+        Regex("""^(?:share text|open share sheet with text)\s*:\s*(.+)$""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            .matchEntire(text)?.let { match ->
+                return ToolCall("share_text", JsonObject(mapOf("text" to JsonPrimitive(match.groupValues[1]))))
+            }
+        Regex("""^(?:record|start) (?:a )?voice (?:memo|note)(?: for ([1-9]|[12][0-9]|30) seconds?)?$""", RegexOption.IGNORE_CASE)
+            .matchEntire(text)?.let { match ->
+                return ToolCall("voice_recording", JsonObject(mapOf("duration_seconds" to JsonPrimitive(match.groupValues[1].toIntOrNull() ?: 5))))
+            }
+        Regex("""^open (?:the )?dialer(?: (?:with|for) ([+]?\d[\d -]{2,19}))?$""", RegexOption.IGNORE_CASE)
+            .matchEntire(text)?.let { match ->
+                val number = match.groupValues[1].filter { it.isDigit() || it == '+' }
+                return ToolCall("open_dialer", JsonObject(if (number.isEmpty()) emptyMap() else mapOf("number" to JsonPrimitive(number))))
+            }
         val note = notePrefix.find(text)
         val draft = Regex("""^(?:please\s+)?(?:draft|compose|write|send|prepare)\b""", RegexOption.IGNORE_CASE)
             .containsMatchIn(text) && hasAnyWord(text, "email", "e-mail", "mail", "whatsapp")
@@ -392,13 +406,13 @@ object RuleBasedParser {
             lowered.contains("go back") || lowered.contains("press back") || lowered.contains("navigate back") -> {
                 ToolCall("system_control", JsonObject(mapOf("action" to JsonPrimitive("go_back"), "target" to JsonPrimitive(""))))
             }
-            lowered.contains("go home") || lowered.contains("press home") || lowered.contains("go to home") -> {
+            lowered in setOf("go home", "press home", "go to home") -> {
                 ToolCall("system_control", JsonObject(mapOf("action" to JsonPrimitive("go_home"), "target" to JsonPrimitive(""))))
             }
-            lowered.contains("open notification") || lowered.contains("show notification") -> {
+            lowered in setOf("open notification", "open notifications", "show notification", "show notifications") -> {
                 ToolCall("system_control", JsonObject(mapOf("action" to JsonPrimitive("open_notifications"), "target" to JsonPrimitive(""))))
             }
-            lowered.contains("open recent") || lowered.contains("show recent") -> {
+            lowered in setOf("open recent", "open recents", "open recent apps", "show recent", "show recents", "show recent apps") -> {
                 ToolCall("system_control", JsonObject(mapOf("action" to JsonPrimitive("open_recents"), "target" to JsonPrimitive(""))))
             }
             lowered.contains("swipe left") -> {

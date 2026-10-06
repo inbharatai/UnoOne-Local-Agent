@@ -105,7 +105,7 @@ class SecureBrowserViewModel(
             narrationJob?.cancel()
             _isListening.value = false
             lastNarration = ""
-            voiceModule?.stopRecording()
+            nativeVoiceOwner?.let { voiceModule?.discardCapture(it) }; nativeVoiceOwner = null
             voiceModule?.stopSpeaking()
         }
     }
@@ -180,7 +180,7 @@ class SecureBrowserViewModel(
         pendingFileCallback = null
         _prompt.value = null
         _isListening.value = false
-        voiceModule?.stopRecording()
+        nativeVoiceOwner?.let { voiceModule?.discardCapture(it) }; nativeVoiceOwner = null
         voiceModule?.stopSpeaking()
         _state.value = SecureBrowserUiState(
             phase = "Disabled",
@@ -779,6 +779,8 @@ class SecureBrowserViewModel(
      * is requested at app startup (this is a direct user-initiated mic tap, like the main Listen
      * button, not a safety-pipeline-gated tool). Stop with [stopVoiceTask] to transcribe + run.
      */
+    private var nativeVoiceOwner: com.unoone.agent.voice.VoiceModule.CaptureHandle? = null
+
     fun startVoiceTask(context: Context) {
         if (!AgentRuntimeGate.isEnabled()) return
         val vm = voiceModule ?: return
@@ -787,25 +789,28 @@ class SecureBrowserViewModel(
             if (_isListening.value || _state.value.taskRunning || voiceJob?.isActive == true) return@runIfCurrent
             voiceTicket = ticket
             ownedLaunch(ticket, voice = true) {
-                val result = vm.startRecording(context, viewModelScope)
+                val result = vm.startForegroundCapture(context, viewModelScope)
+                var adopted = false
                 asyncOwnership.runIfCurrent(ticket) {
                     when (result) {
-                        is Result.Success -> _isListening.value = true
+                        is Result.Success -> { nativeVoiceOwner = result.data; adopted = true; _isListening.value = true }
                         is Result.Error -> Logger.w("SecureBrowser: startRecording failed: ${result.message}")
                     }
                 }
+                if (!adopted && result is Result.Success) vm.discardCapture(result.data)
             }
         }
     }
 
     fun stopVoiceTask() {
         val vm = voiceModule ?: return
+        val owner = nativeVoiceOwner ?: return
         val ticket = voiceTicket ?: return
         asyncOwnership.runIfCurrent(ticket) {
             if (!_isListening.value) return@runIfCurrent
             _isListening.value = false
             ownedLaunch(ticket, voice = true) {
-                val result = vm.stopAndTranscribe()
+                val result = vm.stopAndTranscribe(owner)
                 // Native ASR may ignore cancellation; its original authority still cannot return.
                 asyncOwnership.runIfCurrent(ticket) {
                     when (result) {

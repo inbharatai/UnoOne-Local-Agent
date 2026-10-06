@@ -1,14 +1,18 @@
 package com.unoone.agent.voice
 
 import com.unoone.agent.core.model.Result
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /** Admission and native start/stop share a monitor: a stale owner's cleanup cannot stop a successor. */
 internal class CaptureOwnership {
-    private var owner: Any? = null
+    @Volatile private var owner: Any? = null
+    private val lock = ReentrantLock()
+    fun current(): Any? = owner
 
-    @Synchronized
     fun acquire(token: Any, rollback: () -> Unit = {}, start: () -> Result<Unit>): Result<Unit> {
-        if (owner === token) return Result.Success(Unit)
+        if (!lock.tryLock()) return Result.Error("Microphone is draining; retry")
+        try {
         if (owner != null) return Result.Error("Microphone already owned by another capture")
         owner = token
         return try {
@@ -17,14 +21,12 @@ internal class CaptureOwnership {
             try { rollback() } finally { owner = null }
             throw e
         }
+        } finally { lock.unlock() }
     }
 
-    @Synchronized
-    fun <T> matching(token: Any, action: () -> T): T? = if (owner === token) action() else null
+    fun <T> matching(token: Any, action: () -> T): T? = lock.withLock { if (owner === token) action() else null }
 
-    @Synchronized
-    fun release(token: Any) { if (owner === token) owner = null }
+    fun release(token: Any) = lock.withLock { if (owner === token) owner = null }
 
-    @Synchronized
-    fun <T> stopAll(stop: () -> T): T = try { stop() } finally { owner = null }
+    fun <T> stopAll(stop: () -> T): T = lock.withLock { try { stop() } finally { owner = null } }
 }

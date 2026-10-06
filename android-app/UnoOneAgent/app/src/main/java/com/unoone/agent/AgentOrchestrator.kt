@@ -144,6 +144,11 @@ class AgentOrchestrator(
     deviceBrainProvider: () -> com.unoone.agent.core.device.UnoBrain? = { null },
     deviceBrainFactory: (com.unoone.agent.localbrain.LocalBrain) -> com.unoone.agent.core.device.UnoBrain = { brain ->
         brain.asUnoBrain(clockMs = android.os.SystemClock::elapsedRealtime)
+    },
+    deviceAdapterProvider: () -> com.unoone.agent.core.device.DeviceAdapter? = {
+        com.unoone.agent.accessibilitycontrol.UnoOneAccessibilityService.getInstance()?.let {
+            com.unoone.agent.accessibilitycontrol.AndroidDeviceAdapter(it, semantics = com.unoone.agent.accessibilitycontrol.NativeSemanticResolver(NativeReviewedTargets::semantic))
+        }
     }
 ) {
     // 0C-12: Use Dispatchers.Default for CPU-bound orchestration work.
@@ -379,6 +384,9 @@ class AgentOrchestrator(
     /** A voice-only response for the one safety dialog currently awaiting a decision. */
     private data class PendingVoiceConfirmation(
         val requiresExplicitConfirm: Boolean,
+        val reviewId: String = java.util.UUID.randomUUID().toString(),
+        val generation: Long = com.unoone.agent.core.runtime.GlobalTaskCancellation.generation,
+        @Volatile var readyAt: Long = Long.MAX_VALUE,
         val respond: (Boolean) -> Unit
     )
 
@@ -768,6 +776,7 @@ class AgentOrchestrator(
     private val appRegistry = com.unoone.agent.phonecontrol.AppRegistry(context)
     private val deviceSession = DeviceAgentSession(
         brainProvider = { deviceBrainProvider() ?: defaultDeviceBrain },
+        adapterProvider = deviceAdapterProvider,
         confirmations = com.unoone.agent.core.device.DeviceConfirmationProvider { action, snapshot, epoch ->
             val node = action.nodeRef()?.let(snapshot::node)
             val detail = if (action is com.unoone.agent.core.device.DeviceAction.SetText)
@@ -789,7 +798,7 @@ class AgentOrchestrator(
         if (com.unoone.agent.voice.VoiceControlPolicy.isStop(text)) {
             cancelCurrentCommand(); return true
         }
-        return inputType == InputType.VOICE && resolvePendingVoiceConfirmation(text)
+        return false // Speech approval requires capture-owned VoiceIngress, never bare text.
     }
 
     suspend fun processCommand(text: String, inputType: InputType = InputType.TEXT, admissionGeneration: Long? = null) {
@@ -995,6 +1004,9 @@ class AgentOrchestrator(
             }
         }
         parsedCall?.let(::ruleScope)
+        // Exact global navigation is deterministic; it cannot borrow model authority.
+        if (parsedCall != null && RetainedVoiceRules.isGlobalNavigation(parsedCall))
+            capabilities.remove(TaskCapability.MODEL)
         return TaskScope(capabilities, packages, objectHandles = handles)
     }
     private fun toolCapability(tool: String): TaskCapability = NativeToolEffects.capability(tool)
@@ -1024,7 +1036,7 @@ class AgentOrchestrator(
         // A pending confirmation intentionally owns the command lock while it waits. Let an exact
         // spoken yes/no/confirm resolve it before that lock check; otherwise a blind user can hear
         // the prompt but can never answer it.
-        if (inputType == InputType.VOICE && resolvePendingVoiceConfirmation(text)) return
+
         // Atomic check-and-set to prevent concurrent command execution
         _isProcessing.value = true
         _timelineSteps.value = emptyList()
@@ -1059,7 +1071,7 @@ class AgentOrchestrator(
             currentCoroutineContext().ensureActive()
             if (isCancelled(myRun)) return
             addStep(AgentStatus.EXECUTING, "Device action", "Checking native goal")
-            val outcome = deviceSession.run(goal, useModelPlanner = true)
+            val outcome = taskRuntime.withOwnOverlayHidden(requireNotNull(currentCoroutineContext()[NativeTaskExecution]).context) { deviceSession.run(goal, useModelPlanner = false) }
             currentCoroutineContext().ensureActive()
             if (isCancelled(myRun) || !AgentRuntimeGate.isEnabled()) return
             val verified = outcome.status == com.unoone.agent.core.device.DeviceOutcomeStatus.VERIFIED
@@ -1214,6 +1226,9 @@ class AgentOrchestrator(
             // the agent flow; specific orders do not).
             val ruleMatch = commandParser.parse(sanitizedText)
             val intent = IntentClassifier.classify(sanitizedText, ruleMatch)
+            if (inputType == InputType.VOICE && ruleMatch == null && intent != IntentType.CHAT) {
+                lastToolResult = "Please state a supported exact command."; taskOutcome = TaskOutcome.NEEDS_USER; return
+            }
             VoiceAgentRuntime.recordIntent(
                 intent = ruleMatch?.tool ?: intent.name,
                 confidence = if (ruleMatch != null) 1f else if (intent == IntentType.CHAT) .9f else .5f
@@ -1290,7 +1305,7 @@ class AgentOrchestrator(
             var streamingStepAdded = false
             val planningStart = System.currentTimeMillis()
             if (isCancelled(myRun)) { return }
-            val parseOutcome = taskModelCall { try {
+            val parseOutcome = if (ruleMatch != null) ParseOutcome.Rule(ruleMatch) else taskModelCall { try {
                 if (STREAMING_INFERENCE_ENABLED) {
                     commandParser.parseStreamingWithProvenance(sanitizedText, contextCommands, lastToolResult) { delta ->
                         // Add the "Thinking" step lazily on the first delta, so rule-handled commands
@@ -1412,7 +1427,10 @@ class AgentOrchestrator(
                         )
                         addStep(AgentStatus.SPEAKING, "Response", spokenObservation)
                         speakAnswer(spokenObservation)
-                        addStep(AgentStatus.DONE, "Done", spokenObservation)
+                        if (RetainedVoiceRules.isGlobalNavigation(toolCall)) {
+                            taskOutcome = TaskOutcome.UNVERIFIED
+                            addStep(AgentStatus.VERIFYING, "Dispatch requested — unverified", spokenObservation)
+                        } else addStep(AgentStatus.DONE, "Done", spokenObservation)
                     }
 
                     saveLog(log.copy(
@@ -1880,7 +1898,7 @@ class AgentOrchestrator(
                 result && AgentRuntimeGate.isEnabled() && !isCancelled(confirmationRun) && currentRunId.get() == confirmationRun
             )
         }
-        val pending = PendingVoiceConfirmation(requiresExplicitConfirm, ::respond)
+        val pending = PendingVoiceConfirmation(requiresExplicitConfirm, respond = ::respond)
         val canAnswerByVoice = currentInputType == InputType.VOICE && AgentRuntimeGate.isEnabled()
         if (canAnswerByVoice) {
             VoiceService.awaitingVoiceConfirmation = true
@@ -1912,7 +1930,8 @@ class AgentOrchestrator(
             if (canAnswerByVoice) {
                 // Confirmation narration is deliberately unthrottled: it is the only instruction a
                 // blind user receives while the command lock is held.
-                speakAnswer(VoiceConfirmationPolicy.prompt(requiresExplicitConfirm))
+                speakAnswer(message + " " + VoiceConfirmationPolicy.prompt(requiresExplicitConfirm))
+                pending.readyAt = android.os.SystemClock.elapsedRealtime()
             }
             withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) { response.await() } ?: run {
                 Logger.w("Orchestrator: confirmation timed out after ${CONFIRMATION_TIMEOUT_MS}ms — denying for safety")
@@ -1928,14 +1947,71 @@ class AgentOrchestrator(
      * Resolves a pending voice confirmation before a serial command collector queues the phrase
      * behind the command that is waiting for it. Returns true only for an exact local decision.
      */
-    fun resolvePendingVoiceConfirmation(text: String): Boolean {
+    fun invalidateLegacyVoiceReview() { pendingVoiceConfirmation.getAndSet(null)?.respond?.invoke(false) }
+    fun pendingVoiceReviewId(): String? = pendingVoiceConfirmation.get()?.reviewId
+    @Deprecated("Capture-owned ingress is required")
+    fun resolvePendingVoiceConfirmation(text: String): Boolean = false
+    fun resolvePendingVoiceConfirmation(ingress: com.unoone.agent.core.voice.VoiceIngress): Boolean {
         val pending = pendingVoiceConfirmation.get() ?: return false
-        val decision = VoiceConfirmationPolicy.decision(text, pending.requiresExplicitConfirm) ?: return false
-        if (pendingVoiceConfirmation.compareAndSet(pending, null)) {
-            Logger.i("Orchestrator: voice confirmation resolved (approved=$decision)")
-            pending.respond(decision)
-        }
+        if (ingress.captureGlobalGeneration != com.unoone.agent.core.runtime.GlobalTaskCancellation.generation ||
+            ingress.captureGlobalGeneration != pending.generation || ingress.liveReviewId != pending.reviewId ||
+            ingress.captureStartMono <= pending.readyAt) return false
+        val decision = VoiceConfirmationPolicy.decision(ingress.transcript, pending.requiresExplicitConfirm)
+        if (decision == null) { pendingVoiceConfirmation.getAndSet(null)?.respond?.invoke(false); return false }
+        if (pendingVoiceConfirmation.compareAndSet(pending, null)) pending.respond(decision)
         return true
+    }
+
+    val unifiedVoice by lazy { UnifiedVoiceCoordinator(context, this) }
+    internal suspend fun speakVoiceStatus(text: String) { voiceModule.speakAwait(text) }
+    internal fun isDeterministicVoiceRule(text: String): Boolean {
+        if (RetainedVoiceRules.requiresDraftClarification(text)) return false
+        if (VoiceFastReply.replyFor(InputSanitizer.sanitize(text), currentVoiceLanguageCode()) != null ||
+            VoiceLanguage.extractRequest(InputSanitizer.sanitize(text)) != null) return true
+        // Registered plans are already frozen, hashed and kept in legacyPlans. Do not reparse
+        // their steps here or turn a known trigger into a tool-less conversation.
+        val registered = approvedLegacySkills.get().orEmpty()
+        if (com.unoone.agent.skills.SkillTriggerMatcher.bestMatch(
+                InputSanitizer.sanitize(text), registered.map { it.skill }) != null) return true
+        val call = commandParser.parse(text) ?: return false
+        return RetainedVoiceRules.supports(call)
+    }
+    internal suspend fun executeVoicePurpose(purpose: com.unoone.agent.core.voice.NativeVoicePurpose): NativeTaskOutput {
+        check(purpose.captureGlobalGeneration == com.unoone.agent.core.runtime.GlobalTaskCancellation.generation)
+        val trace = currentCoroutineContext()[VoiceTraceContext]?.token
+        com.unoone.agent.voice.VoiceLatency.recorder.mark(trace, com.unoone.agent.core.latency.LatencyStage.NATIVE_BIND)
+        val explicitOpen = purpose.steps.firstOrNull()?.operation == com.unoone.agent.core.voice.VoiceOperation.OPEN_APP
+        if (!explicitOpen) {
+            val admitted = purpose.underlyingAppEvidence
+            val fresh = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                com.unoone.agent.overlay.FloatingContextEvidence.capture()
+            }
+            if (!com.unoone.agent.overlay.NativeVoiceWindowCheck.matches(false,
+                    admitted?.packageName, admitted?.windowId, fresh?.packageName, fresh?.windowId) ||
+                admitted == null || !admitted.isApplicationWindow || admitted.isOwnOverlay ||
+                purpose.steps.firstOrNull()?.app?.packageName != admitted.packageName) {
+                return NativeTaskOutput(TaskResult(TaskOutcome.NEEDS_USER),
+                    "Source window changed or is ambiguous; user control retained. Please clarify on the intended screen.")
+            }
+        }
+        val goals = VoicePurposeAdapter.goals(purpose)
+        val goal = if (goals.size == 1) goals.single() else NativeDeviceGoal.Sequence(goals)
+        // Pass the original admission evidence, not the preflight capture: the authoritative
+        // comparison happens on the first native observation after acquiring the session mutex.
+        val expectedWindow = purpose.underlyingAppEvidence?.takeUnless { explicitOpen }?.let {
+            DeviceAgentSession.ExpectedInitialPackageWindow(it.packageName, it.windowId)
+        }
+        val outcome = deviceSession.run(goal, useModelPlanner = false,
+            expectedInitialPackageWindow = expectedWindow)
+        com.unoone.agent.voice.VoiceLatency.recorder.mark(trace, com.unoone.agent.core.latency.LatencyStage.POSTCONDITION_RESULT)
+        return NativeTaskOutput(deviceTaskResult(outcome.status), outcome.reason)
+    }
+    internal suspend fun executeVoiceConversation(text: String): NativeTaskOutput {
+        val result = taskModelCall { commandParser.chat(text) }
+        return when (result) {
+            is Result.Success -> NativeTaskOutput(TaskResult(TaskOutcome.RESPONDED), result.data)
+            is Result.Error -> NativeTaskOutput(TaskResult(TaskOutcome.NEEDS_USER), "Selected conversation profile unavailable")
+        }
     }
 
     private fun addStep(status: AgentStatus, label: String, detail: String = "") {

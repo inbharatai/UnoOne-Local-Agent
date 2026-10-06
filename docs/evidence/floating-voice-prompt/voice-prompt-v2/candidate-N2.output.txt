@@ -1,0 +1,3 @@
+Action: Click the "Settings" button.
+<tool_call>{"name":"mobile_use","arguments":{"action":"click","coordinate":[500, 800]}}
+</tool_call>

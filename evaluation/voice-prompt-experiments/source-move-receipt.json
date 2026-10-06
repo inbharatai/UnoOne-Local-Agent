@@ -1,0 +1,31 @@
+{
+  "moves": [
+    {
+      "originalPath": "android-app/UnoOneAgent/core/src/main/java/com/unoone/agent/core/guiowl/newScopedOwlPrompt.kt",
+      "evaluationPath": "evaluation/voice-prompt-experiments/src/newScopedOwlPrompt.kt",
+      "sha256": "4b47fdbf9b432418647f0523afce87ead5a86f04ea002a154ea2eef3df6513e4",
+      "bytes": 6832,
+      "previousGitStatus": "untracked"
+    },
+    {
+      "originalPath": "android-app/UnoOneAgent/core/src/test/java/com/unoone/agent/core/guiowl/ScopedOwlPromptTest.kt",
+      "evaluationPath": "evaluation/voice-prompt-experiments/tests/ScopedOwlPromptTest.kt",
+      "sha256": "768b7f2baff9bb05c2b9cb4cae581fa0d85a424d32f7bc1c33585bc8cc34a115",
+      "bytes": 5115,
+      "previousGitStatus": "untracked"
+    },
+    {
+      "originalPath": "android-app/UnoOneAgent/core/src/test/java/com/unoone/agent/core/guiowl/ScopedOwlPromptV2Test.kt",
+      "evaluationPath": "evaluation/voice-prompt-experiments/tests/ScopedOwlPromptV2Test.kt",
+      "sha256": "775f5784fa8bbb80c7c8a8efd892a6b1ecf2fa916a178d8c65963373a191d4e1",
+      "bytes": 5002,
+      "previousGitStatus": "untracked"
+    }
+  ],
+  "baseline": {
+    "path": "android-app/UnoOneAgent/core/src/main/java/com/unoone/agent/core/guiowl/OwlPromptBuilder.kt",
+    "sha256Before": "00805183fc20f714a9e2dffd775e7be395e06ff90a749e4374729c0876320dcd",
+    "sha256After": "00805183fc20f714a9e2dffd775e7be395e06ff90a749e4374729c0876320dcd"
+  },
+  "productionPublishedFilesDeleted": false
+}

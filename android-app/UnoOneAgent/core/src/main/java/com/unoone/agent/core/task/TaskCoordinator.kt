@@ -150,7 +150,7 @@ class TaskCoordinator(
                 val result = try {
                     checkActive(next.id)
                     registration.worker.run(TaskContext(this@TaskCoordinator, next.id, next.parent,
-                        next.request.instruction, next.request.scope, next.epoch, next.generation)).also { checkActive(next.id) }
+                        next.request.instruction, next.request.scope, next.epoch, next.generation, next.request.requestId)).also { checkActive(next.id) }
                 } catch (_: CancellationException) {
                     WorkerResult.Finished(TaskResult(TaskOutcome.CANCELLED, TaskReason.STOPPED))
                 } catch (_: TaskBudgetExceeded) {
@@ -301,7 +301,7 @@ class TaskCoordinator(
 class TaskBudgetExceeded : IllegalStateException("Task budget exhausted")
 class TaskContext internal constructor(private val coordinator: TaskCoordinator,
     val taskId: TaskId, val parentId: TaskId?, val instruction: String, val scope: TaskScope,
-    val taskEpoch: Long, val stopGeneration: Long) {
+    val taskEpoch: Long, val stopGeneration: Long, val requestId: RequestId? = null) {
     /** No shared recent history or mutable sibling working state. */
     fun checkActive() = coordinator.checkActive(taskId)
     fun complete(result: TaskResult, publishOutput: () -> Unit) = coordinator.complete(taskId, result, publishOutput)

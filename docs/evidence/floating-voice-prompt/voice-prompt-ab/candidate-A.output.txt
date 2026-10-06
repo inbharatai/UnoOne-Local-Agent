@@ -1,0 +1,2 @@
+Action: Click the "Search" button
+<tool_call> JSON </tool_call>: {"action":"click","coordinate": [744, 678]}

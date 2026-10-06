@@ -1,0 +1,250 @@
+f8000000-f9000000 rw-p 00000000 00:00 0 
+f9000000-ffe00000 ---p 00000000 00:00 0 
+ffe00000-ffe75000 rw-p 00c77000 fe:10 51527879                           /agent/workspace/toolchains/jdk17/lib/server/classes.jsa
+ffe75000-fff00000 rw-p 00000000 00:00 0 
+fff00000-fff78000 rw-p 00bff000 fe:10 51527879                           /agent/workspace/toolchains/jdk17/lib/server/classes.jsa
+fff78000-100000000 rw-p 00000000 00:00 0 
+55c9dce00000-55c9dce01000 r-xp 00000000 fe:10 705423                     /agent/workspace/toolchains/jdk17/bin/java
+55c9dd001000-55c9dd002000 r--p 00001000 fe:10 705423                     /agent/workspace/toolchains/jdk17/bin/java
+55c9dd002000-55c9dd003000 rw-p 00002000 fe:10 705423                     /agent/workspace/toolchains/jdk17/bin/java
+55c9ee9ea000-55c9eea32000 rw-p 00000000 00:00 0                          [heap]
+7fb309675000-7fb3437ae000 rw-p 00000000 00:00 0 
+7fb3437ae000-7fb3d7f99000 r--s 005ae000 fe:10 34469971                   /agent/workspace/owl-model/GUI-Owl-1.5-4B-Instruct.Q4_K_M.gguf
+7fb3d8000000-7fb3d8021000 rw-p 00000000 00:00 0 
+7fb3d8021000-7fb3dc000000 ---p 00000000 00:00 0 
+7fb3dc2a3000-7fb3e0000000 rw-p 00000000 00:00 0 
+7fb3e0000000-7fb3e02dd000 rw-p 00000000 00:00 0 
+7fb3e02dd000-7fb3e4000000 ---p 00000000 00:00 0 
+7fb3e4000000-7fb3e42f8000 rw-p 00000000 00:00 0 
+7fb3e42f8000-7fb3e8000000 ---p 00000000 00:00 0 
+7fb3e8000000-7fb3e8021000 rw-p 00000000 00:00 0 
+7fb3e8021000-7fb3ec000000 ---p 00000000 00:00 0 
+7fb3ec000000-7fb3ec021000 rw-p 00000000 00:00 0 
+7fb3ec021000-7fb3f0000000 ---p 00000000 00:00 0 
+7fb3f0000000-7fb3f0021000 rw-p 00000000 00:00 0 
+7fb3f0021000-7fb3f4000000 ---p 00000000 00:00 0 
+7fb3f4000000-7fb3f4021000 rw-p 00000000 00:00 0 
+7fb3f4021000-7fb3f8000000 ---p 00000000 00:00 0 
+7fb3f8000000-7fb3f8021000 rw-p 00000000 00:00 0 
+7fb3f8021000-7fb3fc000000 ---p 00000000 00:00 0 
+7fb3ff000000-7fb3ff090000 rw-p 00000000 00:00 0 
+7fb3ff090000-7fb3ff400000 ---p 00000000 00:00 0 
+7fb3ff400000-7fb3ff590000 rw-p 00000000 00:00 0 
+7fb3ff590000-7fb403000000 ---p 00000000 00:00 0 
+7fb403000000-7fb403bc7000 rw-p 00001000 fe:10 51527879                   /agent/workspace/toolchains/jdk17/lib/server/classes.jsa
+7fb403bc7000-7fb404000000 ---p 00000000 00:00 0 
+7fb404000000-7fb404020000 rw-p 00000000 00:00 0 
+7fb404020000-7fb404040000 ---p 00000000 00:00 0 
+7fb404040000-7fb404050000 rw-p 00000000 00:00 0 
+7fb404050000-7fb444000000 ---p 00000000 00:00 0 
+7fb444000000-7fb444021000 rw-p 00000000 00:00 0 
+7fb444021000-7fb448000000 ---p 00000000 00:00 0 
+7fb448000000-7fb448021000 rw-p 00000000 00:00 0 
+7fb448021000-7fb44c000000 ---p 00000000 00:00 0 
+7fb44c000000-7fb44c021000 rw-p 00000000 00:00 0 
+7fb44c021000-7fb450000000 ---p 00000000 00:00 0 
+7fb4508ec000-7fb450eb8000 rw-p 00000000 00:00 0 
+7fb451800000-7fb45189d000 r--p 00000000 fe:10 50333535                   /usr/lib64/libstdc++.so.6.0.33
+7fb45189d000-7fb4519d5000 r-xp 0009d000 fe:10 50333535                   /usr/lib64/libstdc++.so.6.0.33
+7fb4519d5000-7fb451a52000 r--p 001d5000 fe:10 50333535                   /usr/lib64/libstdc++.so.6.0.33
+7fb451a52000-7fb451a5f000 r--p 00251000 fe:10 50333535                   /usr/lib64/libstdc++.so.6.0.33
+7fb451a5f000-7fb451a60000 rw-p 0025e000 fe:10 50333535                   /usr/lib64/libstdc++.so.6.0.33
+7fb451a60000-7fb451a64000 rw-p 00000000 00:00 0 
+7fb451c00000-7fb451cad000 r--p 00000000 fe:10 38603027                   /agent/workspace/owl-native-prep/build/bin/libllama.so.0.6.0
+7fb451cad000-7fb451f29000 r-xp 000ad000 fe:10 38603027                   /agent/workspace/owl-native-prep/build/bin/libllama.so.0.6.0
+7fb451f29000-7fb451fbd000 r--p 00329000 fe:10 38603027                   /agent/workspace/owl-native-prep/build/bin/libllama.so.0.6.0
+7fb451fbd000-7fb451fc8000 r--p 003bd000 fe:10 38603027                   /agent/workspace/owl-native-prep/build/bin/libllama.so.0.6.0
+7fb451fc8000-7fb451fce000 rw-p 003c8000 fe:10 38603027                   /agent/workspace/owl-native-prep/build/bin/libllama.so.0.6.0
+7fb451fce000-7fb451fcf000 rw-p 00000000 00:00 0 
+7fb452000000-7fb454000000 rw-p 00000000 00:00 0 
+7fb454000000-7fb454021000 rw-p 00000000 00:00 0 
+7fb454021000-7fb458000000 ---p 00000000 00:00 0 
+7fb458000000-7fb458021000 rw-p 00000000 00:00 0 
+7fb458021000-7fb45c000000 ---p 00000000 00:00 0 
+7fb45c000000-7fb45c021000 rw-p 00000000 00:00 0 
+7fb45c021000-7fb460000000 ---p 00000000 00:00 0 
+7fb460400000-7fb460407000 r-xp 00000000 fe:10 17509212                   /agent/workspace/toolchains/jdk17/lib/libzip.so
+7fb460407000-7fb460606000 ---p 00007000 fe:10 17509212                   /agent/workspace/toolchains/jdk17/lib/libzip.so
+7fb460606000-7fb460607000 r--p 00006000 fe:10 17509212                   /agent/workspace/toolchains/jdk17/lib/libzip.so
+7fb460607000-7fb460608000 rw-p 00000000 00:00 0 
+7fb4606ff000-7fb460700000 ---p 00000000 00:00 0 
+7fb460700000-7fb460800000 rw-p 00000000 00:00 0 
+7fb460800000-7fb460815000 r-xp 00000000 fe:10 17509209                   /agent/workspace/toolchains/jdk17/lib/libnet.so
+7fb460815000-7fb460a14000 ---p 00015000 fe:10 17509209                   /agent/workspace/toolchains/jdk17/lib/libnet.so
+7fb460a14000-7fb460a15000 r--p 00014000 fe:10 17509209                   /agent/workspace/toolchains/jdk17/lib/libnet.so
+7fb460a15000-7fb460a16000 rw-p 00015000 fe:10 17509209                   /agent/workspace/toolchains/jdk17/lib/libnet.so
+7fb460a3a000-7fb460a4f000 r--p 00000000 fe:10 38603017                   /agent/workspace/owl-native-prep/build/bin/libggml-cpu.so.0.26.0
+7fb460a4f000-7fb460b4c000 r-xp 00015000 fe:10 38603017                   /agent/workspace/owl-native-prep/build/bin/libggml-cpu.so.0.26.0
+7fb460b4c000-7fb460b78000 r--p 00112000 fe:10 38603017                   /agent/workspace/owl-native-prep/build/bin/libggml-cpu.so.0.26.0
+7fb460b78000-7fb460b7a000 r--p 0013d000 fe:10 38603017                   /agent/workspace/owl-native-prep/build/bin/libggml-cpu.so.0.26.0
+7fb460b7a000-7fb460b7c000 rw-p 0013f000 fe:10 38603017                   /agent/workspace/owl-native-prep/build/bin/libggml-cpu.so.0.26.0
+7fb460b7c000-7fb460c00000 rw-p 00000000 00:00 0 
+7fb460c00000-7fb460c12000 r-xp 00000000 fe:10 17509210                   /agent/workspace/toolchains/jdk17/lib/libnio.so
+7fb460c12000-7fb460e12000 ---p 00012000 fe:10 17509210                   /agent/workspace/toolchains/jdk17/lib/libnio.so
+7fb460e12000-7fb460e13000 r--p 00012000 fe:10 17509210                   /agent/workspace/toolchains/jdk17/lib/libnio.so
+7fb460e13000-7fb460e14000 rw-p 00013000 fe:10 17509210                   /agent/workspace/toolchains/jdk17/lib/libnio.so
+7fb460e55000-7fb460e79000 r--p 00000000 fe:10 38603064                   /agent/workspace/owl-native-prep/build/bin/libmtmd.so.0.6.0
+7fb460e79000-7fb460fc7000 r-xp 00024000 fe:10 38603064                   /agent/workspace/owl-native-prep/build/bin/libmtmd.so.0.6.0
+7fb460fc7000-7fb460ff9000 r--p 00172000 fe:10 38603064                   /agent/workspace/owl-native-prep/build/bin/libmtmd.so.0.6.0
+7fb460ff9000-7fb460ffc000 r--p 001a4000 fe:10 38603064                   /agent/workspace/owl-native-prep/build/bin/libmtmd.so.0.6.0
+7fb460ffc000-7fb460ffe000 rw-p 001a7000 fe:10 38603064                   /agent/workspace/owl-native-prep/build/bin/libmtmd.so.0.6.0
+7fb460ffe000-7fb460fff000 rw-p 00000000 00:00 0 
+7fb460fff000-7fb461003000 ---p 00000000 00:00 0 
+7fb461003000-7fb4610ff000 rw-p 00000000 00:00 0 
+7fb4610ff000-7fb461100000 ---p 00000000 00:00 0 
+7fb461100000-7fb461200000 rw-p 00000000 00:00 0 
+7fb461200000-7fb461470000 rwxp 00000000 00:00 0 
+7fb461470000-7fb468738000 ---p 00000000 00:00 0 
+7fb468738000-7fb4689a8000 rwxp 00000000 00:00 0 
+7fb4689a8000-7fb468cc7000 ---p 00000000 00:00 0 
+7fb468cc7000-7fb468f37000 rwxp 00000000 00:00 0 
+7fb468f37000-7fb470200000 ---p 00000000 00:00 0 
+7fb470200000-7fb477e31000 r--s 00000000 fe:10 17509199                   /agent/workspace/toolchains/jdk17/lib/modules
+7fb477e38000-7fb477e4f000 r--p 00000000 fe:10 38592895                   /agent/workspace/owl-native-prep/build/bin/libggml-base.so.0.26.0
+7fb477e4f000-7fb477ed8000 r-xp 00017000 fe:10 38592895                   /agent/workspace/owl-native-prep/build/bin/libggml-base.so.0.26.0
+7fb477ed8000-7fb477efc000 r--p 000a0000 fe:10 38592895                   /agent/workspace/owl-native-prep/build/bin/libggml-base.so.0.26.0
+7fb477efc000-7fb477efe000 r--p 000c4000 fe:10 38592895                   /agent/workspace/owl-native-prep/build/bin/libggml-base.so.0.26.0
+7fb477efe000-7fb477f00000 rw-p 000c6000 fe:10 38592895                   /agent/workspace/owl-native-prep/build/bin/libggml-base.so.0.26.0
+7fb477f00000-7fb477f04000 ---p 00000000 00:00 0 
+7fb477f04000-7fb478000000 rw-p 00000000 00:00 0 
+7fb478000000-7fb47bc89000 rw-p 00000000 00:00 0 
+7fb47bc89000-7fb47c000000 ---p 00000000 00:00 0 
+7fb47c000000-7fb47c004000 ---p 00000000 00:00 0 
+7fb47c004000-7fb47c100000 rw-p 00000000 00:00 0 
+7fb47c100000-7fb47c104000 ---p 00000000 00:00 0 
+7fb47c104000-7fb47c200000 rw-p 00000000 00:00 0 
+7fb47c200000-7fb47c204000 ---p 00000000 00:00 0 
+7fb47c204000-7fb47c300000 rw-p 00000000 00:00 0 
+7fb47c300000-7fb47c304000 ---p 00000000 00:00 0 
+7fb47c304000-7fb47c400000 rw-p 00000000 00:00 0 
+7fb47c400000-7fb47c404000 ---p 00000000 00:00 0 
+7fb47c404000-7fb47c500000 rw-p 00000000 00:00 0 
+7fb47c500000-7fb47c504000 ---p 00000000 00:00 0 
+7fb47c504000-7fb47c600000 rw-p 00000000 00:00 0 
+7fb47c600000-7fb47c604000 ---p 00000000 00:00 0 
+7fb47c604000-7fb47c700000 rw-p 00000000 00:00 0 
+7fb47c700000-7fb47c704000 ---p 00000000 00:00 0 
+7fb47c704000-7fb47c800000 rw-p 00000000 00:00 0 
+7fb47c800000-7fb47c8ce000 r-xp 00000000 fe:10 17509238                   /agent/workspace/toolchains/jdk17/lib/libjsvml.so
+7fb47c8ce000-7fb47cacd000 ---p 000ce000 fe:10 17509238                   /agent/workspace/toolchains/jdk17/lib/libjsvml.so
+7fb47cacd000-7fb47cace000 r--p 000cd000 fe:10 17509238                   /agent/workspace/toolchains/jdk17/lib/libjsvml.so
+7fb47cace000-7fb47cacf000 rw-p 000ce000 fe:10 17509238                   /agent/workspace/toolchains/jdk17/lib/libjsvml.so
+7fb47caf4000-7fb47caf8000 r--p 00000000 fe:10 50333323                   /usr/lib64/libgcc_s-14-20250110.so.1
+7fb47caf8000-7fb47cb1c000 r-xp 00004000 fe:10 50333323                   /usr/lib64/libgcc_s-14-20250110.so.1
+7fb47cb1c000-7fb47cb20000 r--p 00028000 fe:10 50333323                   /usr/lib64/libgcc_s-14-20250110.so.1
+7fb47cb20000-7fb47cb21000 r--p 0002c000 fe:10 50333323                   /usr/lib64/libgcc_s-14-20250110.so.1
+7fb47cb21000-7fb47cb22000 rw-p 00000000 00:00 0 
+7fb47cb22000-7fb47cb77000 r--p 00000000 fe:10 33686455                   /usr/lib/locale/C.utf8/LC_CTYPE
+7fb47cb77000-7fb47cb78000 ---p 00000000 00:00 0 
+7fb47cb78000-7fb47cc78000 rw-p 00000000 00:00 0 
+7fb47cc78000-7fb47ccf9000 rw-p 00000000 00:00 0 
+7fb47ccf9000-7fb47ccfa000 ---p 00000000 00:00 0 
+7fb47ccfa000-7fb47cdfa000 rw-p 00000000 00:00 0 
+7fb47cdfa000-7fb47cdfb000 ---p 00000000 00:00 0 
+7fb47cdfb000-7fb47cefb000 rw-p 00000000 00:00 0 
+7fb47cefb000-7fb47d0fd000 rw-p 00000000 00:00 0 
+7fb47d0fd000-7fb47d0fe000 ---p 00000000 00:00 0 
+7fb47d0fe000-7fb47d1fe000 rw-p 00000000 00:00 0 
+7fb47d1fe000-7fb47d1ff000 ---p 00000000 00:00 0 
+7fb47d1ff000-7fb47d2ff000 rw-p 00000000 00:00 0 
+7fb47d2ff000-7fb47d300000 ---p 00000000 00:00 0 
+7fb47d300000-7fb47d400000 rw-p 00000000 00:00 0 
+7fb47d400000-7fb47d440000 rw-p 00000000 00:00 0 
+7fb47d440000-7fb47d5f8000 ---p 00000000 00:00 0 
+7fb47d5f8000-7fb47d640000 rw-p 00000000 00:00 0 
+7fb47d640000-7fb47d7f8000 ---p 00000000 00:00 0 
+7fb47d7f8000-7fb47d800000 rw-p 00000000 00:00 0 
+7fb47d800000-7fb47d824000 r-xp 00000000 fe:10 17509205                   /agent/workspace/toolchains/jdk17/lib/libjava.so
+7fb47d824000-7fb47da24000 ---p 00024000 fe:10 17509205                   /agent/workspace/toolchains/jdk17/lib/libjava.so
+7fb47da24000-7fb47da25000 r--p 00024000 fe:10 17509205                   /agent/workspace/toolchains/jdk17/lib/libjava.so
+7fb47da25000-7fb47da26000 rw-p 00025000 fe:10 17509205                   /agent/workspace/toolchains/jdk17/lib/libjava.so
+7fb47da26000-7fb47da27000 rw-p 00000000 00:00 0 
+7fb47da2c000-7fb47dac8000 rw-p 00000000 00:00 0 
+7fb47dace000-7fb47dc00000 rw-p 00000000 00:00 0 
+7fb47dc00000-7fb47dc1b000 r-xp 00000000 fe:10 17509206                   /agent/workspace/toolchains/jdk17/lib/libjimage.so
+7fb47dc1b000-7fb47de1a000 ---p 0001b000 fe:10 17509206                   /agent/workspace/toolchains/jdk17/lib/libjimage.so
+7fb47de1a000-7fb47de1c000 r--p 0001a000 fe:10 17509206                   /agent/workspace/toolchains/jdk17/lib/libjimage.so
+7fb47de1c000-7fb47de1d000 rw-p 0001c000 fe:10 17509206                   /agent/workspace/toolchains/jdk17/lib/libjimage.so
+7fb47de25000-7fb47de28000 r--p 00000000 fe:10 38603024                   /agent/workspace/owl-native-prep/build/bin/libggml.so.0.26.0
+7fb47de28000-7fb47de2e000 r-xp 00003000 fe:10 38603024                   /agent/workspace/owl-native-prep/build/bin/libggml.so.0.26.0
+7fb47de2e000-7fb47de30000 r--p 00009000 fe:10 38603024                   /agent/workspace/owl-native-prep/build/bin/libggml.so.0.26.0
+7fb47de30000-7fb47de31000 r--p 0000a000 fe:10 38603024                   /agent/workspace/owl-native-prep/build/bin/libggml.so.0.26.0
+7fb47de31000-7fb47de32000 rw-p 0000b000 fe:10 38603024                   /agent/workspace/owl-native-prep/build/bin/libggml.so.0.26.0
+7fb47de32000-7fb47de35000 r--p 00000000 fe:10 19274731                   /agent/workspace/owl-native-prep/voice-prompt-v2/pinned-host/libunoone_owl.so
+7fb47de35000-7fb47de3a000 r-xp 00003000 fe:10 19274731                   /agent/workspace/owl-native-prep/voice-prompt-v2/pinned-host/libunoone_owl.so
+7fb47de3a000-7fb47de3d000 r--p 00008000 fe:10 19274731                   /agent/workspace/owl-native-prep/voice-prompt-v2/pinned-host/libunoone_owl.so
+7fb47de3d000-7fb47de3e000 r--p 0000a000 fe:10 19274731                   /agent/workspace/owl-native-prep/voice-prompt-v2/pinned-host/libunoone_owl.so
+7fb47de3e000-7fb47de3f000 rw-p 0000b000 fe:10 19274731                   /agent/workspace/owl-native-prep/voice-prompt-v2/pinned-host/libunoone_owl.so
+7fb47de3f000-7fb47de47000 rw-p 00000000 00:00 0 
+7fb47de47000-7fb47de7e000 ---p 00000000 00:00 0 
+7fb47de7e000-7fb47de87000 rw-p 00000000 00:00 0 
+7fb47de87000-7fb47debe000 ---p 00000000 00:00 0 
+7fb47debe000-7fb47dec7000 rw-p 00000000 00:00 0 
+7fb47dec7000-7fb47defe000 ---p 00000000 00:00 0 
+7fb47defe000-7fb47e000000 rw-p 00000000 00:00 0 
+7fb47e000000-7fb47f2cb000 r-xp 00000000 fe:10 51527877                   /agent/workspace/toolchains/jdk17/lib/server/libjvm.so
+7fb47f2cb000-7fb47f4cb000 ---p 012cb000 fe:10 51527877                   /agent/workspace/toolchains/jdk17/lib/server/libjvm.so
+7fb47f4cb000-7fb47f584000 r--p 012cb000 fe:10 51527877                   /agent/workspace/toolchains/jdk17/lib/server/libjvm.so
+7fb47f584000-7fb47f5b9000 rw-p 01384000 fe:10 51527877                   /agent/workspace/toolchains/jdk17/lib/server/libjvm.so
+7fb47f5b9000-7fb47f614000 rw-p 00000000 00:00 0 
+7fb47f61e000-7fb47f625000 r--s 00000000 fe:10 54952646                   /usr/lib64/gconv/gconv-modules.cache
+7fb47f625000-7fb47f62f000 rw-p 00000000 00:00 0 
+7fb47f62f000-7fb47f715000 ---p 00000000 00:00 0 
+7fb47f715000-7fb47f71a000 rw-p 00000000 00:00 0 
+7fb47f71a000-7fb47f800000 ---p 00000000 00:00 0 
+7fb47f800000-7fb47f829000 r--p 00000000 fe:10 50333273                   /usr/lib64/libc.so.6
+7fb47f829000-7fb47f99f000 r-xp 00029000 fe:10 50333273                   /usr/lib64/libc.so.6
+7fb47f99f000-7fb47f9f8000 r--p 0019f000 fe:10 50333273                   /usr/lib64/libc.so.6
+7fb47f9f8000-7fb47f9fc000 r--p 001f7000 fe:10 50333273                   /usr/lib64/libc.so.6
+7fb47f9fc000-7fb47f9fe000 rw-p 001fb000 fe:10 50333273                   /usr/lib64/libc.so.6
+7fb47f9fe000-7fb47fa0b000 rw-p 00000000 00:00 0 
+7fb47fa0c000-7fb47fa11000 rw-p 00000000 00:00 0 
+7fb47fa11000-7fb47fa18000 ---p 00000000 00:00 0 
+7fb47fa18000-7fb47fa20000 rw-s 00000000 fe:10 38250214                   /tmp/hsperfdata_vercel-sandbox/19648
+7fb47fa20000-7fb47fa24000 ---p 00000000 00:00 0 
+7fb47fa24000-7fb47fb20000 rw-p 00000000 00:00 0 
+7fb47fb20000-7fb47fb2d000 r--p 00000000 fe:10 50333409                   /usr/lib64/libm.so.6
+7fb47fb2d000-7fb47fb9d000 r-xp 0000d000 fe:10 50333409                   /usr/lib64/libm.so.6
+7fb47fb9d000-7fb47fbf9000 r--p 0007d000 fe:10 50333409                   /usr/lib64/libm.so.6
+7fb47fbf9000-7fb47fbfa000 r--p 000d8000 fe:10 50333409                   /usr/lib64/libm.so.6
+7fb47fbfa000-7fb47fbfb000 rw-p 000d9000 fe:10 50333409                   /usr/lib64/libm.so.6
+7fb47fbfb000-7fb47fbfc000 r--p 00000000 fe:10 50333516                   /usr/lib64/librt.so.1
+7fb47fbfc000-7fb47fbfd000 r-xp 00001000 fe:10 50333516                   /usr/lib64/librt.so.1
+7fb47fbfd000-7fb47fbfe000 r--p 00002000 fe:10 50333516                   /usr/lib64/librt.so.1
+7fb47fbfe000-7fb47fbff000 r--p 00002000 fe:10 50333516                   /usr/lib64/librt.so.1
+7fb47fbff000-7fb47fc00000 rw-p 00003000 fe:10 50333516                   /usr/lib64/librt.so.1
+7fb47fc00000-7fb47fc0f000 r-xp 00000000 fe:10 17509207                   /agent/workspace/toolchains/jdk17/lib/libjli.so
+7fb47fc0f000-7fb47fe0e000 ---p 0000f000 fe:10 17509207                   /agent/workspace/toolchains/jdk17/lib/libjli.so
+7fb47fe0e000-7fb47fe0f000 r--p 0000e000 fe:10 17509207                   /agent/workspace/toolchains/jdk17/lib/libjli.so
+7fb47fe0f000-7fb47fe10000 rw-p 0000f000 fe:10 17509207                   /agent/workspace/toolchains/jdk17/lib/libjli.so
+7fb47fe11000-7fb47fe14000 rw-p 00000000 00:00 0 
+7fb47fe14000-7fb47fe15000 r--p 00000000 fe:10 50333294                   /usr/lib64/libdl.so.2
+7fb47fe15000-7fb47fe16000 r-xp 00001000 fe:10 50333294                   /usr/lib64/libdl.so.2
+7fb47fe16000-7fb47fe17000 r--p 00002000 fe:10 50333294                   /usr/lib64/libdl.so.2
+7fb47fe17000-7fb47fe18000 r--p 00002000 fe:10 50333294                   /usr/lib64/libdl.so.2
+7fb47fe18000-7fb47fe19000 rw-p 00003000 fe:10 50333294                   /usr/lib64/libdl.so.2
+7fb47fe19000-7fb47fe1b000 rw-p 00000000 00:00 0 
+7fb47fe1b000-7fb47fe1c000 r--p 00000000 fe:10 50333499                   /usr/lib64/libpthread.so.0
+7fb47fe1c000-7fb47fe1d000 r-xp 00001000 fe:10 50333499                   /usr/lib64/libpthread.so.0
+7fb47fe1d000-7fb47fe1e000 r--p 00002000 fe:10 50333499                   /usr/lib64/libpthread.so.0
+7fb47fe1e000-7fb47fe1f000 r--p 00002000 fe:10 50333499                   /usr/lib64/libpthread.so.0
+7fb47fe1f000-7fb47fe20000 rw-p 00003000 fe:10 50333499                   /usr/lib64/libpthread.so.0
+7fb47fe20000-7fb47fe23000 r--p 00000000 fe:10 50333567                   /usr/lib64/libz.so.1.2.11
+7fb47fe23000-7fb47fe32000 r-xp 00003000 fe:10 50333567                   /usr/lib64/libz.so.1.2.11
+7fb47fe32000-7fb47fe38000 r--p 00012000 fe:10 50333567                   /usr/lib64/libz.so.1.2.11
+7fb47fe38000-7fb47fe39000 r--p 00018000 fe:10 50333567                   /usr/lib64/libz.so.1.2.11
+7fb47fe39000-7fb47fe3a000 rw-p 00000000 00:00 0 
+7fb47fe3c000-7fb47fe3d000 ---p 00000000 00:00 0 
+7fb47fe3d000-7fb47fe3e000 r--p 00000000 00:00 0 
+7fb47fe3e000-7fb47fe3f000 ---p 00000000 00:00 0 
+7fb47fe3f000-7fb47fe41000 rw-p 00000000 00:00 0 
+7fb47fe41000-7fb47fe45000 r--p 00000000 00:00 0                          [vvar]
+7fb47fe45000-7fb47fe47000 r--p 00000000 00:00 0                          [vvar_vclock]
+7fb47fe47000-7fb47fe49000 r-xp 00000000 00:00 0                          [vdso]
+7fb47fe49000-7fb47fe4b000 r--p 00000000 fe:10 50333183                   /usr/lib64/ld-linux-x86-64.so.2
+7fb47fe4b000-7fb47fe73000 r-xp 00002000 fe:10 50333183                   /usr/lib64/ld-linux-x86-64.so.2
+7fb47fe73000-7fb47fe7f000 r--p 0002a000 fe:10 50333183                   /usr/lib64/ld-linux-x86-64.so.2
+7fb47fe7f000-7fb47fe81000 r--p 00036000 fe:10 50333183                   /usr/lib64/ld-linux-x86-64.so.2
+7fb47fe81000-7fb47fe83000 rw-p 00038000 fe:10 50333183                   /usr/lib64/ld-linux-x86-64.so.2
+7ffdcc829000-7ffdcc84a000 rw-p 00000000 00:00 0                          [stack]
+ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0                  [vsyscall]

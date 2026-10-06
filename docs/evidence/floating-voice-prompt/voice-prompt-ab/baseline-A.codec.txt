@@ -1,0 +1,1 @@
+action=click;x=741.0;y=673.0;proposal=OwlProposal(action=click, coordinate=OwlPoint(x=741.0, y=673.0), coordinate2=null, text=null, time=null, button=null, status=null)

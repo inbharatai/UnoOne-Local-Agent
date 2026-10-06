@@ -201,29 +201,24 @@ class UnoOneApplication : Application(), AgentRuntimeController {
             }
         }
 
-        appScope.launch {
-            commandFlow.collect { ticket ->
-                val command = ticket.text
-                if (!ticket.isCurrent()) { VoiceService.endForegroundTask(); return@collect }
-                if (AgentRuntimeGate.isEnabled() && command.isNotBlank()) {
-                    Logger.i("UnoOneApplication: received local voice command")
-                    try {
-                        orchestrator.processCommand(command, com.unoone.agent.core.model.InputType.VOICE, ticket.generation)
-                    } finally {
-                        VoiceService.endForegroundTask()
-                        if (AgentRuntimeGate.isEnabled() && ticket.isCurrent()) {
-                            VoiceAgentRuntime.transition(
-                                VoiceAgentState.WAKE_LISTENING,
-                                "voice command completed"
-                            )
-                        }
-                    }
+        // Single ticket intake; do not re-emit through the legacy commandFlow worker.
+        VoiceService.captureMetadataProvider = {
+            val started = android.os.SystemClock.elapsedRealtime()
+            val generation = GlobalTaskCancellation.generation
+            val reviewId = orchestrator.unifiedVoice.review.value?.reviewId ?: orchestrator.pendingVoiceReviewId()
+            val root = com.unoone.agent.accessibilitycontrol.UnoOneAccessibilityService.getInstance()?.rootInActiveWindow
+            val evidence = try {
+                root?.packageName?.toString()?.takeIf { it != packageName }?.let {
+                    com.unoone.agent.core.voice.UnderlyingAppEvidence(it, root.windowId, started)
                 }
-            }
+            } finally { @Suppress("DEPRECATION") root?.recycle() }
+            com.unoone.agent.core.voice.VoiceIngress(java.util.UUID.randomUUID().toString(), "", generation,
+                started, evidence, reviewId)
         }
-
-        VoiceService.voiceCommandCallback = { command -> postVoiceCommand(command) }
-        VoiceService.voiceTicketCallback = { ticket -> postVoiceCommand(ticket.text, ticket.generation) }
+        VoiceService.voiceCommandCallback = { command -> postVoiceCommand(command, Long.MIN_VALUE) }
+        VoiceService.voiceTicketCallback = { ticket ->
+            appScope.launch { orchestrator.unifiedVoice.accept(ticket.toIngress(), ticket.latencyToken) }
+        }
         // When the KWS loop fires a wake word, speak the listening cue through the shared voice
         // module off the audio thread so capture and TTS retain single-owner microphone discipline.
         VoiceService.onWakeWord = {
@@ -245,25 +240,19 @@ class UnoOneApplication : Application(), AgentRuntimeController {
         }
     }
 
-    fun postVoiceCommand(command: String) = postVoiceCommand(command, GlobalTaskCancellation.generation)
+    fun postVoiceCommand(command: String) = postVoiceCommand(command, Long.MIN_VALUE)
 
     fun postVoiceCommand(command: String, generation: Long) {
-        if (!AgentRuntimeGate.isEnabled()) return
-        // Safety controls bypass the serial command collector and its processing lock.
-        if (com.unoone.agent.voice.VoiceControlPolicy.routeStop(command) {
-                orchestrator.cancelCurrentCommand(speak = false)
-                sharedVoiceModule.stopSpeaking()
-            }) return
-        // The command collector is intentionally serial. A spoken "Uno confirm" must therefore
-        // resolve a safety prompt directly instead of waiting behind the command that is awaiting
-        // that very confirmation.
-        if (generation != GlobalTaskCancellation.generation) return
-        if (orchestrator.resolvePendingVoiceConfirmation(command)) return
-        VoiceService.beginForegroundTask()
-        if (!_commandFlow.tryEmit(VoiceAdmissionTicket(command, generation))) {
-            VoiceService.endForegroundTask()
-            VoiceAgentRuntime.transition(VoiceAgentState.WAKE_LISTENING, "voice command queue full")
-        }
+        // Legacy service tickets lack capture time/review nonce/source identity. They cannot approve
+        // a current review or establish current-screen scope. Do not manufacture those facts at STT end.
+        val ingress = com.unoone.agent.core.voice.VoiceIngress(java.util.UUID.randomUUID().toString(), command,
+            generation, 0L, null, null)
+        postVoiceIngress(ingress)
+    }
+    fun captureVoiceIngress(): com.unoone.agent.core.voice.VoiceIngress = orchestrator.unifiedVoice.capture()
+    fun postVoiceIngress(ingress: com.unoone.agent.core.voice.VoiceIngress) {
+        // Independent intake permits a bound approval while the single execution worker is waiting.
+        appScope.launch { orchestrator.unifiedVoice.accept(ingress) }
     }
 
     /**

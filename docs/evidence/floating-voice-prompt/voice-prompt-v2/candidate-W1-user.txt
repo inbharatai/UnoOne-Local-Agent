@@ -1,0 +1,1 @@
+{"operation":"WRITE","exactLabel":"Draft title","scopePackage":"example.app","value":"AbC 42"}

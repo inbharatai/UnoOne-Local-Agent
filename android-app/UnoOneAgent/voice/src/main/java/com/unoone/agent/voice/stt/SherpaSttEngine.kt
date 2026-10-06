@@ -1,5 +1,7 @@
 package com.unoone.agent.voice.stt
 
+import com.unoone.agent.core.latency.*
+import com.unoone.agent.voice.VoiceLatency
 import android.content.Context
 import com.unoone.agent.modelmanager.ModelType
 import com.unoone.agent.voice.stt.SpeechModelIntegrity
@@ -187,8 +189,20 @@ class SherpaSttEngine(
         return Result.Success(Unit)
     }
 
-    @Synchronized
-    fun transcribe(pcmBytes: ByteArray): Result<String> {
+    fun transcribe(pcmBytes: ByteArray, trace: LatencyToken? = null): Result<String> {
+        VoiceLatency.recorder.mark(trace, LatencyStage.STT_SUBMIT)
+        VoiceLatency.recorder.mark(trace, LatencyStage.STT_LOCK_REQUEST)
+        return synchronized(this) {
+            VoiceLatency.recorder.mark(trace, LatencyStage.STT_LOCK_ACQUIRED,
+                profile = when (mode) { SttMode.TRANSDUCER -> LatencyProfile.SHERPA_TRANSDUCER; SttMode.WHISPER -> LatencyProfile.SHERPA_WHISPER; SttMode.OMNILINGUAL -> LatencyProfile.SHERPA_OMNILINGUAL },
+                cold = if (initialized) LatencyCold.LOADED_WARM else LatencyCold.MODEL_COLD)
+            transcribeLocked(pcmBytes, trace).also { result ->
+                if (result is Result.Success) VoiceLatency.recorder.mark(trace, LatencyStage.FINAL_TRANSCRIPT_READY)
+            }
+        }
+    }
+
+    private fun transcribeLocked(pcmBytes: ByteArray, trace: LatencyToken?): Result<String> {
         if (!initialized) return Result.Error("SherpaSttEngine not initialized")
         if (pcmBytes.size < 2) {
             lastConfidence = 0f
@@ -196,12 +210,15 @@ class SherpaSttEngine(
         }
 
         return try {
+            VoiceLatency.recorder.mark(trace, LatencyStage.PCM_CONVERSION_BEGIN)
             val samples = pcmToFloat(pcmBytes)
+            VoiceLatency.recorder.mark(trace, LatencyStage.PCM_CONVERSION_END)
+            VoiceLatency.recorder.mark(trace, LatencyStage.DECODE_BEGIN)
             when (mode) {
                 SttMode.TRANSDUCER -> transcribeTransducer(samples)
                 SttMode.WHISPER -> transcribeWhisper(samples)
                 SttMode.OMNILINGUAL -> transcribeOffline(samples, "omnilingual")
-            }
+            }.also { VoiceLatency.recorder.mark(trace, LatencyStage.DECODE_END, reason = if (it is Result.Error) LatencyReason.ERROR else LatencyReason.NONE) }
         } catch (e: Throwable) {
             Logger.e("SherpaSttEngine: Transcription failed (${mode}): ${e::class.java.simpleName}: ${e.message}")
             lastConfidence = 0f

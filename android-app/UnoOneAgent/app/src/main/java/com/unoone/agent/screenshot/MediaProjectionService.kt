@@ -42,6 +42,7 @@ class MediaProjectionService : Service() {
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("UnoOne screen reading active")
             .setContentText("Screen content stays on this device and is processed with on-device OCR.")
+            .addAction(android.R.drawable.ic_media_pause, "Stop", com.unoone.agent.TaskStopReceiver.pendingIntent(this))
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
@@ -66,15 +67,19 @@ class MediaProjectionService : Service() {
         }
 
         return try {
-            projection?.stop()
+            val previous = projection
+            projection = null
+            previous?.stop()
             val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             val granted = manager.getMediaProjection(resultCode, resultData)
             projection = granted
             granted.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
                     ScreenshotCapture.clearProjection(granted)
-                    if (projection === granted) projection = null
-                    stopSelf()
+                    if (projection === granted) {
+                        projection = null
+                        stopSelf()
+                    }
                 }
             }, null)
             ScreenshotCapture.installProjection(granted)

@@ -504,9 +504,9 @@ class ActionExecutor(
             "scroll_down" -> accessibilityControl.scrollDown().map { "Scrolled down" }
             "scroll_up" -> accessibilityControl.scrollUp().map { "Scrolled up" }
             "go_back" -> accessibilityControl.goBack().map { "Went back" }
-            "go_home" -> accessibilityControl.goHome().map { "Went home" }
-            "open_notifications" -> accessibilityControl.openNotifications().map { "Opened notifications" }
-            "open_recents" -> accessibilityControl.openRecents().map { "Opened recents" }
+            "go_home" -> accessibilityControl.goHome().map { "Home dispatch requested; foreground outcome unverified." }
+            "open_notifications" -> accessibilityControl.openNotifications().map { "Notifications dispatch requested; foreground outcome unverified." }
+            "open_recents" -> accessibilityControl.openRecents().map { "Recents dispatch requested; foreground outcome unverified." }
             else -> Result.Error("Unknown system action: $action")
         }
     }

@@ -1,6 +1,10 @@
 package com.unoone.agent.ui.viewmodel
 
 import android.content.Context
+import com.unoone.agent.UnifiedVoiceCoordinator
+import com.unoone.agent.core.voice.VoiceIngress
+import com.unoone.agent.core.voice.VoiceTaskReview
+import com.unoone.agent.core.runtime.GlobalTaskCancellation
 import com.unoone.agent.AgentOrchestrator
 import com.unoone.agent.core.model.InputType
 import com.unoone.agent.core.model.Result
@@ -23,6 +27,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.times
 import org.mockito.kotlin.atLeast
 import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.clearInvocations
@@ -64,7 +70,7 @@ class AgentViewModelDisableLifecycleTest {
         assertFalse(fixture.viewModel.isListening.value)
         assertFalse(fixture.viewModel.isHandsFree.value)
         verify(fixture.orchestrator, atLeastOnce()).shutdownForDisable()
-        verify(fixture.voice, atLeastOnce()).stopRecording()
+        verify(fixture.coordinator, atLeastOnce()).clear()
         verify(fixture.voice, atLeastOnce()).stopSpeaking()
     }
 
@@ -95,15 +101,25 @@ class AgentViewModelDisableLifecycleTest {
     @Test
     fun disableWhileListeningStopsCaptureAndResetsState() = runTest {
         val fixture = fixture(enabled = true)
-        whenever(fixture.voice.startRecording(any(), any())).thenReturn(Result.Success(Unit))
+        val owner = mock<VoiceModule.CaptureHandle>()
+        whenever(fixture.voice.startForegroundCapture(any(), any(), anyOrNull(), any()))
+            .thenReturn(Result.Success(owner))
 
         fixture.viewModel.startListening(mock<Context>())
-        assertTrue(fixture.viewModel.isListening.value)
+        mainDispatcher.scheduler.runCurrent()
+        assertTrue("Capture must become ready only after admitted start: " + org.mockito.Mockito.mockingDetails(fixture.voice).invocations,
+            fixture.viewModel.isListening.value)
 
         fixture.runtime.disableAgent()
 
         assertFalse(fixture.viewModel.isListening.value)
-        verify(fixture.voice, atLeastOnce()).stopRecording()
+        verify(fixture.voice, times(1)).discardCapture(owner)
+        // Repeated disable must not release somebody else's capture or replay the old command.
+        fixture.viewModel.disableAgent()
+        fixture.viewModel.enableAgent()
+        fixture.viewModel.stopListening()
+        verify(fixture.voice, times(1)).discardCapture(owner)
+        verify(fixture.coordinator, never()).accept(any(), anyOrNull())
     }
 
     @Test
@@ -133,6 +149,7 @@ class AgentViewModelDisableLifecycleTest {
 
         assertTrue(fixture.viewModel.isAgentEnabled.value)
         verify(fixture.orchestrator, never()).processCommand(any(), any<InputType>(), org.mockito.kotlin.anyOrNull<Long>())
+        verify(fixture.coordinator, never()).accept(any(), anyOrNull())
     }
 
     private fun fixture(enabled: Boolean, processing: Boolean = false): Fixture {
@@ -143,19 +160,27 @@ class AgentViewModelDisableLifecycleTest {
         whenever(orchestrator.isProcessing).thenReturn(MutableStateFlow(processing))
         whenever(orchestrator.isBlindAidActive).thenReturn(MutableStateFlow(false))
 
+        val coordinator = mock<UnifiedVoiceCoordinator>()
+        whenever(coordinator.review).thenReturn(MutableStateFlow<VoiceTaskReview?>(null))
+        whenever(coordinator.status).thenReturn(MutableStateFlow(""))
+        whenever(coordinator.capture(any())).thenAnswer {
+            VoiceIngress(java.util.UUID.randomUUID().toString(), "",
+                GlobalTaskCancellation.generation, 0L, null, null)
+        }
+        whenever(orchestrator.unifiedVoice).thenReturn(coordinator)
         val voice = mock<VoiceModule>()
-        whenever(voice.stopRecording()).thenReturn(ByteArray(0))
 
         val runtime = FakeRuntimeController(enabled)
         val viewModel = AgentViewModel(orchestrator, voice, runtime)
-        return Fixture(viewModel, orchestrator, voice, runtime)
+        return Fixture(viewModel, orchestrator, voice, runtime, coordinator)
     }
 
     private data class Fixture(
         val viewModel: AgentViewModel,
         val orchestrator: AgentOrchestrator,
         val voice: VoiceModule,
-        val runtime: FakeRuntimeController
+        val runtime: FakeRuntimeController,
+        val coordinator: UnifiedVoiceCoordinator
     )
 
     private class FakeRuntimeController(initiallyEnabled: Boolean) : AgentRuntimeController {

@@ -1,0 +1,4 @@
+java.lang.IllegalStateException: Unsupported official action
+	at com.unoone.agent.core.guiowl.OwlOutputCodec.decode(OwlOutputCodec.kt:30)
+	at ProbeKt.main(Probe.kt:31)
+	at ProbeKt.main(Probe.kt)
