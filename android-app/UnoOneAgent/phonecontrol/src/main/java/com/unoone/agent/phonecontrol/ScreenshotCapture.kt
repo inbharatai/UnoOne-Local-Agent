@@ -17,7 +17,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.WindowManager
-import android.view.WindowMetrics
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.util.Logger
 

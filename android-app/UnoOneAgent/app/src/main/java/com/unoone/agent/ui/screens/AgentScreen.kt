@@ -102,7 +102,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.unoone.agent.core.model.AgentStatus
 import com.unoone.agent.core.model.TimelineStep
 import com.unoone.agent.ui.components.ConfirmationDialog
-import com.unoone.agent.ui.components.ConfirmationLevel
 import com.unoone.agent.ui.components.WaveformVisualizer
 import com.unoone.agent.ui.theme.DoneGreen
 import com.unoone.agent.ui.theme.ExecutingCyan
@@ -1168,11 +1167,6 @@ fun BlindAidCameraPreview(
             Icon(Icons.Default.Close, contentDescription = "Close Scanning", tint = Color.White)
         }
     }
-}
-
-private fun calculateProgress(steps: List<TimelineStep>): Float {
-    val totalSteps = 7 // UNDERSTANDING, TOOL_SELECTED, SAFETY_CHECK, EXECUTING, VERIFYING, SPEAKING, DONE
-    return (steps.size.toFloat() / totalSteps).coerceIn(0f, 1f)
 }
 
 @Composable

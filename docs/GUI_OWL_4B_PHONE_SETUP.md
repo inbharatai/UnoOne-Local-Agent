@@ -1,5 +1,9 @@
 # GUI-Owl 1.5 4B phone setup — experimental candidate
 
+> **Historical 0.7 delivery summary; retained Owl artifact-pinning/setup reference — banner added 2026-10-07.** The 884-test suite and APK identities below belong to 0.7, not current 0.8. Model pins/provenance and consent instructions remain available without rewriting their evidence. Current 0.8 also has an explicit bounded floating-voice Owl entry with bound approval and separate capture consent; see the guide rather than treating Tasks as its only entry.
+>
+> Current main entry points: [README](../README.md) → [Floating voice guide](FLOATING_VOICE_GUIDE.md) → [0.8 artifact/build receipts](evidence/floating-voice-delivery/results.json). Existing 0.8.0-alpha-voice / versionCode 8 host gates record **1006 JVM tests passed**, lint and both APK assemblies; physical qualification remains **PENDING**. These are existing main receipts, not a new cleanup validation run.
+
 **0.7.0-alpha-owl / versionCode 7: host gates passed; physical qualification pending.** Current full JVM suite: **884 passed, zero failures/errors/skips**. Lint, debug and instrumentation APK assembly passed. Owl dependency closure and 16KB ELF/ZIP alignment were checked; one pre-existing CameraX image utility library remains non-16KB ELF-compatible. This is not whole-app 16KB-device certification. [Current artifact/build receipts](evidence/owl-delivery/results.json) identify the exact APK. New hosted CI must be checked separately after delivery. Historical 0.6 evidence remains separate.
 
 ## What is supported

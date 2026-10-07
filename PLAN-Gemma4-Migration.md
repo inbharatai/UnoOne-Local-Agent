@@ -1,5 +1,9 @@
 # UnoOne Gemma 4 Migration Record
 
+> **Historical July 2026 migration proposal/completion record — `feat/e4b-agentic-runtime`. Banner added 2026-10-07.** GPU-first, E4B-only and E2B-retirement statements below describe the old migration, not current policy. All original checklist entries and evidence are retained. Use the [current model strategy](docs/UNOONE_V3_MODEL_STRATEGY.md) and [non-destructive migration/rollback rules](docs/UNOONE_V3_MIGRATION_ROLLBACK.md); the old STATUS link below is historical too.
+>
+> Current main entry points: [README](README.md) → [Floating voice guide](docs/FLOATING_VOICE_GUIDE.md) → [0.8 artifact/build receipts](docs/evidence/floating-voice-delivery/results.json). Existing 0.8.0-alpha-voice / versionCode 8 host gates record **1006 JVM tests passed**, lint and both APK assemblies; physical qualification remains **PENDING**. These are existing main receipts, not a new cleanup validation run.
+
 ## Status
 
 The original migration from mock/legacy inference to LiteRT-LM is complete. The active development work is now the upgrade from Gemma 4 E2B to **Gemma 4 E4B** on branch:

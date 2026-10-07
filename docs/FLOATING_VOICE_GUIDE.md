@@ -1,5 +1,7 @@
 # Floating voice: bounded native actions, explicit Owl review
 
+> **Current maintenance build:** 0.8.1-alpha-voice / versionCode 9. The behavior described here is unchanged; use the [cleanup build receipts](evidence/cleanup-delivery/results.json) for current APK identity. The 0.8.0 hashes and test receipts below remain historical.
+
 **Development build: 0.8.0-alpha-voice / versionCode 8. Final local gates PASSED; physical qualification PENDING.** 1006 JVM tests passed, zero failures/errors/skips; lint and both APK assemblies passed. See [matching current artifact/build receipts](evidence/floating-voice-delivery/results.json). This describes bounded supported paths, not whole-phone completion, acoustic qualification or a measured speed claim.
 
 ## What changed—and what did not

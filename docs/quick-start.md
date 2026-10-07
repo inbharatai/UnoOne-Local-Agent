@@ -1,6 +1,6 @@
 # UnoOne Quick Start — Run It Now
 
-> **Historical setup reference.** For the current V3 candidate, use [UNOONE_V3_PHONE_SETUP.md](UNOONE_V3_PHONE_SETUP.md): SDK 35, JDK 17, NDK 27.2.12479018, CMake 3.22.1, browser bundle before Gradle, explicit Qwen opt-in. Old hard-coded laptop paths and model-push recipes below are not current installation instructions. Latest integrated gates and Android inference are pending.
+> **Historical setup reference — banner updated 2026-10-07.** Old hard-coded laptop paths and model-push recipes below are preserved historical text, not current installation instructions. Use [V3 phone setup](UNOONE_V3_PHONE_SETUP.md) for reusable laptop/ADB instructions, scoped by its current-entry banner. Current main entry points: [README](../README.md) → [Floating voice guide](FLOATING_VOICE_GUIDE.md) → [0.8 artifact/build receipts](evidence/floating-voice-delivery/results.json). Existing 0.8.0-alpha-voice / versionCode 8 host gates record **1006 JVM tests passed**, lint and both APK assemblies; physical qualification remains **PENDING**. These are existing main receipts, not a new cleanup validation run. Android inference/physical qualification remains pending.
 
 > **CRITICAL: The project is NOT on your Desktop.**  
 > **Open this exact path in Android Studio:**  

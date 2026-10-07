@@ -1,16 +1,12 @@
 package com.unoone.agent.owl
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.os.SystemClock
 import com.unoone.agent.*
 import com.unoone.agent.core.device.*
 import com.unoone.agent.core.guiowl.*
-import com.unoone.agent.core.model.Result
 import com.unoone.agent.task.ResourceEffects
-import com.unoone.agent.phonecontrol.ScreenshotCapture
 import kotlinx.coroutines.*
-import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 
 /** Consent is compiled only from the task UI; no model JSON can create it. */

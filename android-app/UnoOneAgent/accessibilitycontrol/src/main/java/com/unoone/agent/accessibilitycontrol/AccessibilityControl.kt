@@ -1,8 +1,6 @@
 package com.unoone.agent.accessibilitycontrol
 
 import com.unoone.agent.core.model.Result
-import com.unoone.agent.core.util.InputSanitizer
-import com.unoone.agent.core.util.Logger
 import kotlinx.coroutines.delay
 
 class AccessibilityControl {

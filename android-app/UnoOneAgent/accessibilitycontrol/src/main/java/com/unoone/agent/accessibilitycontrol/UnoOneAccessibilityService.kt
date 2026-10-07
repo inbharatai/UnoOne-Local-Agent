@@ -3,9 +3,7 @@ package com.unoone.agent.accessibilitycontrol
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
-import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityNodeInfo
 import com.unoone.agent.core.util.Logger
 import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.core.device.sensitiveObservation

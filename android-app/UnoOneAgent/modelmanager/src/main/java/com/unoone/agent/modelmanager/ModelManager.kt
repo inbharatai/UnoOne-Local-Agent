@@ -175,11 +175,10 @@ class ModelManager(
     }
 
     /**
-     * Removes the obsolete E2B artifact only after the E4B catalogue entry is fully verified.
+     * Preserves the legacy E2B artifact and reports whether it is present.
      *
-     * Existing installations may still have `brain/gemma-4-e2b` even though it no longer appears in
-     * the active manifest. Generic uninstall cannot safely resolve an unknown legacy id, so this
-     * migration uses one hard-coded historical relative path guarded by canonical-path checks.
+     * This deprecated compatibility API always returns removed=false: checksum verification alone
+     * is not deletion qualification and cannot authorize removing the legacy fallback.
      */
     @Deprecated("Integrity alone is not a deletion qualification")
     suspend fun removeLegacyE2BIfE4BVerified(): LegacyCleanupResult = withContext(Dispatchers.IO) {
@@ -456,15 +455,6 @@ class ModelManager(
         runCatching { folder.delete() }
     }
 
-    private fun deleteDirectoryContentsReportingFailures(folder: File): List<String> {
-        if (!folder.exists()) return emptyList()
-        val failures = mutableListOf<String>()
-        folder.walkTopDown().sortedByDescending { it.path }.forEach { file ->
-            if (file.exists() && !file.delete()) failures += file.name
-        }
-        return failures
-    }
-
     data class ModelStatus(
         val name: String,
         val type: String,
@@ -495,7 +485,6 @@ class ModelManager(
     )
 
     companion object {
-        private const val LEGACY_E2B_ID = "gemma-4-e2b"
         private const val LEGACY_E2B_RELATIVE_FOLDER = "brain/gemma-4-e2b"
         private const val QUALIFICATION_PREFS = "e4b_device_qualification_v1"
         private const val KEY_E4B_QUALIFICATION = "qualified_record"

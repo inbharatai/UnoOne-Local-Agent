@@ -4,7 +4,6 @@ import com.unoone.agent.core.latency.*
 import com.unoone.agent.voice.VoiceLatency
 
 import com.unoone.agent.core.runtime.GlobalTaskCancellation
-import com.unoone.agent.core.runtime.VoiceAdmissionTicket
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -14,7 +13,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unoone.agent.AgentOrchestrator
 import com.unoone.agent.UnoOneApplication
-import com.unoone.agent.core.model.AgentStatus
 import com.unoone.agent.core.model.InputType
 import com.unoone.agent.core.model.Result
 import com.unoone.agent.core.model.TimelineStep
@@ -61,13 +59,6 @@ class AgentViewModel(
         private val STOP_PHRASES = setOf(
             "stop listening", "stop listening now", "that's all", "that's all for now",
             "done listening", "stop the session", "exit listening"
-        )
-        // C6: voice phrases that route to the in-app MediaProjection Read Screen path (C4) instead of
-        // the Accessibility-based read_screen tool (which bounces to MIUI settings when Accessibility
-        // is off). Intercepted in the hands-free loop before the orchestrator sees them.
-        private val READ_SCREEN_PHRASES = setOf(
-            "read screen", "read the screen", "read this screen", "read this page",
-            "read the page", "what's on screen", "what is on screen", "read aloud"
         )
     }
 

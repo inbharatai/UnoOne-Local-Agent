@@ -1,6 +1,5 @@
 package com.unoone.agent.core.model
 
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Process-wide ownership marker for the single on-device Gemma allocation.

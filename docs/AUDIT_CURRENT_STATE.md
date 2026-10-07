@@ -1,5 +1,9 @@
 # UnoOne Current-State Audit
 
+> **Historical current-state audit — 2026-07-22, `codex/e4b-runtime-hardening`. Banner added 2026-10-07.** “Current” and “fixed” below refer only to that branch snapshot. E4B-only installation and E2B retirement are not current main policy; consult the [model strategy](UNOONE_V3_MODEL_STRATEGY.md) and [preservation/rollback rules](UNOONE_V3_MIGRATION_ROLLBACK.md). The original audit body is preserved.
+>
+> Current main entry points: [README](../README.md) → [Floating voice guide](FLOATING_VOICE_GUIDE.md) → [0.8 artifact/build receipts](evidence/floating-voice-delivery/results.json). Existing 0.8.0-alpha-voice / versionCode 8 host gates record **1006 JVM tests passed**, lint and both APK assemblies; physical qualification remains **PENDING**. These are existing main receipts, not a new cleanup validation run.
+
 **Audit date:** 2026-07-22
 
 **Development branch:** `codex/e4b-runtime-hardening`, based on `feat/e4b-agentic-runtime`

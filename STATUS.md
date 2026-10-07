@@ -1,5 +1,9 @@
 # UnoOne V2 Status
 
+> **Historical V2/E4B snapshot — 2026-07-22. Banner added 2026-10-07.** The branch evidence and present-tense policies below are frozen historical context, not current main policy. E4B-only selection and E2B deletion instructions are superseded; do not use them to remove models or data.
+>
+> Current main entry points: [README](README.md) → [Floating voice guide](docs/FLOATING_VOICE_GUIDE.md) → [0.8 artifact/build receipts](docs/evidence/floating-voice-delivery/results.json). Existing 0.8.0-alpha-voice / versionCode 8 host gates record **1006 JVM tests passed**, lint and both APK assemblies; physical qualification remains **PENDING**. These are existing main receipts, not a new cleanup validation run.
+
 **Updated:** 2026-07-22
 
 **Development branch:** `codex/e4b-runtime-hardening` (child of `feat/e4b-agentic-runtime`)

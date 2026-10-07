@@ -1,5 +1,9 @@
 # UnoOne V2 Device Verification
 
+> **Historical V2 Xiaomi 14 verification record — July 2026 evidence. Banner added 2026-10-07.** All checkmarks, pending items, tested artifact/backend facts and hashes below retain their original scope; none qualifies the current 0.8 build. Old folder-removal and GPU-fallback checklist wording is not current setup policy or authority to delete models. Current qualification procedures: [V3 Xiaomi](docs/UNOONE_V3_XIAOMI_TEST.md), [speech](docs/UNOONE_V3_SPEECH_QUALIFICATION.md), [Owl matrix](docs/OWL_DEVICE_TEST_MATRIX.md).
+>
+> Current main entry points: [README](README.md) → [Floating voice guide](docs/FLOATING_VOICE_GUIDE.md) → [0.8 artifact/build receipts](docs/evidence/floating-voice-delivery/results.json). Existing 0.8.0-alpha-voice / versionCode 8 host gates record **1006 JVM tests passed**, lint and both APK assemblies; physical qualification remains **PENDING**. These are existing main receipts, not a new cleanup validation run.
+
 **Status:** partially populated with V2 physical-device evidence (Xiaomi 14 only). Headless-provable
 sub-items are ✅ with evidence; live-screen / live-mic / live-camera sub-items remain ☐ (require a
 human at the device — no screenshots available to the automated runner). Secondary device not yet run.

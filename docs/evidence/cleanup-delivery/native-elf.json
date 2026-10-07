@@ -1,0 +1,353 @@
+{
+  "lib/arm64-v8a/libLiteRt.so": {
+    "sha256": "fb0480c9acb9a72ef72aa254d25cb333cabd57a9f12574aca6b1cd71072153f2",
+    "needed": [
+      "libdl.so",
+      "libGLESv3.so",
+      "libEGL.so",
+      "libm.so",
+      "liblog.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libLiteRtClGlAccelerator.so": {
+    "sha256": "8a5d5a3c666781c6f0264d46bc15013fb2c3e909225cd4eda5a00399d75ad0cd",
+    "needed": [
+      "libGLESv3.so",
+      "libEGL.so",
+      "libm.so",
+      "libdl.so",
+      "liblog.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libMNN.so": {
+    "sha256": "3c2a60edc197e918966fcbb3f245dfd10a616eb1d96a86e41f01f0a937539d34",
+    "needed": [
+      "liblog.so",
+      "libm.so",
+      "libandroid.so",
+      "libc++_shared.so",
+      "libdl.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libandroidx.graphics.path.so": {
+    "sha256": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+    "needed": [
+      "libm.so",
+      "libdl.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libc++_shared.so": {
+    "sha256": "4397241b4bd20a8e579bfb41d21107857e12985f6a01ca0c2a5f83380d1270b4",
+    "needed": [
+      "libc.so",
+      "libm.so",
+      "libdl.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libggml-base.so": {
+    "sha256": "20fe5cc565958de18f0da10c30a7db8f33f9ac136b77eda017516fc26a0fdda5",
+    "needed": [
+      "libm.so",
+      "libdl.so",
+      "libc++_shared.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libggml-cpu.so": {
+    "sha256": "1b8a49050f9b87d3ed08563e7fde5b4b9182b08938b4c2bb3b52f8eb73a8e362",
+    "needed": [
+      "libggml-base.so",
+      "libm.so",
+      "libc++_shared.so",
+      "libdl.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libggml.so": {
+    "sha256": "a950ec0e8ace5adb4861603cdc6fdb9b951cb233c8d2f515a0f5d58f522cbb9e",
+    "needed": [
+      "libggml-cpu.so",
+      "libggml-base.so",
+      "libm.so",
+      "libc++_shared.so",
+      "libdl.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libimage_processing_util_jni.so": {
+    "sha256": "2ead62ff358ae3a9e9cb5b0278a1d5132a7b410288bc74add8f6356d668fdc39",
+    "needed": [
+      "liblog.so",
+      "libandroid.so",
+      "libjnigraphics.so",
+      "libm.so",
+      "libdl.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      4096,
+      4096,
+      4096,
+      4096
+    ],
+    "elf16k": false
+  },
+  "lib/arm64-v8a/liblitertlm_jni.so": {
+    "sha256": "1fd7cc1f57352b2e8f682045cc3dfbc9c312deba48dcb87c4bbd253b3a1900fc",
+    "needed": [
+      "libLiteRt.so",
+      "libandroid.so",
+      "libz.so",
+      "libGLESv2.so",
+      "libEGL.so",
+      "libGLESv3.so",
+      "libdl.so",
+      "libm.so",
+      "liblog.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libllama.so": {
+    "sha256": "fc0c2b8a56da1b918f9694e3764b93101c3ca9f9141e39f359ee36932e64302a",
+    "needed": [
+      "libggml.so",
+      "libggml-cpu.so",
+      "libggml-base.so",
+      "libm.so",
+      "libc++_shared.so",
+      "libdl.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libmediapipe_tasks_jni.so": {
+    "sha256": "3e24311e736feedbab78b3c6c0122042233919384ac1ff0fe191d3586d319ab3",
+    "needed": [
+      "libdl.so",
+      "libjnigraphics.so",
+      "libEGL.so",
+      "libGLESv2.so",
+      "libm.so",
+      "libz.so",
+      "liblog.so",
+      "libandroid.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libmlkit_google_ocr_pipeline.so": {
+    "sha256": "fa41d509a661e8aa8b3e3ac1a28541f8823f308414fcad733fe26d61feea2646",
+    "needed": [
+      "liblog.so",
+      "libdl.so",
+      "libjnigraphics.so",
+      "libandroid.so",
+      "libz.so",
+      "libm.so",
+      "libEGL.so",
+      "libGLESv2.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libmtmd.so": {
+    "sha256": "8bf73ce6e6b53405c299914c92aa74c8d9867bd5ef04962b05df7e48c223f6b4",
+    "needed": [
+      "libllama.so",
+      "libggml.so",
+      "libggml-cpu.so",
+      "libggml-base.so",
+      "libm.so",
+      "libc++_shared.so",
+      "libdl.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libonnxruntime.so": {
+    "sha256": "5cc388800bdd737e401f716b5e31f3fafab28bf9d2c2bee3f150ed043c368021",
+    "needed": [
+      "libdl.so",
+      "liblog.so",
+      "libandroid.so",
+      "libm.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libsherpa-onnx-c-api.so": {
+    "sha256": "aac6f369f1985c96c788e8e64883ecc3bc9915bbc158ec86eb998946f0449ddd",
+    "needed": [
+      "libandroid.so",
+      "liblog.so",
+      "libonnxruntime.so",
+      "libm.so",
+      "libdl.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libsherpa-onnx-cxx-api.so": {
+    "sha256": "1abbb2999f99ab971a072f9bae4eafe5bf1ce3a7e59caf098b0ad2fc05e679c1",
+    "needed": [
+      "libsherpa-onnx-c-api.so",
+      "libandroid.so",
+      "liblog.so",
+      "libonnxruntime.so",
+      "libm.so",
+      "libdl.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libsherpa-onnx-jni.so": {
+    "sha256": "97bf245b98b37ff69042100573d5e6c1c7bc4e72b5f178f6dcf5a04c61b8aece",
+    "needed": [
+      "libandroid.so",
+      "liblog.so",
+      "libonnxruntime.so",
+      "libm.so",
+      "libdl.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libunoone_owl.so": {
+    "sha256": "c0a3228f18fd01505a3bb59c97e9b398540086bea5fac43e6d5851c3c283c7ab",
+    "needed": [
+      "libmtmd.so",
+      "libllama.so",
+      "libggml.so",
+      "libggml-cpu.so",
+      "liblog.so",
+      "libggml-base.so",
+      "libm.so",
+      "libc++_shared.so",
+      "libdl.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  },
+  "lib/arm64-v8a/libunoone_qwen.so": {
+    "sha256": "ccd825e5a0febb9e31f36a104c2953543f6221ad891ca841585244d2ebdab5ac",
+    "needed": [
+      "libMNN.so",
+      "liblog.so",
+      "libm.so",
+      "libandroid.so",
+      "libc++_shared.so",
+      "libdl.so",
+      "libc.so"
+    ],
+    "loadAlignment": [
+      16384,
+      16384,
+      16384
+    ],
+    "elf16k": true
+  }
+}

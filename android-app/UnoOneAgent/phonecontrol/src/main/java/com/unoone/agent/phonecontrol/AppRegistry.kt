@@ -2,7 +2,6 @@ package com.unoone.agent.phonecontrol
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import java.util.Locale
 
 /** Visible launchable apps only. An empty result means unavailable/hidden, never permission to guess. */

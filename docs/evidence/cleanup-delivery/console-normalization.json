@@ -1,0 +1,6 @@
+{
+  "file": "cleanup-browser.log.txt",
+  "rawSha256": "1a8fee7fef68fa8bcfe82285ff8ebc755f38e91a46e72b44420f6a22a10c671d",
+  "gitTextSha256": "87e19554e928a35c07ba1f0b2f716345fd523ad1ce9f335e5da121cc909be681",
+  "change": "Console CR normalized to LF; original build-evidence/cleanup-browser.log retained. No executable source normalization."
+}

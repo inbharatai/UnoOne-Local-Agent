@@ -4,7 +4,7 @@
 
 UnoOne combines local speech, deterministic Android actions and bounded on-device model proposals. Native code—not the model or a webpage—owns authorization, cancellation and result verification.
 
-> **Current development build: 0.8.0-alpha-voice / versionCode 8 — final local gates passed; physical qualification PENDING.** **1006 JVM tests passed with zero failures/errors/skips**, lint and debug/instrumentation APK assembly passed. The existing bubble now uses unified bounded voice intake, scoped approval and native-first execution without unnecessary model waits where supported. This is not unrestricted phone autonomy or measured phone speed. [Current receipts](docs/evidence/floating-voice-delivery/results.json) · [Floating voice guide](docs/FLOATING_VOICE_GUIDE.md).
+> **Current development build: 0.8.1-alpha-voice / versionCode 9 — conservative cleanup, local gates passed; physical qualification PENDING.** **1006 JVM tests passed with zero failures/errors/skips**, lint and debug/instrumentation APK assembly passed. Removed verified unused private code/imports, one redundant direct dependency declaration and redundant disabled-detector baseline entries; working features and evidence remain. [Current receipts](docs/evidence/cleanup-delivery/results.json) · [Cleanup scope](docs/REPOSITORY_CLEANUP.md) · [Floating voice guide](docs/FLOATING_VOICE_GUIDE.md). This is not unrestricted phone autonomy or a measured speed/size gain.
 >
 > **Historical 0.7 Owl receipts, not current 0.8 gates:** 884 JVM tests passed with zero failures/errors/skips; lint and both APK assemblies passed. Owl native dependency closure and 16KB ELF/ZIP alignment were inspected. One pre-existing CameraX image utility library remains non-16KB ELF-compatible; this is not whole-app 16KB-device certification. [Historical receipts](docs/evidence/owl-delivery/results.json). Do not substitute these historical totals or artifacts for the current 0.8 receipts.
 
@@ -40,7 +40,7 @@ See [the guide](docs/FLOATING_VOICE_GUIDE.md) for retained notes/drafts/calendar
 - Playback-time voice Stop is **conditional on OS AEC being available and actually enabled**. This is not measured echo suppression. UI Stop remains the fallback.
 - This is a **pure-local CPU candidate**, with no cloud inference fallback and no NPU/GPU performance claim. Hardware, model, backend and build qualification remain separate requirements.
 
-[Repair report](docs/UNOONE_V3_REPAIR_REPORT.md) · [Development status](docs/UNOONE_V3_DEVELOPMENT_STATUS.md) · [Architecture](docs/UNOONE_V3_ARCHITECTURE.md) · [Xiaomi qualification](docs/UNOONE_V3_XIAOMI_TEST.md)
+[Current floating voice guide](docs/FLOATING_VOICE_GUIDE.md) · [Current receipts](docs/evidence/floating-voice-delivery/results.json) · [Architecture](docs/UNOONE_V3_ARCHITECTURE.md) · [Xiaomi qualification](docs/UNOONE_V3_XIAOMI_TEST.md) · [Historical repair report](docs/UNOONE_V3_REPAIR_REPORT.md) · [Historical development snapshots](docs/UNOONE_V3_DEVELOPMENT_STATUS.md)
 
 ## 1. Control boundaries
 
@@ -92,7 +92,7 @@ English/Hindi/Hinglish human-audio qualification, names/recipient accuracy, wake
 
 **Text equivalent:** passing host checks establish a source checkpoint, not a device release. Real host Qwen toy probes observed text `4`, JSON sum `4`, and image `red`; these are not accuracy benchmarks or Android runs. Android model behavior, speech, 100 device tasks and sustained thermal/battery gates remain pending. The historical 0.5 final host gate passed; its results and hashes are recorded below. Historical 0.6 host gates passed with 842 JVM tests and zero failures/errors/skips; physical gates remain pending. Model selection is non-destructive: new/unknown → E2B; verified E4B and persisted E4B selection → preserve. Release/main delivery follows agreed qualification gates, not APK assembly alone.
 
-### Historical development delivery: `0.5.0-alpha-v3` — not current Owl gates
+### Historical development delivery: `0.5.0-alpha-v3` — not current 0.8 voice gates
 
 | Evidence | Recorded result | Boundary |
 |---|---|---|
@@ -138,7 +138,7 @@ Sources: [Qwen export pin](https://huggingface.co/taobao-mnn/Qwen3.5-2B-MNN/tree
 ### Prerequisites
 
 - **JDK 17** (`JAVA_HOME` set), **Android SDK platform 35**, build tools/platform tools and accepted SDK licenses. Set `ANDROID_HOME` or configure `android-app/UnoOneAgent/local.properties` with `sdk.dir`.
-- **NDK 27.2.12479018 and CMake 3.22.1**. CMake FetchContent downloads hash-pinned MNN and llama.cpp source archives; first build requires network access. Qwen and Owl JNI are **arm64-v8a only**; a base APK install on another ABI is not runtime compatibility. Owl native dependency/16KB packaging verification is PENDING for the final build.
+- **NDK 27.2.12479018 and CMake 3.22.1**. CMake FetchContent downloads hash-pinned MNN and llama.cpp source archives; first build requires network access. Qwen and Owl JNI are **arm64-v8a only**; a base APK install on another ABI is not runtime compatibility. The [current 0.8 receipts](docs/evidence/floating-voice-delivery/results.json) record inspected Owl native dependency closure, Owl 16KB ELF compatibility and passed 16KB ZIP alignment. The pre-existing CameraX `libimage_processing_util_jni.so` remains non-16KB ELF-compatible; this is not whole-app 16KB-device certification or physical qualification.
 - **Node.js 22.12+** and npm for the locked browser build; Python 3 for repository checks.
 - Network access for initial dependencies, Playwright Chromium and separately provisioned models. Local inference does not make first-time acquisition offline.
 - Start each recipe at the **repository root**. Build the DOM adapter **before Gradle**: Android rejects a missing or obsolete privileged-runtime asset.
@@ -206,13 +206,16 @@ Exact resource-constrained checkpoint flags are in [repair4.command](docs/eviden
 | [`android-app/UnoOneAgent/`](android-app/UnoOneAgent/) | Modular Kotlin/Compose Android application; API 28+ |
 | [`web-runtime/page-agent-unoone/`](web-runtime/page-agent-unoone/) | DOM adapter, TypeScript checks and browser fixtures |
 | [`evaluation/`](evaluation/) | Qualification corpus and scorers; authored cases are not passes |
-| [`docs/evidence/repair4/`](docs/evidence/repair4/) | Checkpoint commands, logs, hashes and pending benchmarks |
+| [`docs/evidence/floating-voice-delivery/`](docs/evidence/floating-voice-delivery/) | Current 0.8 artifact/build receipts; not device qualification |
+| [`docs/evidence/repair4/`](docs/evidence/repair4/) | Historical checkpoint commands, logs, hashes and pending benchmarks |
 | [`docs/`](docs/) | Architecture, safety, repair reports and device procedures |
 
-Read in order: [repair report](docs/UNOONE_V3_REPAIR_REPORT.md) → [architecture](docs/UNOONE_V3_ARCHITECTURE.md) → [model strategy](docs/UNOONE_V3_MODEL_STRATEGY.md) → [safety](docs/UNOONE_V3_SAFETY.md) → [benchmarks](docs/UNOONE_V3_BENCHMARKS.md) → [Xiaomi procedure](docs/UNOONE_V3_XIAOMI_TEST.md).
+Read current material first: [floating voice guide](docs/FLOATING_VOICE_GUIDE.md) → [0.8 receipts](docs/evidence/floating-voice-delivery/results.json) → [architecture](docs/UNOONE_V3_ARCHITECTURE.md) → [phone setup](docs/UNOONE_V3_PHONE_SETUP.md) / [Owl setup](docs/GUI_OWL_4B_PHONE_SETUP.md) (use their current-entry banners, not historical APK identities) → [model strategy](docs/UNOONE_V3_MODEL_STRATEGY.md) → [safety](docs/UNOONE_V3_SAFETY.md) → [benchmarks](docs/UNOONE_V3_BENCHMARKS.md) → [Xiaomi procedure](docs/UNOONE_V3_XIAOMI_TEST.md). [Repository cleanup scope](docs/REPOSITORY_CLEANUP.md) explains preservation and validation boundaries.
+
+Then consult the historical progression: July V2/E4B records below → [repair report](docs/UNOONE_V3_REPAIR_REPORT.md) / [development snapshots](docs/UNOONE_V3_DEVELOPMENT_STATUS.md) → [0.5 receipts](docs/evidence/phone-delivery/results.json) → [0.6 receipts](docs/evidence/multitask-delivery/results.json) → [0.7 receipts](docs/evidence/owl-delivery/results.json). Earlier passes and failures are not current-build or phone qualification.
 
 ### Historical evidence—not V3 qualification
 
-Existing records remain untouched: [V2 validation, July 16](docs/DEVICE_VALIDATION_2026-07-16.md), [July 17](docs/DEVICE_VALIDATION_2026-07-17.md), [E4B hardening audit](docs/E4B_RUNTIME_HARDENING_AUDIT.md), [E4B Xiaomi handoff](docs/E4B_XIAOMI14_HANDOFF.md), [device verification](DEVICE_VERIFICATION.md) and [V3 baseline audit](docs/UNOONE_V3_BASELINE_AUDIT.md). Historical E4B CPU/planner results apply only to their recorded artifact/device/build; they do not certify this uncommitted V3 worktree.
+Existing historical bodies remain preserved (some have added historical-navigation banners): [V2 validation, July 16](docs/DEVICE_VALIDATION_2026-07-16.md), [July 17](docs/DEVICE_VALIDATION_2026-07-17.md), [E4B hardening audit](docs/E4B_RUNTIME_HARDENING_AUDIT.md), [E4B Xiaomi handoff](docs/E4B_XIAOMI14_HANDOFF.md), [device verification](DEVICE_VERIFICATION.md) and [V3 baseline audit](docs/UNOONE_V3_BASELINE_AUDIT.md). Historical E4B CPU/planner results apply only to their recorded artifact/device/build; they do not certify the current V3/0.8 build.
 
 All four diagrams are **conceptual technical diagrams**, not hardware photographs, screenshots or live telemetry. Solid boundaries describe current wired source or recorded evidence; dashed boundaries describe incomplete/unavailable features or pending progression. Text equivalents carry the same limitations without relying on the images.

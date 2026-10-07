@@ -1,0 +1,62 @@
+
+added 56 packages in 2s
+
+> @unoone/page-agent-runtime@0.1.0 typecheck
+> tsc --noEmit
+
+
+> @unoone/page-agent-runtime@0.1.0 test
+> vitest run tests
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/agent/workspace/UnoOne-Local-Agent/web-runtime/page-agent-unoone[39m
+
+ [32m✓[39m tests/guarded-tools.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m tests/native-boundary.test.js [2m([22m[2m2 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m tests/content-mask.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m10 passed[39m[22m[90m (10)[39m
+[2m   Start at [22m 15:09:34
+[2m   Duration [22m 1.07s[2m (transform 132ms, setup 0ms, import 276ms, tests 31ms, environment 0ms)[22m
+
+
+> @unoone/page-agent-runtime@0.1.0 test:e2e
+> npm run build && playwright test
+
+
+> @unoone/page-agent-runtime@0.1.0 build
+> vite build
+
+vite v8.1.4 building client environment for production...
+
+ WARN  inlineDynamicImports option is ignored because codeSplitting: false is set.
+
+[2K
+transforming...✓ 2 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/unoone-page-agent.js  4.29 kB │ gzip: 1.98 kB │ map: 10.00 kB
+
+✓ built in 44ms
+
+Running 15 tests using 1 worker
+
+  ✓   1 e2e/dom-adapter.spec.ts:10:1 › admitted hostile page has DOM access but no model or consent capability (436ms)
+  ✓   2 e2e/dom-adapter.spec.ts:18:1 › exact target writes verify, replacements and secrets fail closed (212ms)
+  ✓   3 e2e/native-contract.spec.ts:5:1 › literal planner contract: date, explicit checkbox, vertical and horizontal targeted scroll (264ms)
+  ✓   4 e2e/page-agent.spec.ts:24:1 › host/script fixture: text dispatch emits input and change (259ms)
+  ✓   5 e2e/page-agent.spec.ts:30:1 › host/script fixture: semantic form has no final send by default (536ms)
+  ✓   6 e2e/page-agent.spec.ts:55:1 › host/script fixture: email numeric and multiline textarea (381ms)
+  ✓   7 e2e/page-agent.spec.ts:62:1 › upload dispatch requires handover; manual picker fixture attaches file (486ms)
+  ✓   8 e2e/page-agent.spec.ts:74:1 › unknown target and forged fingerprint fail without mutation (254ms)
+  ✓   9 e2e/page-agent.spec.ts:81:1 › stale state rejected and fresh observation permits next command (303ms)
+  ✓  10 e2e/page-agent.spec.ts:89:1 › identical replacement cannot inherit target identity (301ms)
+  ✓  11 e2e/page-agent.spec.ts:98:1 › invalid semantic commands do not mutate controls (270ms)
+  ✓  12 e2e/page-agent.spec.ts:106:1 › dispatch does not imply success if hostile handler rewrites state (216ms)
+  ✓  13 e2e/page-agent.spec.ts:112:1 › host policy fixture withholds payment command, not native authorization coverage (185ms)
+  ✓  14 e2e/page-agent.spec.ts:118:1 › hostile scripts and forged messages gain no native capability (205ms)
+  ✓  15 e2e/page-agent.spec.ts:126:1 › page spoof bridge/session ignored by real bundle (205ms)
+
+  15 passed (7.9s)
+found 0 vulnerabilities

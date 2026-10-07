@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@page-agent/core": "1.12.1",
-    "@page-agent/page-controller": "1.12.1",
     "zod": "4.4.3"
   },
   "devDependencies": {

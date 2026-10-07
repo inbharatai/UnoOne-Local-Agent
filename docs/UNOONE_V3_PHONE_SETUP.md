@@ -1,5 +1,9 @@
 # UnoOne V3 — build on your laptop, install and record phone results
 
+> **Historical 0.6/0.7 delivery identities; reusable laptop/ADB setup — banner added 2026-10-07.** The 842-test 0.6 results and 0.7 Owl pointer below are historical, not the current APK. General setup steps remain useful; select the exact revision/artifact from current receipts rather than reusing an old APK hash as current evidence.
+>
+> Current main entry points: [README](../README.md) → [Floating voice guide](FLOATING_VOICE_GUIDE.md) → [0.8 artifact/build receipts](evidence/floating-voice-delivery/results.json). Existing 0.8.0-alpha-voice / versionCode 8 host gates record **1006 JVM tests passed**, lint and both APK assemblies; physical qualification remains **PENDING**. These are existing main receipts, not a new cleanup validation run.
+
 > **GUI-Owl users:** the current 0.7.0-alpha-owl build has a dedicated [GUI-Owl 4B setup guide](GUI_OWL_4B_PHONE_SETUP.md). The 0.6 receipts below are historical; general laptop/ADB instructions remain useful.
 
 ## Status and scope: read before pasting

@@ -10,7 +10,6 @@ import com.unoone.agent.core.model.ToolCall
 import com.unoone.agent.core.model.ToolCallValidator
 import com.unoone.agent.core.runtime.AgentRuntimeGate
 import com.unoone.agent.core.safety.ToolPermissionRegistry
-import com.unoone.agent.core.util.Logger
 import com.unoone.agent.core.util.TextSummarizer
 import com.unoone.agent.data.DataExporter
 import com.unoone.agent.phonecontrol.CalendarControl
@@ -19,14 +18,12 @@ import com.unoone.agent.phonecontrol.OcrControl
 import com.unoone.agent.phonecontrol.PackageResolver
 import com.unoone.agent.phonecontrol.PhoneControl
 import com.unoone.agent.phonecontrol.ScreenshotCapture
-import com.unoone.agent.screenshot.ScreenshotPermissionActivity
 import com.unoone.agent.storage.dao.ActionLogDao
 import com.unoone.agent.storage.dao.MemoryDao
 import com.unoone.agent.storage.dao.NoteDao
 import com.unoone.agent.storage.dao.SkillDao
 import com.unoone.agent.storage.entity.NoteEntity
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.delay
 

@@ -1,5 +1,9 @@
 # V3 development status — mission incomplete
 
+> **Historical development snapshots — banner added 2026-10-07.** The “Current summary” dated 2026-10-05 below is the historical **0.5 / 770-test** checkpoint, not current 0.8 status. Every “current” reference in the preserved body (including “dated current summary above”) is scoped to those earlier checkpoints. The failed checkpoint, 148 dependency-download failures and all original matrices remain unchanged.
+>
+> Current main entry points: [README](../README.md) → [Floating voice guide](FLOATING_VOICE_GUIDE.md) → [0.8 artifact/build receipts](evidence/floating-voice-delivery/results.json). Existing 0.8.0-alpha-voice / versionCode 8 host gates record **1006 JVM tests passed**, lint and both APK assemblies; physical qualification remains **PENDING**. These are existing main receipts, not a new cleanup validation run.
+
 ## Current summary — 2026-10-05 (Qwen integration worktree)
 
 **Host-verified development build 0.5.0-alpha-v3, not phone-qualified. Final host gates passed: 770 JVM tests with zero failures/errors/skips, app lint with its existing baseline, and both APK assemblies. See [current receipts](evidence/phone-delivery/results.json). The older repair4 717-test record remains historical.**

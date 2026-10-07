@@ -1,0 +1,16 @@
+test_current_boundary (test_repo_invariants.BrowserBoundaryTest) ... ok
+test_rejects_bridge_reintroduction_and_dynamic_code (test_repo_invariants.BrowserBoundaryTest) ... ok
+test_both_pins_and_transport_are_enforced (test_repo_invariants.ManifestContractTest) ... ok
+test_exact_four_profiles (test_repo_invariants.ManifestContractTest) ... ok
+test_owl_exact_pair_and_unknown_profile (test_repo_invariants.ManifestContractTest) ... ok
+test_qwen_every_artifact_is_exact_and_required (test_repo_invariants.ManifestContractTest) ... ok
+test_schema_ram_and_path_guardrails (test_repo_invariants.ManifestContractTest) ... ok
+test_v3_schema_corpus_and_negative_cases (test_repo_invariants.ManifestContractTest) ... ok
+test_current_contract (test_repo_invariants.OwlSourceContractTest) ... ok
+test_runtime_provenance_and_verification_mutations (test_repo_invariants.OwlSourceContractTest) ... ok
+test_generated_metadata_skipped_but_native_app_sources_scanned (test_repo_invariants.SourceScanTest) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.154s
+
+OK
