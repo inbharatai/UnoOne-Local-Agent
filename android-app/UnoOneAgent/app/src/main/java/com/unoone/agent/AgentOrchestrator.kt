@@ -1074,15 +1074,24 @@ class AgentOrchestrator(
             currentCoroutineContext().ensureActive()
             if (isCancelled(myRun) || !AgentRuntimeGate.isEnabled()) return
             val verified = outcome.status == com.unoone.agent.core.device.DeviceOutcomeStatus.VERIFIED
-            val result = deviceTaskResult(outcome.status)
+            val result = deviceTaskResult(outcome.status, goal)
+            val report = deviceTaskReport(result, outcome.reason)
             taskOutcome = result.outcome
             taskReason = result.reason
-            lastToolResult = outcome.reason
+            lastToolResult = report
             addStep(if (verified) AgentStatus.DONE else AgentStatus.FAILED,
-                if (verified) "Device goal verified" else "Device ${outcome.status.name.lowercase()}", outcome.reason)
+                when {
+                    result.outcome == TaskOutcome.ACTION_VERIFIED -> "Device action verified"
+                    verified -> "Device goal verified"
+                    else -> "Device ${outcome.status.name.lowercase()}"
+                }, report)
             saveLog(ActionLogEntity(inputText = "[private device command]", inputType = inputType.name.lowercase(),
-                selectedTool = "device_session", status = if (verified) "success" else outcome.status.name.lowercase()))
-            if (inputType == InputType.VOICE) speakAnswer(outcome.reason)
+                selectedTool = "device_session", status = when {
+                    result.outcome == TaskOutcome.ACTION_VERIFIED -> "action_verified"
+                    verified -> "success"
+                    else -> outcome.status.name.lowercase()
+                }))
+            if (inputType == InputType.VOICE) speakAnswer(report)
             return
         }
 
@@ -2003,7 +2012,8 @@ class AgentOrchestrator(
         val outcome = deviceSession.run(goal, useModelPlanner = false,
             expectedInitialPackageWindow = expectedWindow)
         com.unoone.agent.voice.VoiceLatency.recorder.mark(trace, com.unoone.agent.core.latency.LatencyStage.POSTCONDITION_RESULT)
-        return NativeTaskOutput(deviceTaskResult(outcome.status), outcome.reason)
+        val result = deviceTaskResult(outcome.status, goal)
+        return NativeTaskOutput(result, deviceTaskReport(result, outcome.reason))
     }
     internal suspend fun executeVoiceConversation(text: String): NativeTaskOutput {
         val result = taskModelCall { commandParser.chat(text) }

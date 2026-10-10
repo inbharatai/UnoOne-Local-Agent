@@ -197,6 +197,7 @@ class TaskCoordinator(
             TaskOutcome.NEEDS_USER in outcomes -> TaskOutcome.NEEDS_USER
             TaskOutcome.UNVERIFIED in outcomes -> TaskOutcome.UNVERIFIED
             outcomes.all { it == TaskOutcome.VERIFIED } -> TaskOutcome.VERIFIED
+            TaskOutcome.ACTION_VERIFIED in outcomes -> TaskOutcome.ACTION_VERIFIED
             else -> TaskOutcome.RESPONDED
         }
         finish(parent, TaskResult(outcome, if (outcome == TaskOutcome.FAILED) TaskReason.CHILD_FAILED else TaskReason.NONE))
@@ -208,6 +209,7 @@ class TaskCoordinator(
         r.request = r.request.copy(instruction = "")
         r.state = when (result.outcome) {
             TaskOutcome.VERIFIED, TaskOutcome.RESPONDED -> TaskState.SUCCEEDED
+            TaskOutcome.ACTION_VERIFIED -> TaskState.ACTION_VERIFIED
             TaskOutcome.UNVERIFIED -> TaskState.UNVERIFIED
             TaskOutcome.NEEDS_USER -> TaskState.NEEDS_USER
             TaskOutcome.FAILED -> TaskState.FAILED

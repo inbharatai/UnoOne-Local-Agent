@@ -10,7 +10,7 @@ enum class LatencyPath { UNRESOLVED, RULE_REPLY, NATIVE, MODEL_FALLBACK, OWL_NAT
 enum class LatencyProfile { UNKNOWN, SHERPA_TRANSDUCER, SHERPA_WHISPER, SHERPA_OMNILINGUAL, SHERPA_TTS, SYSTEM, OWL }
 enum class LatencyCold { UNKNOWN, MODEL_COLD, LOADED_WARM }
 enum class LatencyReason { NONE, SILENCE, MAX_DURATION, MANUAL, NO_SPEECH, SUPERSEDED, UNAVAILABLE, ERROR }
-enum class LatencyOutcome { VERIFIED, COMPLETED_NON_ACTION, UNVERIFIED, NEEDS_USER, REJECTED, FAILED, CANCELLED, TIMED_OUT, INTERRUPTED }
+enum class LatencyOutcome { VERIFIED, ACTION_VERIFIED, COMPLETED_NON_ACTION, UNVERIFIED, NEEDS_USER, REJECTED, FAILED, CANCELLED, TIMED_OUT, INTERRUPTED }
 enum class LatencyStage { MODEL_WAIT, MIC_REQUEST, MIC_START_REQUEST, MIC_RECORDING_CONFIRMED, ENDPOINT_DECISION, RECORDER_STOP, CUE_REQUEST, STT_SUBMIT, STT_LOCK_REQUEST, STT_LOCK_ACQUIRED, PCM_CONVERSION_BEGIN, PCM_CONVERSION_END, DECODE_BEGIN, DECODE_END, FINAL_TRANSCRIPT_READY, ADMISSION, TASK_ENQUEUED, WORKER_START, RULE_PARSE_BEGIN, RULE_PARSE_END, ROUTE_SELECTED, NATIVE_BIND, PRE_OBSERVE, CAPTURE, MODEL_BEGIN, MODEL_END, APPROVAL_SHOWN, APPROVAL_READY, APPROVAL_RESPONSE, APPROVAL_RESOLVED, DISPATCH_BEGIN, DISPATCH_RETURN, POSTCONDITION_RESULT, RESULT_READY, UI_STATE_PUBLISHED, TTS_REQUEST, TTS_QUEUE_REQUEST, TTS_QUEUE_ACQUIRED, SYNTHESIS_BEGIN, SYNTHESIS_END, AUDIO_ENQUEUE, PLAYBACK_COMPLETE, NEXT_CAPTURE_AVAILABLE }
 /** Opaque, random diagnostic identity; never an authorization or task ID. */
 data class LatencyToken internal constructor(val id: String)
@@ -74,7 +74,7 @@ class LatencyRecorder(private val clock: LatencyClock) {
     /** Conditional successful-pair nearest-rank distribution; failures/timeouts never become zero samples. */
     fun summary(start: LatencyStage, end: LatencyStage, path: LatencyPath, origin: LatencyOrigin? = null, profile: LatencyProfile? = null, source: LatencySource? = null): LatencySummary {
         val rows = snapshots().filter { it.path == path && (origin == null || it.origin == origin) && (profile == null || it.events.any { e -> e.profile == profile }) && (source == null || it.events.any { e -> e.source == source }) }
-        val values = rows.filter { it.outcome == LatencyOutcome.VERIFIED || it.outcome == LatencyOutcome.COMPLETED_NON_ACTION }.mapNotNull { row ->
+        val values = rows.filter { it.outcome in setOf(LatencyOutcome.VERIFIED, LatencyOutcome.ACTION_VERIFIED, LatencyOutcome.COMPLETED_NON_ACTION) }.mapNotNull { row ->
             val a = row.events.firstOrNull { it.stage == start }?.offsetUs
             val b = row.events.firstOrNull { it.stage == end }?.offsetUs
             if (a != null && b != null && b >= a) b-a else null

@@ -13,6 +13,18 @@ class TaskCoordinatorTest {
     private fun ok() = WorkerResult.Finished(TaskResult(TaskOutcome.RESPONDED))
     private fun id(a: Admission) = (a as Admission.Accepted).taskId
 
+    @Test fun boundedActionKeepsItsOwnTerminalStateAndRecoveryLabel() = runBlocking {
+        val c = TaskCoordinator(listOf(WorkerRegistration(kind, WorkerLane.INTERACTIVE) {
+            WorkerResult.Finished(TaskResult(TaskOutcome.ACTION_VERIFIED))
+        }), this)
+        val task = id(c.submit(request("action")))
+        assertEquals(TaskOutcome.ACTION_VERIFIED, c.await(task).outcome)
+        val summary = c.tasks.value.single { it.id == task }
+        assertEquals(TaskState.ACTION_VERIFIED, summary.state)
+        assertEquals(TaskState.ACTION_VERIFIED, TaskJournalEvent(sequence = 1, summary = summary).recoveredSummary().state)
+        c.close()
+    }
+
     @Test fun maintenanceDeniesConcurrentIntakeAndFailureReleasesReservation() = runBlocking {
         val c = TaskCoordinator(listOf(WorkerRegistration(kind, WorkerLane.INTERACTIVE) { ok() }), this)
         try {

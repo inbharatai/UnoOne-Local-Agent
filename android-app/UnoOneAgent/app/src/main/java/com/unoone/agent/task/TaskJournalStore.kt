@@ -66,6 +66,7 @@ class TaskJournalStore internal constructor(private val file: AtomicFile,
                 val outcome = if (row.has("outcome")) TaskOutcome.valueOf(string("outcome")) else null
                 val valid = when (state) {
                     TaskState.SUCCEEDED -> outcome in setOf(TaskOutcome.VERIFIED, TaskOutcome.RESPONDED)
+                    TaskState.ACTION_VERIFIED -> outcome == TaskOutcome.ACTION_VERIFIED
                     TaskState.UNVERIFIED -> outcome == TaskOutcome.UNVERIFIED
                     TaskState.NEEDS_USER -> outcome == TaskOutcome.NEEDS_USER
                     TaskState.FAILED -> outcome == TaskOutcome.FAILED
@@ -151,7 +152,7 @@ class TaskJournalStore internal constructor(private val file: AtomicFile,
                 val id = TaskId(row.getString("id"))
                 if (row.has("state")) {
                     val state = TaskState.valueOf(row.getString("state"))
-                    val terminal = state in setOf(TaskState.SUCCEEDED, TaskState.UNVERIFIED, TaskState.NEEDS_USER, TaskState.FAILED, TaskState.CANCELLED)
+                    val terminal = state in setOf(TaskState.SUCCEEDED, TaskState.ACTION_VERIFIED, TaskState.UNVERIFIED, TaskState.NEEDS_USER, TaskState.FAILED, TaskState.CANCELLED)
                     recovered[id] = TaskSummary(id, row.optString("parent").takeIf(String::isNotEmpty)?.let(::TaskId),
                         TaskSource.valueOf(row.getString("source")), if (terminal) state else TaskState.NEEDS_REVIEW,
                         row.getLong("sequence"), if (terminal) TaskOutcome.valueOf(row.getString("outcome")) else null,

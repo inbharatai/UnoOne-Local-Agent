@@ -103,6 +103,7 @@ private fun LogCard(log: ActionLogEntity) {
     // 5G: Replace hard-coded colors with MaterialTheme.colorScheme
     val statusColor = when (log.status) {
         "success" -> MaterialTheme.colorScheme.primary
+        "action_verified" -> MaterialTheme.colorScheme.tertiary
         "failed" -> MaterialTheme.colorScheme.error
         "blocked" -> MaterialTheme.colorScheme.tertiary
         "cancelled" -> MaterialTheme.colorScheme.outline

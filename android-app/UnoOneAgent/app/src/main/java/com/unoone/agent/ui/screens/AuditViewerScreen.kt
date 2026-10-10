@@ -114,6 +114,7 @@ fun AuditViewerScreen(viewModel: AuditViewerViewModel, onBack: () -> Unit) {
 private fun AuditRowCard(row: AuditViewerViewModel.AuditRow, sdf: SimpleDateFormat) {
     val (statusColor, statusLabel) = when (row.status.lowercase()) {
         "success" -> DoneGreen to "SUCCESS"
+        "action_verified" -> SafetyOrange to "ACTION VERIFIED"
         "blocked" -> FailedRed to "BLOCKED"
         "failed" -> SafetyOrange to "FAILED"
         else -> MaterialTheme.colorScheme.onSurface to row.status.uppercase()
