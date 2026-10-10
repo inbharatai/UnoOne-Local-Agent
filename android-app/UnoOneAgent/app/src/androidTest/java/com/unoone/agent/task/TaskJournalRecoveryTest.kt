@@ -60,10 +60,14 @@ class TaskJournalRecoveryTest {
             val store = TaskJournalStore(AtomicFile(file))
             store.recordSummary(TaskSummary(TaskId("done"), null, TaskSource.NATIVE,
                 TaskState.SUCCEEDED, 1, TaskOutcome.RESPONDED))
+            store.recordSummary(TaskSummary(TaskId("action"), null, TaskSource.NATIVE,
+                TaskState.ACTION_VERIFIED, 2, TaskOutcome.ACTION_VERIFIED))
             store.recordSummary(TaskSummary(TaskId("interrupted"), null, TaskSource.NATIVE,
-                TaskState.RUNNING, 2))
+                TaskState.RUNNING, 3))
             val recovered = TaskJournalStore(AtomicFile(file)).recoveredTasks.associateBy { it.id.value }
             assertEquals(TaskState.SUCCEEDED, recovered.getValue("done").state)
+            assertEquals(TaskOutcome.ACTION_VERIFIED, recovered.getValue("action").outcome)
+            assertEquals(TaskState.ACTION_VERIFIED, recovered.getValue("action").state)
             assertEquals(TaskState.NEEDS_REVIEW, recovered.getValue("interrupted").state)
         } finally { dir.deleteRecursively() }
     }

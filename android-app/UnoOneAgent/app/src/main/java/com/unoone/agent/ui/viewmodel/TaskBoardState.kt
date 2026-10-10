@@ -22,6 +22,7 @@ object TaskBoardStateMapper {
         TaskState.WAITING_CHILD -> "Waiting for accepted child tasks"
         TaskState.NEEDS_USER -> "Paused / needs you — check permission or confirmation; issue remaining steps explicitly"
         TaskState.SUCCEEDED -> "Completed — see reported outcome"
+        TaskState.ACTION_VERIFIED -> "Action verified — check the result; wider task completion was not established"
         TaskState.UNVERIFIED -> "Unverified — do not assume the action succeeded"
         TaskState.FAILED -> "Failed"
         TaskState.CANCELLED -> "Cancelled — already completed effects are not undone"

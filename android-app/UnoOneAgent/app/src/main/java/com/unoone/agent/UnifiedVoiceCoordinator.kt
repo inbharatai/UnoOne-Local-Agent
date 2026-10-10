@@ -162,6 +162,7 @@ class UnifiedVoiceCoordinator(private val context: Context, private val orchestr
                 orchestrator.speakVoiceStatus(statusState.value)
             VoiceLatency.recorder.close(trace, if (result.reason == TaskReason.BUDGET_EXHAUSTED) LatencyOutcome.TIMED_OUT else when(result.outcome) {
                 TaskOutcome.VERIFIED -> LatencyOutcome.VERIFIED
+                TaskOutcome.ACTION_VERIFIED -> LatencyOutcome.ACTION_VERIFIED
                 TaskOutcome.RESPONDED -> LatencyOutcome.COMPLETED_NON_ACTION
                 TaskOutcome.NEEDS_USER -> LatencyOutcome.NEEDS_USER
                 TaskOutcome.FAILED -> LatencyOutcome.FAILED

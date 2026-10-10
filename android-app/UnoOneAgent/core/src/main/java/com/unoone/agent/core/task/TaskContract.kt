@@ -9,8 +9,9 @@ import java.util.UUID
 enum class TaskSource { TEXT, VOICE, SKILL, BROWSER, NATIVE }
 enum class TaskPriority(val rank: Int) { MAINTENANCE(0), NORMAL(1), INTERACTIVE(2) }
 enum class TaskCapability { UI_READ, UI_WRITE, MODEL, LOCAL_READ, LOCAL_WRITE, BROWSER, AUDIO }
-enum class TaskState { QUEUED, RUNNING, CANCELLING, WAITING_CHILD, NEEDS_USER, SUCCEEDED, UNVERIFIED, FAILED, CANCELLED, NEEDS_REVIEW }
-enum class TaskOutcome { VERIFIED, RESPONDED, UNVERIFIED, NEEDS_USER, FAILED, CANCELLED }
+enum class TaskState { QUEUED, RUNNING, CANCELLING, WAITING_CHILD, NEEDS_USER, SUCCEEDED, ACTION_VERIFIED, UNVERIFIED, FAILED, CANCELLED, NEEDS_REVIEW }
+/** ACTION_VERIFIED proves one bounded action, not completion of a wider user goal. */
+enum class TaskOutcome { VERIFIED, ACTION_VERIFIED, RESPONDED, UNVERIFIED, NEEDS_USER, FAILED, CANCELLED }
 enum class TaskReason { NONE, WORKER_FAILED, STOPPED, BUDGET_EXHAUSTED, CHILD_FAILED, REVIEW_REQUIRED }
 enum class WorkerLane { INTERACTIVE, BACKGROUND }
 
@@ -68,7 +69,7 @@ data class StepReceipt(val taskId: TaskId, val step: Long, val capability: TaskC
 /** Closed metadata fields only: no instruction, target, URL, user text, or worker-supplied message. */
 data class TaskJournalEvent(val version: Int = 1, val sequence: Long, val summary: TaskSummary,
     val receipt: StepReceipt? = null) {
-    fun recoveredSummary(): TaskSummary = if (summary.state in setOf(TaskState.SUCCEEDED,
+    fun recoveredSummary(): TaskSummary = if (summary.state in setOf(TaskState.SUCCEEDED, TaskState.ACTION_VERIFIED,
         TaskState.UNVERIFIED, TaskState.FAILED, TaskState.CANCELLED)) summary
         else summary.copy(state = TaskState.NEEDS_REVIEW, outcome = null)
 }

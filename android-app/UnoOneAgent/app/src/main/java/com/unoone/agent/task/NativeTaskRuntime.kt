@@ -109,7 +109,8 @@ class NativeTaskRuntime(context: Context, private val orchestrator: AgentOrchest
                         ) { orchestrator.runOwlTask(request.first, request.second) } }
                     }
                 }
-                finish(ctx, TaskResult(if (outcome.status == com.unoone.agent.core.device.DeviceOutcomeStatus.VERIFIED) TaskOutcome.VERIFIED else TaskOutcome.NEEDS_USER), outcome.reason)
+                val result = deviceTaskResult(outcome.status, com.unoone.agent.NativeDeviceGoal.Sequence(request.second))
+                finish(ctx, result, deviceTaskReport(result, outcome.reason))
             } catch (cancel: CancellationException) { throw cancel }
             catch (_: Exception) { finish(ctx, TaskResult(TaskOutcome.NEEDS_USER), "Owl stopped: capture/model/scope check failed; no replay") }
             finally { com.unoone.agent.voice.VoiceService.endForegroundTask() }

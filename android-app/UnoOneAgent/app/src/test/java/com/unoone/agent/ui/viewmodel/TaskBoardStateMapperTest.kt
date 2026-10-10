@@ -40,5 +40,6 @@ class TaskBoardStateMapperTest {
         assertTrue(TaskBoardStateMapper.label(TaskState.NEEDS_REVIEW).contains("cannot resume or replay"))
         assertTrue(TaskBoardStateMapper.label(TaskState.NEEDS_USER).contains("Paused"))
         assertTrue(TaskBoardStateMapper.label(TaskState.UNVERIFIED).contains("do not assume"))
+        assertTrue(TaskBoardStateMapper.label(TaskState.ACTION_VERIFIED).contains("wider task completion was not established"))
     }
 }
